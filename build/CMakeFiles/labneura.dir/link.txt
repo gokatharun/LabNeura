@@ -1,0 +1,2 @@
+/usr/bin/ar qc liblabneura.a CMakeFiles/labneura.dir/src/labneura/tensor.cpp.o
+/usr/bin/ranlib liblabneura.a

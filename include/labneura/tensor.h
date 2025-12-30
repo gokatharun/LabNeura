@@ -1,0 +1,67 @@
+#pragma once
+
+#include <vector>
+#include <cstdint>
+#include <cstddef>
+#include <memory>
+#include <variant>
+#include <stdexcept>
+
+namespace labneura {
+
+// Quantization modes
+enum class QuantizationMode {
+    FP32,      // 32-bit floating point (default)
+    INT8,      // 8-bit signed integer quantization
+};
+
+// Forward declaration for backend implementation
+class TensorBackend;
+
+// Main Tensor class: handles mixed int/float input with architecture-aware storage
+class Tensor {
+public:
+    // Constructor with array/scalar and optional quantization
+    // Supports int, float, or std::vector<int/float>
+    Tensor();
+    explicit Tensor(const std::vector<float>& data, QuantizationMode mode = QuantizationMode::FP32);
+    explicit Tensor(const std::vector<int>& data, QuantizationMode mode = QuantizationMode::FP32);
+    explicit Tensor(float scalar, QuantizationMode mode = QuantizationMode::FP32);
+    explicit Tensor(int scalar, QuantizationMode mode = QuantizationMode::FP32);
+
+    // Destructor
+    ~Tensor();
+
+    // Copy and move semantics
+    Tensor(const Tensor& other);
+    Tensor& operator=(const Tensor& other);
+    Tensor(Tensor&& other) noexcept;
+    Tensor& operator=(Tensor&& other) noexcept;
+
+    // Shape and size queries
+    std::size_t size() const;
+    std::size_t numel() const { return size(); }
+    QuantizationMode quantization_mode() const { return quantization_mode_; }
+
+    // Get raw data pointer (for internal use and operations)
+    float* data_fp32();
+    const float* data_fp32() const;
+    int8_t* data_int8();
+    const int8_t* data_int8() const;
+
+    // Operations
+    // Addition: result = this + other
+    Tensor add(const Tensor& other) const;
+    
+    // In-place addition: this += other
+    void add_inplace(const Tensor& other);
+
+private:
+    QuantizationMode quantization_mode_;
+    std::unique_ptr<TensorBackend> backend_;
+
+    // Helper to initialize backend based on hardware
+    void init_backend(std::size_t size);
+};
+
+} // namespace labneura

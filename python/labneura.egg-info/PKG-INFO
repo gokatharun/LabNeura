@@ -1,0 +1,5 @@
+Metadata-Version: 2.4
+Name: labneura
+Version: 0.1
+Summary: LabNeura Python bindings with Tensor support
+Dynamic: summary
