@@ -30,6 +30,7 @@ public:
     
     virtual std::unique_ptr<TensorBackend> clone() const = 0;
     virtual void add_inplace(const TensorBackend& other) = 0;
+    virtual void mul_inplace(const TensorBackend& other) = 0;
 };
 
 // Generic fallback backend (CPU registers + memory)
@@ -113,6 +114,23 @@ public:
                     std::max(-128, std::min(127, static_cast<int>(sum)))
                 );
             }
+        }
+    }
+    
+    void mul_inplace(const TensorBackend& other) override {
+        if (size_ != other.size()) {
+            throw std::runtime_error("Tensor size mismatch in multiplication");
+        }
+
+        if (quantization_mode_ != QuantizationMode::FP32) {
+            throw std::runtime_error("Multiplication only supported for FP32 mode");
+        }
+
+        const float* other_data = other.data_fp32();
+        float* this_data = data_fp32();
+        #pragma omp parallel for
+        for (std::size_t i = 0; i < size_; ++i) {
+            this_data[i] *= other_data[i];
         }
     }
 
@@ -200,6 +218,18 @@ public:
         }
     }
 
+    void mul_inplace(const TensorBackend& other) {
+        if (size_ != other.size()) {
+            throw std::runtime_error("Tensor size mismatch in multiplication");
+        }
+
+        if (quantization_mode_ != QuantizationMode::FP32) {
+            throw std::runtime_error("Multiplication only supported for FP32 mode");
+        }
+
+        mul_inplace_fp32(other);
+    }
+
 private:
     std::size_t size_;
     std::size_t aligned_size_;
@@ -211,84 +241,31 @@ private:
         const float* other_data = other.data_fp32();
         float* this_data = data_fp32();
 
-        // NEON loop: process 32 floats per iteration (8 NEON operations)
-        std::size_t len32 = (size_ / 32) * 32;
-        for (std::size_t i = 0; i < len32; i += 32) {
-            // Load all 8 groups
-            float32x4_t a0 = vld1q_f32(&this_data[i]);
-            float32x4_t b0 = vld1q_f32(&other_data[i]);
-            float32x4_t a1 = vld1q_f32(&this_data[i + 4]);
-            float32x4_t b1 = vld1q_f32(&other_data[i + 4]);
-            float32x4_t a2 = vld1q_f32(&this_data[i + 8]);
-            float32x4_t b2 = vld1q_f32(&other_data[i + 8]);
-            float32x4_t a3 = vld1q_f32(&this_data[i + 12]);
-            float32x4_t b3 = vld1q_f32(&other_data[i + 12]);
-            float32x4_t a4 = vld1q_f32(&this_data[i + 16]);
-            float32x4_t b4 = vld1q_f32(&other_data[i + 16]);
-            float32x4_t a5 = vld1q_f32(&this_data[i + 20]);
-            float32x4_t b5 = vld1q_f32(&other_data[i + 20]);
-            float32x4_t a6 = vld1q_f32(&this_data[i + 24]);
-            float32x4_t b6 = vld1q_f32(&other_data[i + 24]);
-            float32x4_t a7 = vld1q_f32(&this_data[i + 28]);
-            float32x4_t b7 = vld1q_f32(&other_data[i + 28]);
-            
-            // Compute all
-            float32x4_t r0 = vaddq_f32(a0, b0);
-            float32x4_t r1 = vaddq_f32(a1, b1);
-            float32x4_t r2 = vaddq_f32(a2, b2);
-            float32x4_t r3 = vaddq_f32(a3, b3);
-            float32x4_t r4 = vaddq_f32(a4, b4);
-            float32x4_t r5 = vaddq_f32(a5, b5);
-            float32x4_t r6 = vaddq_f32(a6, b6);
-            float32x4_t r7 = vaddq_f32(a7, b7);
-            
-            // Store all
-            vst1q_f32(&this_data[i], r0);
-            vst1q_f32(&this_data[i + 4], r1);
-            vst1q_f32(&this_data[i + 8], r2);
-            vst1q_f32(&this_data[i + 12], r3);
-            vst1q_f32(&this_data[i + 16], r4);
-            vst1q_f32(&this_data[i + 20], r5);
-            vst1q_f32(&this_data[i + 24], r6);
-            vst1q_f32(&this_data[i + 28], r7);
-        }
+        // Apple M1 NEON has 32 128-bit registers, we can unroll to use more registers
+        // Each register can hold 4 float32 values
+        // So 32 registers can hold 128 floats at a time
+        // So in this implementation, we unroll to process 32 floats at a time
 
         // Handle remaining multiples of 16
-        std::size_t len16 = ((size_ - len32) / 16) * 16 + len32;
-        for (std::size_t i = len32; i < len16; i += 16) {
-            float32x4_t va0 = vld1q_f32(&this_data[i]);
-            float32x4_t vb0 = vld1q_f32(&other_data[i]);
-            float32x4_t va1 = vld1q_f32(&this_data[i + 4]);
-            float32x4_t vb1 = vld1q_f32(&other_data[i + 4]);
-            float32x4_t va2 = vld1q_f32(&this_data[i + 8]);
-            float32x4_t vb2 = vld1q_f32(&other_data[i + 8]);
-            float32x4_t va3 = vld1q_f32(&this_data[i + 12]);
-            float32x4_t vb3 = vld1q_f32(&other_data[i + 12]);
-            
-            float32x4_t r0 = vaddq_f32(va0, vb0);
-            float32x4_t r1 = vaddq_f32(va1, vb1);
-            float32x4_t r2 = vaddq_f32(va2, vb2);
-            float32x4_t r3 = vaddq_f32(va3, vb3);
-            
-            vst1q_f32(&this_data[i], r0);
-            vst1q_f32(&this_data[i + 4], r1);
-            vst1q_f32(&this_data[i + 8], r2);
-            vst1q_f32(&this_data[i + 12], r3);
+        std::size_t len16 = (size_ / 16) * 16;
+        for (std::size_t i = 0; i < len16; i += 16) {
+            for (std::size_t j = 0; j < 16; j += 4) {
+                float32x4_t va = vld1q_f32(&this_data[i + j]);
+                float32x4_t vb = vld1q_f32(&other_data[i + j]);
+                float32x4_t result = vaddq_f32(va, vb);
+                vst1q_f32(&this_data[i + j], result);
+            }
         }
 
         // Handle remaining multiples of 8
         std::size_t len8 = ((size_ - len16) / 8) * 8 + len16;
         for (std::size_t i = len16; i < len8; i += 8) {
-            float32x4_t va0 = vld1q_f32(&this_data[i]);
-            float32x4_t vb0 = vld1q_f32(&other_data[i]);
-            float32x4_t va1 = vld1q_f32(&this_data[i + 4]);
-            float32x4_t vb1 = vld1q_f32(&other_data[i + 4]);
-            
-            float32x4_t r0 = vaddq_f32(va0, vb0);
-            float32x4_t r1 = vaddq_f32(va1, vb1);
-            
-            vst1q_f32(&this_data[i], r0);
-            vst1q_f32(&this_data[i + 4], r1);
+            for (std::size_t j = 0; j < 8; j += 4) {
+                float32x4_t va = vld1q_f32(&this_data[i + j]);
+                float32x4_t vb = vld1q_f32(&other_data[i + j]);
+                float32x4_t result = vaddq_f32(va, vb);
+                vst1q_f32(&this_data[i + j], result);
+            }
         }
 
         // Handle remaining multiples of 4
@@ -306,17 +283,80 @@ private:
         }
     }
 
+    void mul_inplace_fp32(const TensorBackend& other) {
+        const float* other_data = other.data_fp32();
+        float* this_data = data_fp32();
+
+        // Handle remaining multiples of 16
+        std::size_t len16 = (size_ / 16) * 16;
+        for (std::size_t i = 0; i < len16; i += 16) {
+            for (std::size_t j = 0; j < 16; j += 4) {
+                float32x4_t va = vld1q_f32(&this_data[i + j]);
+                float32x4_t vb = vld1q_f32(&other_data[i + j]);
+                float32x4_t result = vmulq_f32(va, vb);
+                vst1q_f32(&this_data[i + j], result);
+            }
+        }
+
+        // Handle remaining multiples of 8
+        std::size_t len8 = ((size_ - len16) / 8) * 8 + len16;
+        for (std::size_t i = len16; i < len8; i += 8) {
+            for (std::size_t j = 0; j < 8; j += 4) {
+                float32x4_t va = vld1q_f32(&this_data[i + j]);
+                float32x4_t vb = vld1q_f32(&other_data[i + j]);
+                float32x4_t result = vmulq_f32(va, vb);
+                vst1q_f32(&this_data[i + j], result);
+            }
+        }
+
+        // Handle remaining multiples of 4
+        std::size_t len4 = ((size_ - len8) / 4) * 4 + len8;
+        for (std::size_t i = len8; i < len4; i += 4) {
+            float32x4_t va = vld1q_f32(&this_data[i]);
+            float32x4_t vb = vld1q_f32(&other_data[i]);
+            float32x4_t result = vmulq_f32(va, vb);
+            vst1q_f32(&this_data[i], result);
+        }
+
+        // Scalar remainder
+        for (std::size_t i = len4; i < size_; ++i) {
+            this_data[i] *= other_data[i];
+        }
+    }
+
     void add_inplace_int8(const TensorBackend& other) {
         const int8_t* other_data = other.data_int8();
         int8_t* this_data = data_int8();
 
-        // NEON loop: process 16 int8s at a time (128-bit register)
+        // Apple M1 NEON has 32 128-bit registers, we can unroll to use more registers
+        // Each register can hold 16 int8 values
+        // So 32 registers can hold 512 int8 values at a time
+        // So in this implementation, we unroll to process 16 int8 values at a time
+
         std::size_t neon_len = (size_ / 16) * 16;
         for (std::size_t i = 0; i < neon_len; i += 16) {
             int8x16_t va = vld1q_s8(&this_data[i]);
             int8x16_t vb = vld1q_s8(&other_data[i]);
             int8x16_t result = vaddq_s8(va, vb);
             vst1q_s8(&this_data[i], result);
+        }
+
+        // Handle remaining multiples of 8
+        std::size_t len8 = ((size_ - neon_len) / 8) * 8 + neon_len;
+        for (std::size_t i = neon_len; i < len8; i += 8) {
+            int8x8_t va = vld1_s8(&this_data[i]);
+            int8x8_t vb = vld1_s8(&other_data[i]);
+            int8x8_t result = vadd_s8(va, vb);
+            vst1_s8(&this_data[i], result);
+        }
+
+        // Handle remaining multiples of 4
+        std::size_t len4 = ((size_ - len8) / 4) * 4 + len8;
+        for (std::size_t i = len8; i < len4; i += 4) {
+            int8x8_t va = vld1_s8(&this_data[i]);
+            int8x8_t vb = vld1_s8(&other_data[i]);
+            int8x8_t result = vadd_s8(va, vb);
+            vst1_s8(&this_data[i], result);
         }
 
         // Handle remainder with scalar saturation
@@ -444,6 +484,13 @@ void Tensor::add_inplace(const Tensor& other) {
     }
     backend_->add_inplace(*other.backend_);
 }
+
+void Tensor::mul_inplace(const Tensor& other) {
+    if (!backend_) {
+        throw std::runtime_error("Tensor backend not initialized");
+    }
+    backend_->mul_inplace(*other.backend_);
+}   
 
 void Tensor::init_backend(std::size_t size) {
 #if LABNEURA_HAVE_M1

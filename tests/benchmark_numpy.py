@@ -85,7 +85,7 @@ def main():
     # Benchmarks
     print("=== Performance Benchmarks ===\n")
     
-    test_sizes = [10_000, 100_000, 1_000_000]
+    test_sizes = [10_000, 100_000, 1_000_000, 10_000_000]
     iterations = 100
     
     for size in test_sizes:

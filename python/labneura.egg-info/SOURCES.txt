@@ -1,8 +1,0 @@
-labneura_py.cpp
-pyproject.toml
-setup.py
-../src/labneura/tensor.cpp
-labneura.egg-info/PKG-INFO
-labneura.egg-info/SOURCES.txt
-labneura.egg-info/dependency_links.txt
-labneura.egg-info/top_level.txt

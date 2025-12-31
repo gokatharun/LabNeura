@@ -58,6 +58,7 @@ PYBIND11_MODULE(labneura, m) {
         
         // Operations
         .def("add", &labneura::Tensor::add, "Add two tensors (returns new tensor)")
-        .def("add_inplace", &labneura::Tensor::add_inplace, "In-place addition (modifies self)");
+        .def("add_inplace", &labneura::Tensor::add_inplace, "In-place addition (modifies self)")
+        .def("mul_inplace", &labneura::Tensor::mul_inplace, "In-place multiplication (modifies self)");
 }
 

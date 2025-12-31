@@ -55,6 +55,8 @@ public:
     
     // In-place addition: this += other
     void add_inplace(const Tensor& other);
+    // In-place dot product: this = this . other
+    void mul_inplace(const Tensor& other);
 
 private:
     QuantizationMode quantization_mode_;

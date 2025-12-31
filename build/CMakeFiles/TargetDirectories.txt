@@ -1,8 +1,0 @@
-/Users/tharungoka/LabNeura/build/CMakeFiles/labneura.dir
-/Users/tharungoka/LabNeura/build/CMakeFiles/labneura_example.dir
-/Users/tharungoka/LabNeura/build/CMakeFiles/edit_cache.dir
-/Users/tharungoka/LabNeura/build/CMakeFiles/rebuild_cache.dir
-/Users/tharungoka/LabNeura/build/CMakeFiles/list_install_components.dir
-/Users/tharungoka/LabNeura/build/CMakeFiles/install.dir
-/Users/tharungoka/LabNeura/build/CMakeFiles/install/local.dir
-/Users/tharungoka/LabNeura/build/CMakeFiles/install/strip.dir
