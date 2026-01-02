@@ -1,3 +1,4 @@
 build/*
 python/build/*
 python/build/**
+python/labneura.egg-info/*

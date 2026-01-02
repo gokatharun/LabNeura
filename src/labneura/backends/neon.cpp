@@ -1,0 +1,287 @@
+#if defined(__ARM_NEON)
+
+#include "labneura/backends/neon.h"
+#include <arm_neon.h>
+
+namespace labneura {
+
+// =======================
+// Constructor
+// =======================
+
+NEONBackend::NEONBackend(std::size_t size, QuantizationMode mode)
+    : size_(size), quantization_mode_(mode) {
+
+    aligned_size_ = ((size + 3) / 4) * 4;
+
+    if (mode == QuantizationMode::FP32) {
+        data_fp32_ = std::make_unique<float[]>(aligned_size_);
+        std::fill(data_fp32_.get() + size_, data_fp32_.get() + aligned_size_, 0.0f);
+    } else {
+        data_int8_ = std::make_unique<int8_t[]>(aligned_size_);
+        std::fill(data_int8_.get() + size_, data_int8_.get() + aligned_size_, 0);
+    }
+}
+
+// =======================
+// Metadata
+// =======================
+
+std::size_t NEONBackend::size() const {
+    return size_;
+}
+
+QuantizationMode NEONBackend::quantization_mode() const {
+    return quantization_mode_;
+}
+
+// =======================
+// Data access
+// =======================
+
+float* NEONBackend::data_fp32() {
+    if (quantization_mode_ != QuantizationMode::FP32) {
+        throw std::runtime_error("Tensor is not in FP32 mode");
+    }
+    return data_fp32_.get();
+}
+
+const float* NEONBackend::data_fp32() const {
+    if (quantization_mode_ != QuantizationMode::FP32) {
+        throw std::runtime_error("Tensor is not in FP32 mode");
+    }
+    return data_fp32_.get();
+}
+
+int8_t* NEONBackend::data_int8() {
+    if (quantization_mode_ != QuantizationMode::INT8) {
+        throw std::runtime_error("Tensor is not in INT8 mode");
+    }
+    return data_int8_.get();
+}
+
+const int8_t* NEONBackend::data_int8() const {
+    if (quantization_mode_ != QuantizationMode::INT8) {
+        throw std::runtime_error("Tensor is not in INT8 mode");
+    }
+    return data_int8_.get();
+}
+
+// =======================
+// Clone
+// =======================
+
+std::unique_ptr<TensorBackend> NEONBackend::clone() const {
+    auto backend = std::make_unique<NEONBackend>(size_, quantization_mode_);
+    if (quantization_mode_ == QuantizationMode::FP32) {
+        std::copy(data_fp32_.get(), data_fp32_.get() + size_, backend->data_fp32());
+    } else {
+        std::copy(data_int8_.get(), data_int8_.get() + size_, backend->data_int8());
+    }
+    return backend;
+}
+
+// =======================
+// Public ops
+// =======================
+
+void NEONBackend::add_inplace(const TensorBackend& other) {
+    if (quantization_mode_ == QuantizationMode::FP32) {
+        add_inplace_fp32(other);
+    } else {
+        add_inplace_int8(other);
+    }
+}
+
+void NEONBackend::mul_inplace(const TensorBackend& other) {
+    if (quantization_mode_ == QuantizationMode::FP32) {
+        mul_inplace_fp32(other);
+    } else {
+        mul_inplace_int8(other);
+    }
+}
+
+void NEONBackend::sub_inplace(const TensorBackend& other) {
+    if (quantization_mode_ == QuantizationMode::FP32) {
+        sub_inplace_fp32(other);
+    } else {
+        sub_inplace_int8(other);
+    }
+}
+
+// =======================
+// FP32 kernels
+// =======================
+
+void NEONBackend::add_inplace_fp32(const TensorBackend& other) {
+    const float* other_data = other.data_fp32();
+    float* this_data = data_fp32();
+
+    std::size_t len16 = (size_ / 16) * 16;
+    for (std::size_t i = 0; i < len16; i += 16) {
+        for (std::size_t j = 0; j < 16; j += 4) {
+            float32x4_t va = vld1q_f32(&this_data[i + j]);
+            float32x4_t vb = vld1q_f32(&other_data[i + j]);
+            vst1q_f32(&this_data[i + j], vaddq_f32(va, vb));
+        }
+    }
+
+    std::size_t len8 = ((size_ - len16) / 8) * 8 + len16;
+    for (std::size_t i = len16; i < len8; i += 8) {
+        for (std::size_t j = 0; j < 8; j += 4) {
+            float32x4_t va = vld1q_f32(&this_data[i + j]);
+            float32x4_t vb = vld1q_f32(&other_data[i + j]);
+            vst1q_f32(&this_data[i + j], vaddq_f32(va, vb));
+        }
+    }
+
+    std::size_t len4 = ((size_ - len8) / 4) * 4 + len8;
+    for (std::size_t i = len8; i < len4; i += 4) {
+        float32x4_t va = vld1q_f32(&this_data[i]);
+        float32x4_t vb = vld1q_f32(&other_data[i]);
+        vst1q_f32(&this_data[i], vaddq_f32(va, vb));
+    }
+
+    for (std::size_t i = len4; i < size_; ++i) {
+        this_data[i] += other_data[i];
+    }
+}
+
+void NEONBackend::mul_inplace_fp32(const TensorBackend& other) {
+    const float* other_data = other.data_fp32();
+    float* this_data = data_fp32();
+
+    std::size_t len16 = (size_ / 16) * 16;
+    for (std::size_t i = 0; i < len16; i += 16) {
+        for (std::size_t j = 0; j < 16; j += 4) {
+            float32x4_t va = vld1q_f32(&this_data[i + j]);
+            float32x4_t vb = vld1q_f32(&other_data[i + j]);
+            vst1q_f32(&this_data[i + j], vmulq_f32(va, vb));
+        }
+    }
+
+    std::size_t len8 = ((size_ - len16) / 8) * 8 + len16;
+    for (std::size_t i = len16; i < len8; i += 8) {
+        for (std::size_t j = 0; j < 8; j += 4) {
+            float32x4_t va = vld1q_f32(&this_data[i + j]);
+            float32x4_t vb = vld1q_f32(&other_data[i + j]);
+            vst1q_f32(&this_data[i + j], vmulq_f32(va, vb));
+        }
+    }
+
+    std::size_t len4 = ((size_ - len8) / 4) * 4 + len8;
+    for (std::size_t i = len8; i < len4; i += 4) {
+        float32x4_t va = vld1q_f32(&this_data[i]);
+        float32x4_t vb = vld1q_f32(&other_data[i]);
+        vst1q_f32(&this_data[i], vmulq_f32(va, vb));
+    }
+
+    for (std::size_t i = len4; i < size_; ++i) {
+        this_data[i] *= other_data[i];
+    }
+}
+
+void NEONBackend::sub_inplace_fp32(const TensorBackend& other) {
+    const float* other_data = other.data_fp32();
+    float* this_data = data_fp32();
+
+    std::size_t len16 = (size_ / 16) * 16;
+    for (std::size_t i = 0; i < len16; i += 16) {
+        for (std::size_t j = 0; j < 16; j += 4) {
+            float32x4_t va = vld1q_f32(&this_data[i + j]);
+            float32x4_t vb = vld1q_f32(&other_data[i + j]);
+            vst1q_f32(&this_data[i + j], vsubq_f32(va, vb));
+        }
+    }
+
+    std::size_t len8 = ((size_ - len16) / 8) * 8 + len16;
+    for (std::size_t i = len16; i < len8; i += 8) {
+        for (std::size_t j = 0; j < 8; j += 4) {
+            float32x4_t va = vld1q_f32(&this_data[i + j]);
+            float32x4_t vb = vld1q_f32(&other_data[i + j]);
+            vst1q_f32(&this_data[i + j], vsubq_f32(va, vb));
+        }
+    }
+
+    std::size_t len4 = ((size_ - len8) / 4) * 4 + len8;
+    for (std::size_t i = len8; i < len4; i += 4) {
+        float32x4_t va = vld1q_f32(&this_data[i]);
+        float32x4_t vb = vld1q_f32(&other_data[i]);
+        vst1q_f32(&this_data[i], vsubq_f32(va, vb));
+    }
+
+    for (std::size_t i = len4; i < size_; ++i) {
+        this_data[i] -= other_data[i];
+    }
+}
+
+// =======================
+// INT8 kernels
+// =======================
+
+void NEONBackend::add_inplace_int8(const TensorBackend& other) {
+    const int8_t* other_data = other.data_int8();
+    int8_t* this_data = data_int8();
+
+    std::size_t neon_len = (size_ / 16) * 16;
+    for (std::size_t i = 0; i < neon_len; i += 16) {
+        int8x16_t va = vld1q_s8(&this_data[i]);
+        int8x16_t vb = vld1q_s8(&other_data[i]);
+        vst1q_s8(&this_data[i], vaddq_s8(va, vb));
+    }
+
+    for (std::size_t i = neon_len; i < size_; ++i) {
+        int16_t sum = static_cast<int16_t>(this_data[i]) +
+                      static_cast<int16_t>(other_data[i]);
+        this_data[i] = static_cast<int8_t>(
+            std::max(-128, std::min(127, static_cast<int>(sum)))
+        );
+    }
+}
+
+void NEONBackend::mul_inplace_int8(const TensorBackend& other) {
+    const int8_t* other_data = other.data_int8();
+    int8_t* this_data = data_int8();
+
+    std::size_t neon_len = (size_ / 8) * 8;
+    for (std::size_t i = 0; i < neon_len; i += 8) {
+        int8x8_t va = vld1_s8(&this_data[i]);
+        int8x8_t vb = vld1_s8(&other_data[i]);
+        int16x8_t va16 = vmovl_s8(va);
+        int16x8_t vb16 = vmovl_s8(vb);
+        int16x8_t prod = vmulq_s16(va16, vb16);
+        vst1_s8(&this_data[i], vqmovn_s16(prod));
+    }
+
+    for (std::size_t i = neon_len; i < size_; ++i) {
+        int16_t prod = static_cast<int16_t>(this_data[i]) *
+                       static_cast<int16_t>(other_data[i]);
+        this_data[i] = static_cast<int8_t>(
+            std::max(-128, std::min(127, static_cast<int>(prod)))
+        );
+    }
+}
+
+void NEONBackend::sub_inplace_int8(const TensorBackend& other) {
+    const int8_t* other_data = other.data_int8();
+    int8_t* this_data = data_int8();
+
+    std::size_t neon_len = (size_ / 16) * 16;
+    for (std::size_t i = 0; i < neon_len; i += 16) {
+        int8x16_t va = vld1q_s8(&this_data[i]);
+        int8x16_t vb = vld1q_s8(&other_data[i]);
+        vst1q_s8(&this_data[i], vsubq_s8(va, vb));
+    }
+
+    for (std::size_t i = neon_len; i < size_; ++i) {
+        int16_t diff = static_cast<int16_t>(this_data[i]) -
+                       static_cast<int16_t>(other_data[i]);
+        this_data[i] = static_cast<int8_t>(
+            std::max(-128, std::min(127, static_cast<int>(diff)))
+        );
+    }
+}
+
+} // namespace labneura
+
+#endif // LABNEURA_HAVE_M1

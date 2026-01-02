@@ -38,6 +38,8 @@ endif()
 # Core library with tensor implementation
 add_library(labneura 
   src/labneura/tensor.cpp
+  src/labneura/backends/generic.cpp
+  src/labneura/backends/neon.cpp
 )
 
 target_include_directories(labneura

@@ -11,7 +11,11 @@ namespace labneura {
 
 // Quantization modes
 enum class QuantizationMode {
+    FP64,      // 64-bit floating point
     FP32,      // 32-bit floating point (default)
+    FP16,      // 16-bit floating point
+    INT32,     // 32-bit signed integer quantization
+    INT16,     // 16-bit signed integer quantization
     INT8,      // 8-bit signed integer quantization
 };
 
@@ -55,8 +59,10 @@ public:
     
     // In-place addition: this += other
     void add_inplace(const Tensor& other);
-    // In-place dot product: this = this . other
+    // In-place multiplication: this = this . other
     void mul_inplace(const Tensor& other);
+    // In-place subtraction: this -= other
+    void sub_inplace(const Tensor& other);
 
 private:
     QuantizationMode quantization_mode_;

@@ -24,6 +24,71 @@ def benchmark_labneura(size, iterations):
     
     return elapsed
 
+def benchmark_labneura_multiply(size, iterations):
+    """Benchmark LabNeura Tensor multiplication"""
+    data = [1.5] * size
+    t1 = labneura.Tensor(data, labneura.QuantizationMode.FP32)
+    t2 = labneura.Tensor(data, labneura.QuantizationMode.FP32)
+    
+    start = time.perf_counter()
+    for _ in range(iterations):
+        t1.mul_inplace(t2)
+    elapsed = time.perf_counter() - start
+    
+    return elapsed
+
+def benchmark_labneura_subtract(size, iterations):
+    """Benchmark LabNeura Tensor subtraction"""
+    data = [1.5] * size
+    t1 = labneura.Tensor(data, labneura.QuantizationMode.FP32)
+    t2 = labneura.Tensor(data, labneura.QuantizationMode.FP32)
+    
+    start = time.perf_counter()
+    for _ in range(iterations):
+        t1.sub_inplace(t2)
+    elapsed = time.perf_counter() - start
+    
+    return elapsed
+
+def benchmark_labneura_addition_int8(size, iterations):
+    """Benchmark LabNeura Tensor addition with INT8 quantization"""
+    data = [10] * size
+    t1 = labneura.Tensor(data, labneura.QuantizationMode.INT8)
+    t2 = labneura.Tensor(data, labneura.QuantizationMode.INT8)
+    
+    start = time.perf_counter()
+    for _ in range(iterations):
+        t1.add_inplace(t2)
+    elapsed = time.perf_counter() - start
+    
+    return elapsed
+
+def benchmark_labneura_multiply_int8(size, iterations):
+    """Benchmark LabNeura Tensor multiplication with INT8 quantization"""
+    data = [10] * size
+    t1 = labneura.Tensor(data, labneura.QuantizationMode.INT8)
+    t2 = labneura.Tensor(data, labneura.QuantizationMode.INT8)
+    
+    start = time.perf_counter()
+    for _ in range(iterations):
+        t1.mul_inplace(t2)
+    elapsed = time.perf_counter() - start
+    
+    return elapsed
+
+def benchmark_labneura_subtract_int8(size, iterations):
+    """Benchmark LabNeura Tensor subtraction with INT8 quantization"""
+    data = [10] * size
+    t1 = labneura.Tensor(data, labneura.QuantizationMode.INT8)
+    t2 = labneura.Tensor(data, labneura.QuantizationMode.INT8)
+    
+    start = time.perf_counter()
+    for _ in range(iterations):
+        t1.sub_inplace(t2)
+    elapsed = time.perf_counter() - start
+    
+    return elapsed
+
 def benchmark_numpy(size, iterations):
     """Benchmark NumPy array addition"""
     a = np.full(size, 1.5, dtype=np.float32)
@@ -32,6 +97,66 @@ def benchmark_numpy(size, iterations):
     start = time.perf_counter()
     for _ in range(iterations):
         a += b
+    elapsed = time.perf_counter() - start
+    
+    return elapsed
+
+def benchmark_numpy_multiply(size, iterations):
+    """Benchmark NumPy array multiplication"""
+    a = np.full(size, 1.5, dtype=np.float32)
+    b = np.full(size, 1.5, dtype=np.float32)
+    
+    start = time.perf_counter()
+    for _ in range(iterations):
+        a *= b
+    elapsed = time.perf_counter() - start
+    
+    return elapsed
+
+def benchmark_numpy_subtract(size, iterations):
+    """Benchmark NumPy array subtraction"""
+    a = np.full(size, 1.5, dtype=np.float32)
+    b = np.full(size, 1.5, dtype=np.float32)
+    
+    start = time.perf_counter()
+    for _ in range(iterations):
+        a -= b
+    elapsed = time.perf_counter() - start
+    
+    return elapsed
+
+def benchmark_numpy_addition_int8(size, iterations):
+    """Benchmark NumPy array addition with int8"""
+    a = np.full(size, 10, dtype=np.int8)
+    b = np.full(size, 10, dtype=np.int8)
+    
+    start = time.perf_counter()
+    for _ in range(iterations):
+        a = np.clip(a.astype(np.int16) + b.astype(np.int16), -128, 127).astype(np.int8)
+    elapsed = time.perf_counter() - start
+    
+    return elapsed
+
+def benchmark_numpy_multiply_int8(size, iterations):
+    """Benchmark NumPy array multiplication with int8"""
+    a = np.full(size, 10, dtype=np.int8)
+    b = np.full(size, 10, dtype=np.int8)
+    
+    start = time.perf_counter()
+    for _ in range(iterations):
+        a = np.clip(a.astype(np.int16) * b.astype(np.int16), -128, 127).astype(np.int8)
+    elapsed = time.perf_counter() - start
+    
+    return elapsed
+
+def benchmark_numpy_subtract_int8(size, iterations):
+    """Benchmark NumPy array subtraction with int8"""
+    a = np.full(size, 10, dtype=np.int8)
+    b = np.full(size, 10, dtype=np.int8)
+    
+    start = time.perf_counter()
+    for _ in range(iterations):
+        a = np.clip(a.astype(np.int16) - b.astype(np.int16), -128, 127).astype(np.int8)
     elapsed = time.perf_counter() - start
     
     return elapsed
@@ -95,7 +220,11 @@ def main():
         # LabNeura
         t_labneura = benchmark_labneura(size, iterations)
         ops_labneura = (size * iterations) / (t_labneura * 1e6)
-        
+        mul_labneura = benchmark_labneura_multiply(size, iterations)
+        sub_labneura = benchmark_labneura_subtract(size, iterations)
+            # NumPy multiply and subtract
+        mul_numpy = benchmark_numpy_multiply(size, iterations)
+        sub_numpy = benchmark_numpy_subtract(size, iterations)
         # NumPy
         t_numpy = benchmark_numpy(size, iterations)
         ops_numpy = (size * iterations) / (t_numpy * 1e6)
@@ -115,11 +244,21 @@ def main():
         print(f"{'NumPy':<20} {t_numpy*1000:>15.3f} {ops_numpy:>20.2f}")
         if ops_python > 0:
             print(f"{'Python list':<20} {t_python*1000:>15.3f} {ops_python:>20.2f}")
-        
+        print(f"{'LabNeura Multiply':<20} {mul_labneura*1000:>15.3f}")
+        print(f"{'LabNeura Subtract':<20} {sub_labneura*1000:>15.3f}")
+        print(f"{'NumPy Multiply':<20} {mul_numpy*1000:>15.3f}")
+        print(f"{'NumPy Subtract':<20} {sub_numpy*1000:>15.3f}")
+        print("-" * 70)
+
         # Calculate speedup
         speedup = t_numpy / t_labneura
         print()
         print(f"LabNeura speedup vs NumPy: {speedup:.2f}x")
+        print()
+        mul_speedup = mul_numpy / mul_labneura
+        sub_speedup = sub_numpy / sub_labneura
+        print(f"LabNeura Multiply speedup vs NumPy: {mul_speedup:.2f}x")
+        print(f"LabNeura Subtract speedup vs NumPy: {sub_speedup:.2f}x")
         print()
         
         if t_python < float('inf'):
@@ -145,6 +284,15 @@ def main():
         t1.add_inplace(t2)
     t_int8 = time.perf_counter() - start
     
+    start = time.perf_counter()
+    for _ in range(iterations):
+        t1.mul_inplace(t2)
+    t_int8_mul = time.perf_counter() - start
+    start = time.perf_counter()
+    for _ in range(iterations):
+        t1.sub_inplace(t2)
+    t_int8_sub = time.perf_counter() - start
+
     # NumPy int8
     a_int8 = np.full(size, 10, dtype=np.int8)
     b_int8 = np.full(size, 10, dtype=np.int8)
@@ -154,18 +302,39 @@ def main():
         a_int8 = np.clip(a_int8.astype(np.int16) + b_int8.astype(np.int16), -128, 127).astype(np.int8)
     t_numpy_int8 = time.perf_counter() - start
     
+    for _ in range(iterations):
+        a_int8 = np.clip(a_int8.astype(np.int16) * b_int8.astype(np.int16), -128, 127).astype(np.int8)
+    t_numpy_int8_mul = time.perf_counter() - start
+    for _ in range(iterations):
+        a_int8 = np.clip(a_int8.astype(np.int16) - b_int8.astype(np.int16), -128, 127).astype(np.int8)
+    t_numpy_int8_sub = time.perf_counter() - start
+    
     ops_int8 = (size * iterations) / (t_int8 * 1e6)
     ops_numpy_int8 = (size * iterations) / (t_numpy_int8 * 1e6)
-    
+    ops_int8_mul = (size * iterations) / (t_int8_mul * 1e6)
+    ops_numpy_int8_mul = (size * iterations) / (t_numpy_int8_mul * 1e6)
+    ops_int8_sub = (size * iterations) / (t_int8_sub * 1e6)
+    ops_numpy_int8_sub = (size * iterations) / (t_numpy_int8_sub * 1e6)
+
+
     print(f"Array size: {size:,} elements, {iterations} iterations (INT8)")
     print("-" * 70)
     print(f"{'Backend':<20} {'Time (ms)':>15} {'Throughput (M ops/s)':>20}")
     print("-" * 70)
     print(f"{'LabNeura INT8':<20} {t_int8*1000:>15.3f} {ops_int8:>20.2f}")
     print(f"{'NumPy INT8':<20} {t_numpy_int8*1000:>15.3f} {ops_numpy_int8:>20.2f}")
+    print(f"{'LabNeura INT8 Mul':<20} {t_int8_mul*1000:>15.3f} {ops_int8_mul:>20.2f}")
+    print(f"{'NumPy INT8 Mul':<20} {t_numpy_int8_mul*1000:>15.3f} {ops_numpy_int8_mul:>20.2f}")
+    print(f"{'LabNeura INT8 Sub':<20} {t_int8_sub*1000:>15.3f} {ops_int8_sub:>20.2f}")
+    print(f"{'NumPy INT8 Sub':<20} {t_numpy_int8_sub*1000:>15.3f} {ops_numpy_int8_sub:>20.2f}")
+    print("-" * 70)
     print()
     speedup_int8 = t_numpy_int8 / t_int8
     print(f"LabNeura INT8 speedup vs NumPy INT8: {speedup_int8:.2f}x")
+    speedup_int8_mul = t_numpy_int8_mul / t_int8_mul
+    print(f"LabNeura INT8 Mul speedup vs NumPy INT8 Mul: {speedup_int8_mul:.2f}x")
+    speedup_int8_sub = t_numpy_int8_sub / t_int8_sub
+    print(f"LabNeura INT8 Sub speedup vs NumPy INT8 Sub: {speedup_int8_sub:.2f}x")  
     print()
     
     # Memory comparison

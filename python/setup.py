@@ -25,7 +25,7 @@ if libomp_path:
     print(f"Found libomp at: {libomp_path}")
     include_dirs.append(os.path.join(libomp_path, 'include'))
     library_dirs.append(os.path.join(libomp_path, 'lib'))
-    extra_compile_args.extend(['-Xclang', '-fopenmp', '-ffast-math'])
+    extra_compile_args.extend(['-Xclang', '-fopenmp', '-ffast-math' ])
     extra_link_args.append('-lomp')
     print("✓ OpenMP (libomp) support ENABLED")
 else:
@@ -35,7 +35,7 @@ else:
 ext_modules = [
     Extension(
         'labneura',
-        sources=['labneura_py.cpp', '../src/labneura/tensor.cpp'],
+        sources=['labneura_py.cpp', '../src/labneura/tensor.cpp', '../src/labneura/backends/generic.cpp', '../src/labneura/backends/neon.cpp'],
         include_dirs=include_dirs,
         library_dirs=library_dirs if library_dirs else None,
         language='c++',
