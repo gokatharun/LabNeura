@@ -1,0 +1,64 @@
+name: LabNeura CI
+
+on:
+  push:
+    branches: [ "main", "develop" ]
+  pull_request:
+    branches: [ "main", "develop" ]
+
+jobs:
+  build-test:
+    runs-on: macos-latest
+
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.10", "3.11"]
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install system tools
+        run: |
+          xcode-select --install || true
+          xcrun --show-sdk-path
+
+      - name: Verify Apple Clang
+        run: |
+          clang --version
+          clang++ --version
+
+      - name: Upgrade pip
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+
+      - name: Install test dependencies
+        run: |
+          pip install pytest pytest-cov numpy
+
+      - name: Build & install LabNeura
+        env:
+          CC: clang
+          CXX: clang++
+        run: |
+          pip install . --no-cache-dir --no-build-isolation
+
+      - name: Smoke test (import)
+        run: |
+          python - <<EOF
+          import labneura
+          print("Import OK")
+          EOF
+
+      - name: Run unit tests
+        run: |
+          pytest -v
+
+      - name: Python coverage
+        run: |
+          pytest --cov=labneura --cov-report=term-missing || true

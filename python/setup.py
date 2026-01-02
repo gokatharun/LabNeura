@@ -10,8 +10,8 @@ except Exception:
 
 # Configure OpenMP with libomp from Homebrew
 include_dirs = [pybind11.get_include(), '../include']
-extra_compile_args = ['-O3', '-std=c++17']
-extra_link_args = []
+extra_compile_args = ['-O3', '-std=c++17','-fprofile-instr-generate', '-fcoverage-mapping']
+extra_link_args = ['-fprofile-instr-generate', '-fcoverage-mapping', '-Wl']
 library_dirs = []
 
 # Find libomp
