@@ -39,7 +39,7 @@ jobs:
 
       - name: Install test dependencies
         run: |
-          pip install pytest pytest-cov numpy
+          pip install pytest pytest-cov numpy pybind11
 
       - name: Build & install LabNeura
         env:
