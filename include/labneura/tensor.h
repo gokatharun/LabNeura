@@ -19,6 +19,12 @@ enum class QuantizationMode {
     INT8,      // 8-bit signed integer quantization
 };
 
+enum OperationType {
+    ADD,
+    SUB,
+    MUL
+};
+
 // Forward declaration for backend implementation
 class TensorBackend;
 

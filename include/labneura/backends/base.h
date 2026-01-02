@@ -19,5 +19,8 @@ namespace labneura {
         virtual void add_inplace(const TensorBackend& other) = 0;
         virtual void sub_inplace(const TensorBackend& other) = 0;
         virtual void mul_inplace(const TensorBackend& other) = 0;
+        virtual void operation(const TensorBackend& other, OperationType op_type) = 0;
+        virtual void operation_fp32(const TensorBackend& other, OperationType op_type) = 0;
+        virtual void operation_int8(const TensorBackend& other, OperationType op_type) = 0;
     };
 }

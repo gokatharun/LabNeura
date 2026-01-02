@@ -59,84 +59,84 @@ std::unique_ptr<TensorBackend> GenericBackend::clone() const {
     return backend;
 }
 
-void GenericBackend::add_inplace(const TensorBackend& other) {
-    if (size_ != other.size()) {
-        throw std::runtime_error("Tensor size mismatch in addition");
-    }
+void GenericBackend::operation_fp32(const TensorBackend& other, OperationType op_type) {
+    const float* other_data = other.data_fp32();
+    float* this_data = data_fp32();
 
-    if (quantization_mode_ == QuantizationMode::FP32) {
-        float* this_data = data_fp32();
-        const float* other_data = other.data_fp32();
-        #pragma omp parallel for
-        for (std::size_t i = 0; i < size_; ++i) {
-            this_data[i] += other_data[i];
-        }
-    } else if (quantization_mode_ == QuantizationMode::INT8) {
-        int8_t* this_data = data_int8();
-        const int8_t* other_data = other.data_int8();
-        #pragma omp parallel for
-        for (std::size_t i = 0; i < size_; ++i) {
-            int16_t sum = static_cast<int16_t>(this_data[i]) + 
-                          static_cast<int16_t>(other_data[i]);
-            this_data[i] = static_cast<int8_t>(
-                std::max(-128, std::min(127, static_cast<int>(sum)))
-            );
+    #pragma omp parallel for
+    for (std::size_t i = 0; i < size_; ++i) {
+        switch (op_type) {
+            case OperationType::ADD:
+                this_data[i] += other_data[i];
+                break;
+            case OperationType::MUL:
+                this_data[i] *= other_data[i];
+                break;
+            case OperationType::SUB:
+                this_data[i] -= other_data[i];
+                break;
         }
     }
+}
+void GenericBackend::operation_int8(const TensorBackend& other, OperationType op_type) {
+    const int8_t* other_data = other.data_int8();
+    int8_t* this_data = data_int8();
+
+    #pragma omp parallel for
+    for (std::size_t i = 0; i < size_; ++i) {
+        switch (op_type) {
+            case OperationType::ADD: {
+                int16_t sum = static_cast<int16_t>(this_data[i]) + 
+                              static_cast<int16_t>(other_data[i]);
+                this_data[i] = static_cast<int8_t>(
+                    std::max(-128, std::min(127, static_cast<int>(sum)))
+                );
+                break;
+            }
+            case OperationType::MUL: {
+                int16_t prod = static_cast<int16_t>(this_data[i]) * 
+                               static_cast<int16_t>(other_data[i]);
+                // Simple saturation to int8 range
+                this_data[i] = static_cast<int8_t>(
+                    std::max(-128, std::min(127, static_cast<int>(prod)))
+                );
+                break;
+            }
+            case OperationType::SUB: {
+                int16_t diff = static_cast<int16_t>(this_data[i]) - 
+                               static_cast<int16_t>(other_data[i]);
+                this_data[i] = static_cast<int8_t>(
+                    std::max(-128, std::min(127, static_cast<int>(diff)))
+                );
+                break;
+            }
+        }
+    }
+}
+
+void GenericBackend::add_inplace(const TensorBackend& other) {
+    operation(other, OperationType::ADD);
 }
 
 void GenericBackend::sub_inplace(const TensorBackend& other) {
-    if (size_ != other.size()) {
-        throw std::runtime_error("Tensor size mismatch in subtraction");
-    }
-
-    if (quantization_mode_ == QuantizationMode::FP32) {
-        float* this_data = data_fp32();
-        const float* other_data = other.data_fp32();
-        #pragma omp parallel for
-        for (std::size_t i = 0; i < size_; ++i) {
-            this_data[i] -= other_data[i];
-        }
-    } else if (quantization_mode_ == QuantizationMode::INT8) {
-        int8_t* this_data = data_int8();
-        const int8_t* other_data = other.data_int8();
-        #pragma omp parallel for
-        for (std::size_t i = 0; i < size_; ++i) {
-            int16_t diff = static_cast<int16_t>(this_data[i]) - 
-                           static_cast<int16_t>(other_data[i]);
-            this_data[i] = static_cast<int8_t>(
-                std::max(-128, std::min(127, static_cast<int>(diff)))
-            );
-        }
-    }
-}
+    operation(other, OperationType::SUB);
+}   
 
 void GenericBackend::mul_inplace(const TensorBackend& other) {
-    if (size_ != other.size()) {
-        throw std::runtime_error("Tensor size mismatch in multiplication");
-    }
+    operation(other, OperationType::MUL);
+}
 
-    if (quantization_mode_ == QuantizationMode::FP32) {
-        float* this_data = data_fp32();
-        const float* other_data = other.data_fp32();
-        #pragma omp parallel for
-        for (std::size_t i = 0; i < size_; ++i) {
-            this_data[i] *= other_data[i];
-        }
-    } else if (quantization_mode_ == QuantizationMode::INT8) {
-        int8_t* this_data = data_int8();
-        const int8_t* other_data = other.data_int8();
-        #pragma omp parallel for
-        for (std::size_t i = 0; i < size_; ++i) {
-            int16_t prod = static_cast<int16_t>(this_data[i]) * 
-                           static_cast<int16_t>(other_data[i]);
-            // Simple saturation to int8 range
-            this_data[i] = static_cast<int8_t>(
-                std::max(-128, std::min(127, static_cast<int>(prod)))
-            );
-        }
+void GenericBackend::operation(const TensorBackend& other, OperationType op_type) {
+    if (size_ != other.size()) {
+        throw std::runtime_error("Tensor size mismatch in operation");
     }
+    if (quantization_mode_ == QuantizationMode::FP32) {
+        operation_fp32(other, op_type);
+    } else if (quantization_mode_ == QuantizationMode::INT8) {
+        operation_int8(other, op_type);
+    }
+}
+
 }  // namespace labneura
 
-}
 
