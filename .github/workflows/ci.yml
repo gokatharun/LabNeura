@@ -46,14 +46,12 @@ jobs:
           CC: clang
           CXX: clang++
         run: |
-          pip install . --no-cache-dir --no-build-isolation
+          cd python && pip install . --no-cache-dir --no-build-isolation
 
       - name: Smoke test (import)
         run: |
-          python - <<EOF
-          import labneura
-          print("Import OK")
-          EOF
+          $(PYTHON) -c "import labneura" || (echo "❌  Import test failed!" && exit 1)
+          @echo "✅  Import test passed!"
 
       - name: Run unit tests
         run: |
