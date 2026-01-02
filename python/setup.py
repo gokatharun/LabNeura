@@ -28,12 +28,14 @@ extra_link_args = []
 # --------------------------------------
 if os.environ.get("LABNEURA_COVERAGE") == "1":
     extra_compile_args += [
+        "-g",
         "-fprofile-instr-generate",
         "-fcoverage-mapping",
     ]
     extra_link_args += [
         "-fprofile-instr-generate",
         "-fcoverage-mapping",
+        "-Wl"
     ]
     print("✓ LLVM coverage ENABLED")
 else:

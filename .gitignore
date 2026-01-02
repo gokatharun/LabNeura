@@ -20,5 +20,5 @@ __pycache__
 .coverage.*
 coverage_html
 coverage_html/*
-labneura.*
 .DS_Store
+labneura*
