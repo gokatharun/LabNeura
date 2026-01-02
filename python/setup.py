@@ -4,49 +4,86 @@ import os
 
 try:
     import pybind11
-except Exception:
+except ImportError:
     print("pybind11 is required to build the extension; please install it first.")
     sys.exit(1)
 
-# Configure OpenMP with libomp from Homebrew
-include_dirs = [pybind11.get_include(), '../include']
-extra_compile_args = ['-O3', '-std=c++17','-fprofile-instr-generate', '-fcoverage-mapping']
-extra_link_args = ['-fprofile-instr-generate', '-fcoverage-mapping', '-Wl']
-library_dirs = []
+# --------------------------------------
+# Common configuration
+# --------------------------------------
+include_dirs = [
+    pybind11.get_include(),
+    os.path.abspath("../include"),
+]
 
-# Find libomp
-libomp_path = None
-if os.path.exists('/opt/homebrew/opt/libomp'):
-    libomp_path = '/opt/homebrew/opt/libomp'
-elif os.path.exists('/usr/local/opt/libomp'):
-    libomp_path = '/usr/local/opt/libomp'
+extra_compile_args = [
+    "-O3",
+    "-std=c++17",
+]
 
-if libomp_path:
-    print(f"Found libomp at: {libomp_path}")
-    include_dirs.append(os.path.join(libomp_path, 'include'))
-    library_dirs.append(os.path.join(libomp_path, 'lib'))
-    extra_compile_args.extend(['-Xclang', '-fopenmp', '-ffast-math' ])
-    extra_link_args.append('-lomp')
-    print("✓ OpenMP (libomp) support ENABLED")
+extra_link_args = []
+
+# --------------------------------------
+# Optional LLVM coverage (enabled via env)
+# --------------------------------------
+if os.environ.get("LABNEURA_COVERAGE") == "1":
+    extra_compile_args += [
+        "-fprofile-instr-generate",
+        "-fcoverage-mapping",
+    ]
+    extra_link_args += [
+        "-fprofile-instr-generate",
+        "-fcoverage-mapping",
+    ]
+    print("✓ LLVM coverage ENABLED")
 else:
-    print("⚠ libomp not found - install with: brew install libomp")
-    print("⚠ Building without OpenMP support (single-threaded)")
+    print("✓ LLVM coverage DISABLED")
 
+# --------------------------------------
+# Platform-specific flags
+# --------------------------------------
+if sys.platform == "darwin":
+    # macOS (Clang)
+    extra_compile_args += [
+        "-ffast-math",
+    ]
+elif sys.platform.startswith("linux"):
+    # Linux (Clang/GCC)
+    extra_compile_args += [
+        "-ffast-math",
+    ]
+
+# --------------------------------------
+# Extension module
+# --------------------------------------
 ext_modules = [
     Extension(
-        'labneura',
-        sources=['labneura_py.cpp', '../src/labneura/tensor.cpp', '../src/labneura/backends/generic.cpp', '../src/labneura/backends/neon.cpp'],
+        name="labneura",
+        sources=[
+            "labneura_py.cpp",
+            "../src/labneura/tensor.cpp",
+            "../src/labneura/backends/base.cpp",
+            "../src/labneura/backends/generic.cpp",
+            "../src/labneura/backends/neon.cpp",
+            "../src/labneura/backends/avx2.cpp",
+            "../src/labneura/backends/sse41.cpp",
+            "../src/labneura/backends/cpu_features.cpp",
+            "../src/labneura/backends/backend_factory.cpp",
+        ],
         include_dirs=include_dirs,
-        library_dirs=library_dirs if library_dirs else None,
-        language='c++',
+        language="c++",
         extra_compile_args=extra_compile_args,
         extra_link_args=extra_link_args,
     )
 ]
 
+# --------------------------------------
+# Setup
+# --------------------------------------
 setup(
-    name='labneura',
-    version='0.1',
-    description='LabNeura Python bindings with Tensor support',
+    name="labneura",
+    version="0.1",
+    description="LabNeura Python bindings with SIMD-accelerated Tensor backend",
     ext_modules=ext_modules,
+    zip_safe=False,
 )

@@ -12,10 +12,6 @@ namespace labneura {
             int8_t* data_int8() override;
             const int8_t* data_int8() const override;
             std::unique_ptr<TensorBackend> clone() const override;
-            void add_inplace(const TensorBackend& other) override;
-            void sub_inplace(const TensorBackend& other) override;
-            void mul_inplace(const TensorBackend& other) override;
-            void operation(const TensorBackend& other, OperationType op_type) override;
             void operation_fp32(const TensorBackend& other, OperationType op_type) override;
             void operation_int8(const TensorBackend& other, OperationType op_type) override;
         private:

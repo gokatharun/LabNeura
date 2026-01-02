@@ -276,26 +276,6 @@ void NEONBackend::operation_int8(const TensorBackend& other, OperationType op_ty
     }
 }
 
-void NEONBackend::add_inplace(const TensorBackend& other) {
-    operation(other, OperationType::ADD);
-}
-
-void NEONBackend::mul_inplace(const TensorBackend& other) {
-    operation(other, OperationType::MUL);
-}
-
-void NEONBackend::sub_inplace(const TensorBackend& other) {
-    operation(other, OperationType::SUB);
-}
-
-void NEONBackend::operation(const TensorBackend& other, OperationType op_type) {
-    if (quantization_mode_ == QuantizationMode::FP32) {
-        operation_fp32(other, op_type);
-    } else {
-        operation_int8(other, op_type);
-    }
-}
-
 } // namespace labneura
 
 #endif // LABNEURA_HAVE_M1

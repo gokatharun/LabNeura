@@ -7,6 +7,30 @@
 #include <variant>
 #include <stdexcept>
 
+#pragma once
+
+#if defined(__x86_64__) || defined(_M_X64)
+    #define LABNEURA_X86 1
+#else
+    #define LABNEURA_X86 0
+#endif
+
+#if LABNEURA_X86 && defined(__AVX2__)
+    #define LABNEURA_HAVE_AVX2 1
+#else
+    #define LABNEURA_HAVE_AVX2 0
+#endif
+#if LABNEURA_X86 && defined(__AVX512F__)
+    #define LABNEURA_HAVE_AVX512 1
+#else
+    #define LABNEURA_HAVE_AVX512 0
+#endif
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
+    #define LABNEURA_HAVE_NEON 1
+#else
+    #define LABNEURA_HAVE_NEON 0
+#endif
+
 namespace labneura {
 
 // Quantization modes

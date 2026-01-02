@@ -63,7 +63,6 @@ void GenericBackend::operation_fp32(const TensorBackend& other, OperationType op
     const float* other_data = other.data_fp32();
     float* this_data = data_fp32();
 
-    #pragma omp parallel for
     for (std::size_t i = 0; i < size_; ++i) {
         switch (op_type) {
             case OperationType::ADD:
@@ -81,8 +80,7 @@ void GenericBackend::operation_fp32(const TensorBackend& other, OperationType op
 void GenericBackend::operation_int8(const TensorBackend& other, OperationType op_type) {
     const int8_t* other_data = other.data_int8();
     int8_t* this_data = data_int8();
-
-    #pragma omp parallel for
+    
     for (std::size_t i = 0; i < size_; ++i) {
         switch (op_type) {
             case OperationType::ADD: {
@@ -111,29 +109,6 @@ void GenericBackend::operation_int8(const TensorBackend& other, OperationType op
                 break;
             }
         }
-    }
-}
-
-void GenericBackend::add_inplace(const TensorBackend& other) {
-    operation(other, OperationType::ADD);
-}
-
-void GenericBackend::sub_inplace(const TensorBackend& other) {
-    operation(other, OperationType::SUB);
-}   
-
-void GenericBackend::mul_inplace(const TensorBackend& other) {
-    operation(other, OperationType::MUL);
-}
-
-void GenericBackend::operation(const TensorBackend& other, OperationType op_type) {
-    if (size_ != other.size()) {
-        throw std::runtime_error("Tensor size mismatch in operation");
-    }
-    if (quantization_mode_ == QuantizationMode::FP32) {
-        operation_fp32(other, op_type);
-    } else if (quantization_mode_ == QuantizationMode::INT8) {
-        operation_int8(other, op_type);
     }
 }
 
