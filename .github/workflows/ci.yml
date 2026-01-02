@@ -62,17 +62,18 @@ jobs:
       # ----------------------------------
       # Run CI via Makefile
       # ----------------------------------
-      - name: Run LabNeura CI
+      - name: Run LabNeura CI (Linux)
         if: runner.os == 'Linux'
         run: |
           export CC=clang
           export CXX=clang++
           export LABNEURA_COVERAGE=1
           make ci
-        else:
-          run: |
-            export LABNEURA_COVERAGE=1
-            make ci
+
+      - name: Run LabNeura CI (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          make ci
 
       # ----------------------------------
       # Upload Python coverage (optional)
