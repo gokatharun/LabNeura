@@ -50,9 +50,6 @@ if sys.platform == "darwin":
     # macOS (Clang)
     extra_compile_args += [
         "-ffast-math",
-        os.popen(
-                "ls $(xcrun --show-sdk-path)/usr/lib/clang/*/lib/darwin/libclang_rt.profile_osx.a"
-            ).read().strip()
     ]
 elif sys.platform.startswith("linux"):
     # Linux (Clang/GCC)
