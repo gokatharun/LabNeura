@@ -105,5 +105,44 @@ jobs:
       - name: Upload LLVM C++ coverage (HTML)
         uses: actions/upload-artifact@v4
         with:
-          name: llvm-cpp-coverage
+          name: llvm-cpp-coverage-${{ runner.os }}-py${{ matrix.python-version }}
           path: coverage_html
+
+      - name: Post LLVM C++ coverage report to PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+
+            if (!fs.existsSync('coverage.txt')) {
+              console.log('coverage.txt not found, skipping PR comment');
+              return;
+            }
+
+            const coverage = fs.readFileSync('coverage.txt', 'utf8');
+
+            const body = `
+      ### 🔍 LabNeura – C++ LLVM Coverage Report
+
+      \`\`\`
+      ${coverage}
+      \`\`\`
+
+      📦 **Detailed HTML Coverage**
+      Download the artifact for this job and open:
+
+      \`coverage_html/index.html\`
+
+      > This report reflects **actual C++ execution paths**  
+      > (SIMD backends, tensor ops, runtime dispatch)
+      `;
+
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: body
+            });
+
+              

@@ -120,7 +120,12 @@ else
 	-format=html \
 	-output-dir=coverage_html \
 	-ignore-filename-regex='site-packages|python|omp|libc\+\+'; \
-	echo "✅ HTML coverage generated at coverage_html/index.html"; 
+	echo "✅ HTML coverage generated at coverage_html/index.html"; \
+	$(LLVM_COV) report $$SO_PATH \
+    -instr-profile=labneura.profdata \
+	$(COV_ARCH) \
+	-ignore-filename-regex='site-packages|python3.9|omp|include' > coverage.txt; \
+	echo "✅ Coverage report generated at coverage.txt";
 
 endif
 
