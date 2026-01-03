@@ -22,4 +22,3 @@ coverage_html
 coverage_html/*
 .DS_Store
 labneura*
-coverage.txt
