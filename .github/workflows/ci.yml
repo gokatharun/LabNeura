@@ -108,15 +108,15 @@ jobs:
           name: llvm-cpp-coverage-${{ runner.os }}-py${{ matrix.python-version }}
           path: coverage_html
 
-      - name: Post LLVM C++ coverage report to PR
-        if: github.event_name == 'pull_request'
+      - name: Post LLVM C++ coverage comment
+        if: github.event_name == 'pull_request' || github.event_name == 'push'
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
 
             if (!fs.existsSync('coverage.txt')) {
-              console.log('coverage.txt not found, skipping PR comment');
+              console.log('coverage.txt not found, skipping comment');
               return;
             }
 
@@ -128,14 +128,28 @@ jobs:
               coverage +
               "\n```\n\n" +
               "📦 **Detailed HTML Coverage**\n" +
-              "Download the artifact for this job and open:\n\n" +
+              "Download the CI artifact and open:\n\n" +
               "`coverage_html/index.html`\n\n" +
               "> This report reflects **actual C++ execution paths**\n" +
               "> (SIMD backends, tensor ops, runtime dispatch)\n";
 
-            github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-              body: body
-            });
+            if (context.eventName === 'pull_request') {
+              // PR comment
+              github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body
+              });
+              console.log('Posted PR coverage comment');
+
+            } else if (context.eventName === 'push') {
+              // Commit comment
+              github.rest.repos.createCommitComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                commit_sha: context.sha,
+                body: body
+              });
+              console.log('Posted commit coverage comment');
+            }
