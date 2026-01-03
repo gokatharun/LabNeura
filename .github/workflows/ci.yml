@@ -45,12 +45,7 @@ jobs:
             clang \
             llvm \
             llvm-dev \
-            lld \ 
-
-      - name: Install system dependencies (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          brew update
+            lld 
 
       # ----------------------------------
       # Python dependencies

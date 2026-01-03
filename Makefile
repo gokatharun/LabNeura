@@ -127,4 +127,4 @@ endif
 # CI (matches GitHub Actions)
 # --------------------------------------
 .PHONY: ci
-ci: deps cpp-coverage
+ci: deps clean install smoke test cpp-coverage
