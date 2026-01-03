@@ -147,8 +147,8 @@ jobs:
         run: |
           mkdir -p coverage/html
 
-          cp coverage_artifact/coverage.txt coverage/coverage.txt
           rm -rf coverage/html/*
+          cp coverage_artifact/coverage.txt coverage/coverage.txt
           cp -r coverage_artifact/coverage_html/* coverage/html/
 
           git config user.name "github-actions[bot]"
