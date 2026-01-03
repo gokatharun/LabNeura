@@ -18,16 +18,16 @@ PKG_NAME := labneura
 # --------------------------------------
 # Compiler detection
 # --------------------------------------
-# ifeq ($(UNAME_S),Darwin)
-# 	CLANG := $(shell xcrun --find clang)
-# 	CLANGXX := $(shell xcrun --find clang++)
-# else
-# 	CLANG ?= clang
-# 	CLANGXX ?= clang++
-# endif
+ifeq ($(UNAME_S),Darwin)
+	CLANG := $(shell xcrun --find clang)
+	CLANGXX := $(shell xcrun --find clang++)
+else
+	CLANG ?= clang
+	CLANGXX ?= clang++
+endif
 
-# export CC := $(CLANG)
-# export CXX := $(CLANGXX)
+export CC := $(CLANG)
+export CXX := $(CLANGXX)
 
 # --------------------------------------
 # LLVM tools (optional)
