@@ -122,21 +122,16 @@ jobs:
 
             const coverage = fs.readFileSync('coverage.txt', 'utf8');
 
-            const body = `
-      ### 🔍 LabNeura – C++ LLVM Coverage Report
-
-      \`\`\`
-      ${coverage}
-      \`\`\`
-
-      📦 **Detailed HTML Coverage**
-      Download the artifact for this job and open:
-
-      \`coverage_html/index.html\`
-
-      > This report reflects **actual C++ execution paths**  
-      > (SIMD backends, tensor ops, runtime dispatch)
-      `;
+            const body =
+              "### 🔍 LabNeura – C++ LLVM Coverage Report\n\n" +
+              "```\n" +
+              coverage +
+              "\n```\n\n" +
+              "📦 **Detailed HTML Coverage**\n" +
+              "Download the artifact for this job and open:\n\n" +
+              "`coverage_html/index.html`\n\n" +
+              "> This report reflects **actual C++ execution paths**\n" +
+              "> (SIMD backends, tensor ops, runtime dispatch)\n";
 
             github.rest.issues.createComment({
               owner: context.repo.owner,
@@ -144,5 +139,3 @@ jobs:
               issue_number: context.issue.number,
               body: body
             });
-
-              
