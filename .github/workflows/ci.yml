@@ -110,3 +110,46 @@ jobs:
         with:
           name: llvm-cpp-coverage-${{ runner.os }}-py${{ matrix.python-version }}
           path: coverage_html
+
+
+# ============================================================
+# Job 2: Publish Coverage (Single job)
+# ============================================================
+  publish-coverage:
+    name: Publish LLVM Coverage
+    runs-on: ubuntu-latest
+    needs: build-test
+
+    if: |
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download coverage artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: labneura-coverage
+          path: coverage_artifact
+
+      - name: Publish coverage to repository
+        run: |
+          mkdir -p coverage/html
+
+          cp coverage_artifact/coverage.txt coverage/coverage.txt
+          rm -rf coverage/html/*
+          cp -r coverage_artifact/coverage_html/* coverage/html/
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add coverage
+
+          if git diff --cached --quiet; then
+            echo "No coverage changes"
+            exit 0
+          fi
+
+          git commit -m "ci: publish LLVM C++ coverage"
+          git push origin main
