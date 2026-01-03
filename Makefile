@@ -32,8 +32,8 @@ PKG_NAME := labneura
 # --------------------------------------
 # LLVM tools (optional)
 # --------------------------------------
-LLVM_PROFDATA := $(shell command -v llvm-profdata 2>/dev/null)
-LLVM_COV := $(shell command -v llvm-cov 2>/dev/null)
+# LLVM_PROFDATA := $(shell command -v llvm-profdata 2>/dev/null)
+# LLVM_COV := $(shell command -v llvm-cov 2>/dev/null)
 
 # --------------------------------------
 # Architecture (macOS only)
@@ -120,8 +120,19 @@ else
 	-format=html \
 	-output-dir=coverage_html \
 	-ignore-filename-regex='site-packages|python|omp|libc\+\+'; \
-	echo "✅ HTML coverage generated at coverage_html/index.html"
+	echo "✅ HTML coverage generated at coverage_html/index.html"; \
+	$(LLVM_COV) show $$SO_PATH \
+	$(COV_ARCH) \
+	-instr-profile=labneura.profdata \
+	src/labneura > coverage.txt; \
+	echo "✅ C++ Coverage Report:"; \
+	cat coverage.txt; 
+
 endif
+
+.PHONY: coverage
+coverage:
+	pytest --cov=$(PKG_NAME) --cov-report=term-missing || true
 
 # --------------------------------------
 # CI (matches GitHub Actions)
