@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [ main, develop ]
 
+permissions:
+  contents: write
+
 jobs:
   build-test:
     name: Build & Test (${{ matrix.os }})
@@ -131,6 +134,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
 
       - name: Download coverage artifact
         uses: actions/download-artifact@v4
@@ -157,4 +162,4 @@ jobs:
           fi
 
           git commit -m "ci: publish LLVM C++ coverage"
-          git push origin main
+          git push
