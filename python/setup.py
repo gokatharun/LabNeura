@@ -2,6 +2,7 @@ from setuptools import setup, Extension
 import sys
 import os
 import platform
+from pathlib import Path
 
 try:
     import pybind11
@@ -98,10 +99,28 @@ ext_modules = [
 # --------------------------------------
 # Setup
 # --------------------------------------
+# Read long description from top-level README.md
+readme_path = Path(__file__).resolve().parent.parent / "README.md"
+long_desc = readme_path.read_text(encoding="utf-8") if readme_path.exists() else "LabNeura: Python bindings for a SIMD-accelerated tensor backend."
+
 setup(
-    name="labneura",
-    version="0.1",
-    description="LabNeura Python bindings with SIMD-accelerated Tensor backend",
+    name="labneura2",
+    version="0.1.2",
+    description="SIMD-accelerated tensor operations for neural networks",
+    long_description=long_desc,
+    long_description_content_type="text/markdown",
+    author="LabNeura Authors",
+    author_email="",
+    url="https://github.com/gokatharun/LabNeura",
+    license="MIT",
+    classifiers=[
+        "Programming Language :: Python :: 3",
+        "Programming Language :: C++",
+        "License :: OSI Approved :: MIT License",
+        "Operating System :: MacOS",
+        "Operating System :: POSIX :: Linux",
+        "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    ],
     ext_modules=ext_modules,
     zip_safe=False,
 )

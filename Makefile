@@ -13,7 +13,17 @@ UNAME_M := $(shell uname -m)
 # --------------------------------------
 PYTHON ?= python3
 PIP ?= pip3
-PKG_NAME := labneura
+PKG_NAME := labneura2
+MODULE_NAME := labneura
+
+# Prefer project virtualenv for publish steps
+# Get absolute path to workspace root
+WORKSPACE_ROOT := $(shell pwd)
+VENV_PYTHON := $(WORKSPACE_ROOT)/env/bin/python
+VENV_PIP := $(WORKSPACE_ROOT)/env/bin/pip
+TWINE := $(VENV_PYTHON) -m twine
+PYPI_TOKEN ?=
+TEST_PYPI_TOKEN ?=
 
 # --------------------------------------
 # Compiler detection
@@ -64,6 +74,7 @@ deps:
 .PHONY: clean
 clean:
 	rm -rf build dist *.egg-info coverage_html
+	rm -rf python/build python/dist python/*.egg-info
 	find . -name "*.profraw" -delete || true
 	find . -name "*.profdata" -delete || true
 	find . -name "__pycache__" -delete || true
@@ -81,7 +92,7 @@ install:
 # --------------------------------------
 .PHONY: smoke
 smoke:
-	$(PYTHON) -c "import $(PKG_NAME)" || (echo "❌ Import failed" && exit 1)
+	$(PYTHON) -c "import $(MODULE_NAME)" || (echo "❌ Import failed" && exit 1)
 	@echo "✅ Import test passed"
 
 # --------------------------------------
@@ -113,7 +124,7 @@ else
 	export LLVM_PROFILE_FILE=labneura.profraw; \
 	$(MAKE) clean install test; \
 	$(LLVM_PROFDATA) merge -sparse labneura.profraw -o labneura.profdata; \
-	SO_PATH=`$(PYTHON) -c "import labneura; import os; print(os.path.abspath(labneura.__file__))"`; \
+	SO_PATH=`$(PYTHON) -c "import $(MODULE_NAME); import os; print(os.path.abspath($(MODULE_NAME).__file__))"`; \
 	$(LLVM_COV) show $$SO_PATH \
 	$(COV_ARCH) \
 	-instr-profile=labneura.profdata \
@@ -138,3 +149,47 @@ coverage:
 # --------------------------------------
 .PHONY: ci
 ci: deps clean install smoke test cpp-coverage
+
+# --------------------------------------
+# Build distribution (sdist + wheel)
+# --------------------------------------
+.PHONY: build-dist
+build-dist:
+	# Ensure build tools are available in venv
+	$(VENV_PIP) install --upgrade build twine pybind11 || true
+	# Build inside python package directory (disable coverage for packaging)
+	# Build wheel directly (not from sdist) to avoid path issues
+	cd python && LABNEURA_COVERAGE= $(VENV_PYTHON) -m build --no-isolation --wheel
+	# Build sdist separately
+	cd python && LABNEURA_COVERAGE= $(VENV_PYTHON) -m build --no-isolation --sdist
+	cd python && $(TWINE) check dist/*
+
+# --------------------------------------
+# Publish to PyPI (requires PYPI_TOKEN env variable)
+# --------------------------------------
+.PHONY: publish
+publish:
+	@if [ -z "$(PYPI_TOKEN)" ]; then \
+		echo "PYPI_TOKEN not set. Export PYPI_TOKEN before running 'make publish'."; \
+		exit 1; \
+	fi
+	# Full local validation using venv
+	$(MAKE) clean install smoke test PIP=$(VENV_PIP) PYTHON=$(VENV_PYTHON)
+	$(MAKE) build-dist
+	# Upload artifacts to PyPI
+	cd python && $(TWINE) upload --non-interactive dist/* --username __token__ --password $(PYPI_TOKEN)
+	@echo "✅ Published to PyPI"
+
+# --------------------------------------
+# Publish to TestPyPI (requires TEST_PYPI_TOKEN env variable)
+# --------------------------------------
+.PHONY: publish-testpypi
+publish-testpypi:
+	@if [ -z "$(TEST_PYPI_TOKEN)" ]; then \
+		echo "TEST_PYPI_TOKEN not set. Export TEST_PYPI_TOKEN before running 'make publish-testpypi'."; \
+		exit 1; \
+	fi
+	$(MAKE) clean install smoke test PIP=$(VENV_PIP) PYTHON=$(VENV_PYTHON)
+	$(MAKE) build-dist
+	cd python && $(TWINE) upload --repository testpypi --non-interactive dist/* --username __token__ --password $(TEST_PYPI_TOKEN)
+	@echo "✅ Published to TestPyPI"
