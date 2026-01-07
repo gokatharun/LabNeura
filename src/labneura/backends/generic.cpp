@@ -63,52 +63,37 @@ void GenericBackend::operation_fp32(const TensorBackend& other, OperationType op
     const float* other_data = other.data_fp32();
     float* this_data = data_fp32();
 
-    for (std::size_t i = 0; i < size_; ++i) {
-        switch (op_type) {
-            case OperationType::ADD:
-                this_data[i] += other_data[i];
-                break;
-            case OperationType::MUL:
-                this_data[i] *= other_data[i];
-                break;
-            case OperationType::SUB:
-                this_data[i] -= other_data[i];
-                break;
-        }
+    if (op_type == OperationType::ADD) {
+        for (std::size_t i = 0; i < size_; ++i) this_data[i] += other_data[i];
+        return;
     }
+    if (op_type == OperationType::MUL) {
+        for (std::size_t i = 0; i < size_; ++i) this_data[i] *= other_data[i];
+        return;
+    }
+    for (std::size_t i = 0; i < size_; ++i) this_data[i] -= other_data[i];
 }
 void GenericBackend::operation_int8(const TensorBackend& other, OperationType op_type) {
     const int8_t* other_data = other.data_int8();
     int8_t* this_data = data_int8();
-    
-    for (std::size_t i = 0; i < size_; ++i) {
-        switch (op_type) {
-            case OperationType::ADD: {
-                int16_t sum = static_cast<int16_t>(this_data[i]) + 
-                              static_cast<int16_t>(other_data[i]);
-                this_data[i] = static_cast<int8_t>(
-                    std::max(-128, std::min(127, static_cast<int>(sum)))
-                );
-                break;
-            }
-            case OperationType::MUL: {
-                int16_t prod = static_cast<int16_t>(this_data[i]) * 
-                               static_cast<int16_t>(other_data[i]);
-                // Simple saturation to int8 range
-                this_data[i] = static_cast<int8_t>(
-                    std::max(-128, std::min(127, static_cast<int>(prod)))
-                );
-                break;
-            }
-            case OperationType::SUB: {
-                int16_t diff = static_cast<int16_t>(this_data[i]) - 
-                               static_cast<int16_t>(other_data[i]);
-                this_data[i] = static_cast<int8_t>(
-                    std::max(-128, std::min(127, static_cast<int>(diff)))
-                );
-                break;
-            }
+
+    if (op_type == OperationType::ADD) {
+        for (std::size_t i = 0; i < size_; ++i) {
+            int16_t sum = static_cast<int16_t>(this_data[i]) + static_cast<int16_t>(other_data[i]);
+            this_data[i] = static_cast<int8_t>(std::max(-128, std::min(127, static_cast<int>(sum))));
         }
+        return;
+    }
+    if (op_type == OperationType::MUL) {
+        for (std::size_t i = 0; i < size_; ++i) {
+            int16_t prod = static_cast<int16_t>(this_data[i]) * static_cast<int16_t>(other_data[i]);
+            this_data[i] = static_cast<int8_t>(std::max(-128, std::min(127, static_cast<int>(prod))));
+        }
+        return;
+    }
+    for (std::size_t i = 0; i < size_; ++i) {
+        int16_t diff = static_cast<int16_t>(this_data[i]) - static_cast<int16_t>(other_data[i]);
+        this_data[i] = static_cast<int8_t>(std::max(-128, std::min(127, static_cast<int>(diff))));
     }
 }
 
