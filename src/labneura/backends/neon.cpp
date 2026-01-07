@@ -2,8 +2,14 @@
 
 #include "labneura/backends/neon.h"
 #include <arm_neon.h>
+#include <cstdlib>
+#include "labneura/utils/alignment.hpp"
 
 namespace labneura {
+
+// =======================
+// Aligned allocation helpers (use central utility)
+// =======================
 
 // =======================
 // Constructor
@@ -15,10 +21,12 @@ NEONBackend::NEONBackend(std::size_t size, QuantizationMode mode)
     aligned_size_ = ((size + 3) / 4) * 4;
 
     if (mode == QuantizationMode::FP32) {
-        data_fp32_ = std::make_unique<float[]>(aligned_size_);
+        float* p = labneura::util::allocate_aligned<float>(aligned_size_, labneura::util::NEON_ALIGN);
+        data_fp32_ = std::unique_ptr<float, void(*)(float*)>(p, labneura::util::free_aligned_float);
         std::fill(data_fp32_.get() + size_, data_fp32_.get() + aligned_size_, 0.0f);
     } else {
-        data_int8_ = std::make_unique<int8_t[]>(aligned_size_);
+        int8_t* p = labneura::util::allocate_aligned<int8_t>(aligned_size_, labneura::util::NEON_ALIGN);
+        data_int8_ = std::unique_ptr<int8_t, void(*)(int8_t*)>(p, labneura::util::free_aligned_int8);
         std::fill(data_int8_.get() + size_, data_int8_.get() + aligned_size_, 0);
     }
 }

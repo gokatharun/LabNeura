@@ -27,7 +27,8 @@ def detect_simd_flags():
 # --------------------------------------
 include_dirs = [
     pybind11.get_include(),
-    os.path.abspath("../include"),
+    os.path.abspath("src"),
+    os.path.abspath("include"),
 ]
 
 extra_compile_args = [
@@ -80,14 +81,14 @@ ext_modules = [
         name="labneura",
         sources=[
             "labneura_py.cpp",
-            "../src/labneura/tensor.cpp",
-            "../src/labneura/backends/base.cpp",
-            "../src/labneura/backends/generic.cpp",
-            "../src/labneura/backends/neon.cpp",
-            "../src/labneura/backends/avx2.cpp",
-            "../src/labneura/backends/sse41.cpp",
-            "../src/labneura/backends/cpu_features.cpp",
-            "../src/labneura/backends/backend_factory.cpp",
+            "src/labneura/tensor.cpp",
+            "src/labneura/backends/base.cpp",
+            "src/labneura/backends/generic.cpp",
+            "src/labneura/backends/neon.cpp",
+            "src/labneura/backends/avx2.cpp",
+            "src/labneura/backends/sse41.cpp",
+            "src/labneura/backends/cpu_features.cpp",
+            "src/labneura/backends/backend_factory.cpp",
         ],
         include_dirs=include_dirs,
         language="c++",
@@ -105,7 +106,7 @@ long_desc = readme_path.read_text(encoding="utf-8") if readme_path.exists() else
 
 setup(
     name="labneura2",
-    version="0.1.2",
+    version="0.1.6",
     description="SIMD-accelerated tensor operations for neural networks",
     long_description=long_desc,
     long_description_content_type="text/markdown",
@@ -122,5 +123,6 @@ setup(
         "Topic :: Scientific/Engineering :: Artificial Intelligence",
     ],
     ext_modules=ext_modules,
+    include_package_data=True,
     zip_safe=False,
 )

@@ -3,6 +3,8 @@
 #include "labneura/backends/avx2.h"
 #include <immintrin.h>
 #include <algorithm>
+#include <cstdlib>
+#include "labneura/utils/alignment.hpp"
 
 #if defined(__GNUC__) || defined(__clang__)
 #include <cpuid.h>
@@ -61,6 +63,8 @@ static inline std::size_t get_avx2_fp32_chunk() {
     return get_avx2_unroll_factor() * 8;
 }
 
+// Use alignment utility from labneura::util
+
 // =======================
 // Constructor
 // =======================
@@ -72,10 +76,12 @@ AVX2Backend::AVX2Backend(std::size_t size, QuantizationMode mode)
     aligned_size_ = ((size + 7) / 8) * 8;
 
     if (mode == QuantizationMode::FP32) {
-        data_fp32_ = std::make_unique<float[]>(aligned_size_);
+        float* p = labneura::util::allocate_aligned<float>(aligned_size_, labneura::util::AVX2_ALIGN);
+        data_fp32_ = std::unique_ptr<float, void(*)(float*)>(p, labneura::util::free_aligned_float);
         std::fill(data_fp32_.get() + size_, data_fp32_.get() + aligned_size_, 0.0f);
     } else {
-        data_int8_ = std::make_unique<int8_t[]>(aligned_size_);
+        int8_t* p = labneura::util::allocate_aligned<int8_t>(aligned_size_, labneura::util::AVX2_ALIGN);
+        data_int8_ = std::unique_ptr<int8_t, void(*)(int8_t*)>(p, labneura::util::free_aligned_int8);
         std::fill(data_int8_.get() + size_, data_int8_.get() + aligned_size_, 0);
     }
 }
@@ -147,85 +153,343 @@ void AVX2Backend::operation_fp32(const TensorBackend& other, OperationType op_ty
     float* this_data = data_fp32();
     std::size_t i = 0;
     const std::size_t size = size_;
+    const bool aligned32 = labneura::util::is_aligned(this_data, labneura::util::AVX2_ALIGN) &&
+                           labneura::util::is_aligned(other_data, labneura::util::AVX2_ALIGN);
 
     if (op_type == OperationType::ADD) {
-        // Main loop: 64 floats/iteration (8 registers per operand, 4 ops per register)
-        while (i + 64 <= size) {
-            const __m256 va0 = _mm256_loadu_ps(this_data + i + 0);
-            const __m256 vb0 = _mm256_loadu_ps(other_data + i + 0);
-            const __m256 va1 = _mm256_loadu_ps(this_data + i + 8);
-            const __m256 vb1 = _mm256_loadu_ps(other_data + i + 8);
-            const __m256 va2 = _mm256_loadu_ps(this_data + i + 16);
-            const __m256 vb2 = _mm256_loadu_ps(other_data + i + 16);
-            const __m256 va3 = _mm256_loadu_ps(this_data + i + 24);
-            const __m256 vb3 = _mm256_loadu_ps(other_data + i + 24);
-            const __m256 va4 = _mm256_loadu_ps(this_data + i + 32);
-            const __m256 vb4 = _mm256_loadu_ps(other_data + i + 32);
-            const __m256 va5 = _mm256_loadu_ps(this_data + i + 40);
-            const __m256 vb5 = _mm256_loadu_ps(other_data + i + 40);
-            const __m256 va6 = _mm256_loadu_ps(this_data + i + 48);
-            const __m256 vb6 = _mm256_loadu_ps(other_data + i + 48);
-            const __m256 va7 = _mm256_loadu_ps(this_data + i + 56);
-            const __m256 vb7 = _mm256_loadu_ps(other_data + i + 56);
-            _mm256_storeu_ps(this_data + i + 0, _mm256_add_ps(va0, vb0));
-            _mm256_storeu_ps(this_data + i + 8, _mm256_add_ps(va1, vb1));
-            _mm256_storeu_ps(this_data + i + 16, _mm256_add_ps(va2, vb2));
-            _mm256_storeu_ps(this_data + i + 24, _mm256_add_ps(va3, vb3));
-            _mm256_storeu_ps(this_data + i + 32, _mm256_add_ps(va4, vb4));
-            _mm256_storeu_ps(this_data + i + 40, _mm256_add_ps(va5, vb5));
-            _mm256_storeu_ps(this_data + i + 48, _mm256_add_ps(va6, vb6));
-            _mm256_storeu_ps(this_data + i + 56, _mm256_add_ps(va7, vb7));
-            i += 64;
+        if (aligned32) {
+            // Aligned main loop: 64 floats/iteration
+            while (i + 64 <= size) {
+                const __m256 va0 = _mm256_load_ps(this_data + i + 0);
+                const __m256 vb0 = _mm256_load_ps(other_data + i + 0);
+                const __m256 va1 = _mm256_load_ps(this_data + i + 8);
+                const __m256 vb1 = _mm256_load_ps(other_data + i + 8);
+                const __m256 va2 = _mm256_load_ps(this_data + i + 16);
+                const __m256 vb2 = _mm256_load_ps(other_data + i + 16);
+                const __m256 va3 = _mm256_load_ps(this_data + i + 24);
+                const __m256 vb3 = _mm256_load_ps(other_data + i + 24);
+                const __m256 va4 = _mm256_load_ps(this_data + i + 32);
+                const __m256 vb4 = _mm256_load_ps(other_data + i + 32);
+                const __m256 va5 = _mm256_load_ps(this_data + i + 40);
+                const __m256 vb5 = _mm256_load_ps(other_data + i + 40);
+                const __m256 va6 = _mm256_load_ps(this_data + i + 48);
+                const __m256 vb6 = _mm256_load_ps(other_data + i + 48);
+                const __m256 va7 = _mm256_load_ps(this_data + i + 56);
+                const __m256 vb7 = _mm256_load_ps(other_data + i + 56);
+                _mm256_store_ps(this_data + i + 0,  _mm256_add_ps(va0, vb0));
+                _mm256_store_ps(this_data + i + 8,  _mm256_add_ps(va1, vb1));
+                _mm256_store_ps(this_data + i + 16, _mm256_add_ps(va2, vb2));
+                _mm256_store_ps(this_data + i + 24, _mm256_add_ps(va3, vb3));
+                _mm256_store_ps(this_data + i + 32, _mm256_add_ps(va4, vb4));
+                _mm256_store_ps(this_data + i + 40, _mm256_add_ps(va5, vb5));
+                _mm256_store_ps(this_data + i + 48, _mm256_add_ps(va6, vb6));
+                _mm256_store_ps(this_data + i + 56, _mm256_add_ps(va7, vb7));
+                i += 64;
+            }
+            if (i + 32 <= size) {
+                const __m256 va0 = _mm256_load_ps(this_data + i);
+                const __m256 vb0 = _mm256_load_ps(other_data + i);
+                const __m256 va1 = _mm256_load_ps(this_data + i + 8);
+                const __m256 vb1 = _mm256_load_ps(other_data + i + 8);
+                const __m256 va2 = _mm256_load_ps(this_data + i + 16);
+                const __m256 vb2 = _mm256_load_ps(other_data + i + 16);
+                const __m256 va3 = _mm256_load_ps(this_data + i + 24);
+                const __m256 vb3 = _mm256_load_ps(other_data + i + 24);
+                _mm256_store_ps(this_data + i, _mm256_add_ps(va0, vb0));
+                _mm256_store_ps(this_data + i + 8, _mm256_add_ps(va1, vb1));
+                _mm256_store_ps(this_data + i + 16, _mm256_add_ps(va2, vb2));
+                _mm256_store_ps(this_data + i + 24, _mm256_add_ps(va3, vb3));
+                i += 32;
+            }
+            if (i + 16 <= size) {
+                const __m256 va0 = _mm256_load_ps(this_data + i);
+                const __m256 vb0 = _mm256_load_ps(other_data + i);
+                const __m256 va1 = _mm256_load_ps(this_data + i + 8);
+                const __m256 vb1 = _mm256_load_ps(other_data + i + 8);
+                _mm256_store_ps(this_data + i, _mm256_add_ps(va0, vb0));
+                _mm256_store_ps(this_data + i + 8, _mm256_add_ps(va1, vb1));
+                i += 16;
+            }
+            if (i + 8 <= size) {
+                const __m256 va = _mm256_load_ps(this_data + i);
+                const __m256 vb = _mm256_load_ps(other_data + i);
+                _mm256_store_ps(this_data + i, _mm256_add_ps(va, vb));
+                i += 8;
+            }
+            if (i + 4 <= size) {
+                const __m128 va = _mm_load_ps(this_data + i);
+                const __m128 vb = _mm_load_ps(other_data + i);
+                _mm_store_ps(this_data + i, _mm_add_ps(va, vb));
+                i += 4;
+            }
+        } else {
+            // Unaligned path
+            while (i + 64 <= size) {
+                const __m256 va0 = _mm256_loadu_ps(this_data + i + 0);
+                const __m256 vb0 = _mm256_loadu_ps(other_data + i + 0);
+                const __m256 va1 = _mm256_loadu_ps(this_data + i + 8);
+                const __m256 vb1 = _mm256_loadu_ps(other_data + i + 8);
+                const __m256 va2 = _mm256_loadu_ps(this_data + i + 16);
+                const __m256 vb2 = _mm256_loadu_ps(other_data + i + 16);
+                const __m256 va3 = _mm256_loadu_ps(this_data + i + 24);
+                const __m256 vb3 = _mm256_loadu_ps(other_data + i + 24);
+                const __m256 va4 = _mm256_loadu_ps(this_data + i + 32);
+                const __m256 vb4 = _mm256_loadu_ps(other_data + i + 32);
+                const __m256 va5 = _mm256_loadu_ps(this_data + i + 40);
+                const __m256 vb5 = _mm256_loadu_ps(other_data + i + 40);
+                const __m256 va6 = _mm256_loadu_ps(this_data + i + 48);
+                const __m256 vb6 = _mm256_loadu_ps(other_data + i + 48);
+                const __m256 va7 = _mm256_loadu_ps(this_data + i + 56);
+                const __m256 vb7 = _mm256_loadu_ps(other_data + i + 56);
+                _mm256_storeu_ps(this_data + i + 0, _mm256_add_ps(va0, vb0));
+                _mm256_storeu_ps(this_data + i + 8, _mm256_add_ps(va1, vb1));
+                _mm256_storeu_ps(this_data + i + 16, _mm256_add_ps(va2, vb2));
+                _mm256_storeu_ps(this_data + i + 24, _mm256_add_ps(va3, vb3));
+                _mm256_storeu_ps(this_data + i + 32, _mm256_add_ps(va4, vb4));
+                _mm256_storeu_ps(this_data + i + 40, _mm256_add_ps(va5, vb5));
+                _mm256_storeu_ps(this_data + i + 48, _mm256_add_ps(va6, vb6));
+                _mm256_storeu_ps(this_data + i + 56, _mm256_add_ps(va7, vb7));
+                i += 64;
+            }
+            if (i + 32 <= size) {
+                const __m256 va0 = _mm256_loadu_ps(this_data + i);
+                const __m256 vb0 = _mm256_loadu_ps(other_data + i);
+                const __m256 va1 = _mm256_loadu_ps(this_data + i + 8);
+                const __m256 vb1 = _mm256_loadu_ps(other_data + i + 8);
+                const __m256 va2 = _mm256_loadu_ps(this_data + i + 16);
+                const __m256 vb2 = _mm256_loadu_ps(other_data + i + 16);
+                const __m256 va3 = _mm256_loadu_ps(this_data + i + 24);
+                const __m256 vb3 = _mm256_loadu_ps(other_data + i + 24);
+                _mm256_storeu_ps(this_data + i, _mm256_add_ps(va0, vb0));
+                _mm256_storeu_ps(this_data + i + 8, _mm256_add_ps(va1, vb1));
+                _mm256_storeu_ps(this_data + i + 16, _mm256_add_ps(va2, vb2));
+                _mm256_storeu_ps(this_data + i + 24, _mm256_add_ps(va3, vb3));
+                i += 32;
+            }
+            if (i + 16 <= size) {
+                const __m256 va0 = _mm256_loadu_ps(this_data + i);
+                const __m256 vb0 = _mm256_loadu_ps(other_data + i);
+                const __m256 va1 = _mm256_loadu_ps(this_data + i + 8);
+                const __m256 vb1 = _mm256_loadu_ps(other_data + i + 8);
+                _mm256_storeu_ps(this_data + i, _mm256_add_ps(va0, vb0));
+                _mm256_storeu_ps(this_data + i + 8, _mm256_add_ps(va1, vb1));
+                i += 16;
+            }
+            if (i + 8 <= size) {
+                const __m256 va = _mm256_loadu_ps(this_data + i);
+                const __m256 vb = _mm256_loadu_ps(other_data + i);
+                _mm256_storeu_ps(this_data + i, _mm256_add_ps(va, vb));
+                i += 8;
+            }
+            if (i + 4 <= size) {
+                const __m128 va = _mm_loadu_ps(this_data + i);
+                const __m128 vb = _mm_loadu_ps(other_data + i);
+                _mm_storeu_ps(this_data + i, _mm_add_ps(va, vb));
+                i += 4;
+            }
         }
-        // Tail 32 floats
-        if (i + 32 <= size) {
-            const __m256 va0 = _mm256_loadu_ps(this_data + i);
-            const __m256 vb0 = _mm256_loadu_ps(other_data + i);
-            const __m256 va1 = _mm256_loadu_ps(this_data + i + 8);
-            const __m256 vb1 = _mm256_loadu_ps(other_data + i + 8);
-            const __m256 va2 = _mm256_loadu_ps(this_data + i + 16);
-            const __m256 vb2 = _mm256_loadu_ps(other_data + i + 16);
-            const __m256 va3 = _mm256_loadu_ps(this_data + i + 24);
-            const __m256 vb3 = _mm256_loadu_ps(other_data + i + 24);
-            _mm256_storeu_ps(this_data + i, _mm256_add_ps(va0, vb0));
-            _mm256_storeu_ps(this_data + i + 8, _mm256_add_ps(va1, vb1));
-            _mm256_storeu_ps(this_data + i + 16, _mm256_add_ps(va2, vb2));
-            _mm256_storeu_ps(this_data + i + 24, _mm256_add_ps(va3, vb3));
-            i += 32;
-        }
-        // Tail 16 floats
-        if (i + 16 <= size) {
-            const __m256 va0 = _mm256_loadu_ps(this_data + i);
-            const __m256 vb0 = _mm256_loadu_ps(other_data + i);
-            const __m256 va1 = _mm256_loadu_ps(this_data + i + 8);
-            const __m256 vb1 = _mm256_loadu_ps(other_data + i + 8);
-            _mm256_storeu_ps(this_data + i, _mm256_add_ps(va0, vb0));
-            _mm256_storeu_ps(this_data + i + 8, _mm256_add_ps(va1, vb1));
-            i += 16;
-        }
-        // Tail 8 floats
-        if (i + 8 <= size) {
-            const __m256 va = _mm256_loadu_ps(this_data + i);
-            const __m256 vb = _mm256_loadu_ps(other_data + i);
-            _mm256_storeu_ps(this_data + i, _mm256_add_ps(va, vb));
-            i += 8;
-        }
-        // Tail 4 floats
-        if (i + 4 <= size) {
-            const __m128 va = _mm_loadu_ps(this_data + i);
-            const __m128 vb = _mm_loadu_ps(other_data + i);
-            _mm_storeu_ps(this_data + i, _mm_add_ps(va, vb));
-            i += 4;
-        }
-        // Scalar tail
-        while (i < size) {
-            this_data[i] += other_data[i];
-            ++i;
-        }
+        while (i < size) { this_data[i] += other_data[i]; ++i; }
         return;
     }
     if (op_type == OperationType::MUL) {
-        // Main loop: 64 floats/iteration
+        if (aligned32) {
+            while (i + 64 <= size) {
+                const __m256 va0 = _mm256_load_ps(this_data + i + 0);
+                const __m256 vb0 = _mm256_load_ps(other_data + i + 0);
+                const __m256 va1 = _mm256_load_ps(this_data + i + 8);
+                const __m256 vb1 = _mm256_load_ps(other_data + i + 8);
+                const __m256 va2 = _mm256_load_ps(this_data + i + 16);
+                const __m256 vb2 = _mm256_load_ps(other_data + i + 16);
+                const __m256 va3 = _mm256_load_ps(this_data + i + 24);
+                const __m256 vb3 = _mm256_load_ps(other_data + i + 24);
+                const __m256 va4 = _mm256_load_ps(this_data + i + 32);
+                const __m256 vb4 = _mm256_load_ps(other_data + i + 32);
+                const __m256 va5 = _mm256_load_ps(this_data + i + 40);
+                const __m256 vb5 = _mm256_load_ps(other_data + i + 40);
+                const __m256 va6 = _mm256_load_ps(this_data + i + 48);
+                const __m256 vb6 = _mm256_load_ps(other_data + i + 48);
+                const __m256 va7 = _mm256_load_ps(this_data + i + 56);
+                const __m256 vb7 = _mm256_load_ps(other_data + i + 56);
+                _mm256_store_ps(this_data + i + 0,  _mm256_mul_ps(va0, vb0));
+                _mm256_store_ps(this_data + i + 8,  _mm256_mul_ps(va1, vb1));
+                _mm256_store_ps(this_data + i + 16, _mm256_mul_ps(va2, vb2));
+                _mm256_store_ps(this_data + i + 24, _mm256_mul_ps(va3, vb3));
+                _mm256_store_ps(this_data + i + 32, _mm256_mul_ps(va4, vb4));
+                _mm256_store_ps(this_data + i + 40, _mm256_mul_ps(va5, vb5));
+                _mm256_store_ps(this_data + i + 48, _mm256_mul_ps(va6, vb6));
+                _mm256_store_ps(this_data + i + 56, _mm256_mul_ps(va7, vb7));
+                i += 64;
+            }
+            if (i + 32 <= size) {
+                const __m256 va0 = _mm256_load_ps(this_data + i);
+                const __m256 vb0 = _mm256_load_ps(other_data + i);
+                const __m256 va1 = _mm256_load_ps(this_data + i + 8);
+                const __m256 vb1 = _mm256_load_ps(other_data + i + 8);
+                const __m256 va2 = _mm256_load_ps(this_data + i + 16);
+                const __m256 vb2 = _mm256_load_ps(other_data + i + 16);
+                const __m256 va3 = _mm256_load_ps(this_data + i + 24);
+                const __m256 vb3 = _mm256_load_ps(other_data + i + 24);
+                _mm256_store_ps(this_data + i, _mm256_mul_ps(va0, vb0));
+                _mm256_store_ps(this_data + i + 8, _mm256_mul_ps(va1, vb1));
+                _mm256_store_ps(this_data + i + 16, _mm256_mul_ps(va2, vb2));
+                _mm256_store_ps(this_data + i + 24, _mm256_mul_ps(va3, vb3));
+                i += 32;
+            }
+            if (i + 16 <= size) {
+                const __m256 va0 = _mm256_load_ps(this_data + i);
+                const __m256 vb0 = _mm256_load_ps(other_data + i);
+                const __m256 va1 = _mm256_load_ps(this_data + i + 8);
+                const __m256 vb1 = _mm256_load_ps(other_data + i + 8);
+                _mm256_store_ps(this_data + i, _mm256_mul_ps(va0, vb0));
+                _mm256_store_ps(this_data + i + 8, _mm256_mul_ps(va1, vb1));
+                i += 16;
+            }
+            if (i + 8 <= size) {
+                const __m256 va = _mm256_load_ps(this_data + i);
+                const __m256 vb = _mm256_load_ps(other_data + i);
+                _mm256_store_ps(this_data + i, _mm256_mul_ps(va, vb));
+                i += 8;
+            }
+            if (i + 4 <= size) {
+                const __m128 va = _mm_load_ps(this_data + i);
+                const __m128 vb = _mm_load_ps(other_data + i);
+                _mm_store_ps(this_data + i, _mm_mul_ps(va, vb));
+                i += 4;
+            }
+        } else {
+            while (i + 64 <= size) {
+                const __m256 va0 = _mm256_loadu_ps(this_data + i + 0);
+                const __m256 vb0 = _mm256_loadu_ps(other_data + i + 0);
+                const __m256 va1 = _mm256_loadu_ps(this_data + i + 8);
+                const __m256 vb1 = _mm256_loadu_ps(other_data + i + 8);
+                const __m256 va2 = _mm256_loadu_ps(this_data + i + 16);
+                const __m256 vb2 = _mm256_loadu_ps(other_data + i + 16);
+                const __m256 va3 = _mm256_loadu_ps(this_data + i + 24);
+                const __m256 vb3 = _mm256_loadu_ps(other_data + i + 24);
+                const __m256 va4 = _mm256_loadu_ps(this_data + i + 32);
+                const __m256 vb4 = _mm256_loadu_ps(other_data + i + 32);
+                const __m256 va5 = _mm256_loadu_ps(this_data + i + 40);
+                const __m256 vb5 = _mm256_loadu_ps(other_data + i + 40);
+                const __m256 va6 = _mm256_loadu_ps(this_data + i + 48);
+                const __m256 vb6 = _mm256_loadu_ps(other_data + i + 48);
+                const __m256 va7 = _mm256_loadu_ps(this_data + i + 56);
+                const __m256 vb7 = _mm256_loadu_ps(other_data + i + 56);
+                _mm256_storeu_ps(this_data + i + 0, _mm256_mul_ps(va0, vb0));
+                _mm256_storeu_ps(this_data + i + 8, _mm256_mul_ps(va1, vb1));
+                _mm256_storeu_ps(this_data + i + 16, _mm256_mul_ps(va2, vb2));
+                _mm256_storeu_ps(this_data + i + 24, _mm256_mul_ps(va3, vb3));
+                _mm256_storeu_ps(this_data + i + 32, _mm256_mul_ps(va4, vb4));
+                _mm256_storeu_ps(this_data + i + 40, _mm256_mul_ps(va5, vb5));
+                _mm256_storeu_ps(this_data + i + 48, _mm256_mul_ps(va6, vb6));
+                _mm256_storeu_ps(this_data + i + 56, _mm256_mul_ps(va7, vb7));
+                i += 64;
+            }
+            if (i + 32 <= size) {
+                const __m256 va0 = _mm256_loadu_ps(this_data + i);
+                const __m256 vb0 = _mm256_loadu_ps(other_data + i);
+                const __m256 va1 = _mm256_loadu_ps(this_data + i + 8);
+                const __m256 vb1 = _mm256_loadu_ps(other_data + i + 8);
+                const __m256 va2 = _mm256_loadu_ps(this_data + i + 16);
+                const __m256 vb2 = _mm256_loadu_ps(other_data + i + 16);
+                const __m256 va3 = _mm256_loadu_ps(this_data + i + 24);
+                const __m256 vb3 = _mm256_loadu_ps(other_data + i + 24);
+                _mm256_storeu_ps(this_data + i, _mm256_mul_ps(va0, vb0));
+                _mm256_storeu_ps(this_data + i + 8, _mm256_mul_ps(va1, vb1));
+                _mm256_storeu_ps(this_data + i + 16, _mm256_mul_ps(va2, vb2));
+                _mm256_storeu_ps(this_data + i + 24, _mm256_mul_ps(va3, vb3));
+                i += 32;
+            }
+            if (i + 16 <= size) {
+                const __m256 va0 = _mm256_loadu_ps(this_data + i);
+                const __m256 vb0 = _mm256_loadu_ps(other_data + i);
+                const __m256 va1 = _mm256_loadu_ps(this_data + i + 8);
+                const __m256 vb1 = _mm256_loadu_ps(other_data + i + 8);
+                _mm256_storeu_ps(this_data + i, _mm256_mul_ps(va0, vb0));
+                _mm256_storeu_ps(this_data + i + 8, _mm256_mul_ps(va1, vb1));
+                i += 16;
+            }
+            if (i + 8 <= size) {
+                const __m256 va = _mm256_loadu_ps(this_data + i);
+                const __m256 vb = _mm256_loadu_ps(other_data + i);
+                _mm256_storeu_ps(this_data + i, _mm256_mul_ps(va, vb));
+                i += 8;
+            }
+            if (i + 4 <= size) {
+                const __m128 va = _mm_loadu_ps(this_data + i);
+                const __m128 vb = _mm_loadu_ps(other_data + i);
+                _mm_storeu_ps(this_data + i, _mm_mul_ps(va, vb));
+                i += 4;
+            }
+        }
+        while (i < size) { this_data[i] *= other_data[i]; ++i; }
+        return;
+    }
+    // SUB (default)
+    if (aligned32) {
+        while (i + 64 <= size) {
+            const __m256 va0 = _mm256_load_ps(this_data + i + 0);
+            const __m256 vb0 = _mm256_load_ps(other_data + i + 0);
+            const __m256 va1 = _mm256_load_ps(this_data + i + 8);
+            const __m256 vb1 = _mm256_load_ps(other_data + i + 8);
+            const __m256 va2 = _mm256_load_ps(this_data + i + 16);
+            const __m256 vb2 = _mm256_load_ps(other_data + i + 16);
+            const __m256 va3 = _mm256_load_ps(this_data + i + 24);
+            const __m256 vb3 = _mm256_load_ps(other_data + i + 24);
+            const __m256 va4 = _mm256_load_ps(this_data + i + 32);
+            const __m256 vb4 = _mm256_load_ps(other_data + i + 32);
+            const __m256 va5 = _mm256_load_ps(this_data + i + 40);
+            const __m256 vb5 = _mm256_load_ps(other_data + i + 40);
+            const __m256 va6 = _mm256_load_ps(this_data + i + 48);
+            const __m256 vb6 = _mm256_load_ps(other_data + i + 48);
+            const __m256 va7 = _mm256_load_ps(this_data + i + 56);
+            const __m256 vb7 = _mm256_load_ps(other_data + i + 56);
+            _mm256_store_ps(this_data + i + 0,  _mm256_sub_ps(va0, vb0));
+            _mm256_store_ps(this_data + i + 8,  _mm256_sub_ps(va1, vb1));
+            _mm256_store_ps(this_data + i + 16, _mm256_sub_ps(va2, vb2));
+            _mm256_store_ps(this_data + i + 24, _mm256_sub_ps(va3, vb3));
+            _mm256_store_ps(this_data + i + 32, _mm256_sub_ps(va4, vb4));
+            _mm256_store_ps(this_data + i + 40, _mm256_sub_ps(va5, vb5));
+            _mm256_store_ps(this_data + i + 48, _mm256_sub_ps(va6, vb6));
+            _mm256_store_ps(this_data + i + 56, _mm256_sub_ps(va7, vb7));
+            i += 64;
+        }
+        if (i + 32 <= size) {
+            const __m256 va0 = _mm256_load_ps(this_data + i);
+            const __m256 vb0 = _mm256_load_ps(other_data + i);
+            const __m256 va1 = _mm256_load_ps(this_data + i + 8);
+            const __m256 vb1 = _mm256_load_ps(other_data + i + 8);
+            const __m256 va2 = _mm256_load_ps(this_data + i + 16);
+            const __m256 vb2 = _mm256_load_ps(other_data + i + 16);
+            const __m256 va3 = _mm256_load_ps(this_data + i + 24);
+            const __m256 vb3 = _mm256_load_ps(other_data + i + 24);
+            _mm256_store_ps(this_data + i, _mm256_sub_ps(va0, vb0));
+            _mm256_store_ps(this_data + i + 8, _mm256_sub_ps(va1, vb1));
+            _mm256_store_ps(this_data + i + 16, _mm256_sub_ps(va2, vb2));
+            _mm256_store_ps(this_data + i + 24, _mm256_sub_ps(va3, vb3));
+            i += 32;
+        }
+        if (i + 16 <= size) {
+            const __m256 va0 = _mm256_load_ps(this_data + i);
+            const __m256 vb0 = _mm256_load_ps(other_data + i);
+            const __m256 va1 = _mm256_load_ps(this_data + i + 8);
+            const __m256 vb1 = _mm256_load_ps(other_data + i + 8);
+            _mm256_store_ps(this_data + i, _mm256_sub_ps(va0, vb0));
+            _mm256_store_ps(this_data + i + 8, _mm256_sub_ps(va1, vb1));
+            i += 16;
+        }
+        if (i + 8 <= size) {
+            const __m256 va = _mm256_load_ps(this_data + i);
+            const __m256 vb = _mm256_load_ps(other_data + i);
+            _mm256_store_ps(this_data + i, _mm256_sub_ps(va, vb));
+            i += 8;
+        }
+        if (i + 4 <= size) {
+            const __m128 va = _mm_load_ps(this_data + i);
+            const __m128 vb = _mm_load_ps(other_data + i);
+            _mm_store_ps(this_data + i, _mm_sub_ps(va, vb));
+            i += 4;
+        }
+    } else {
         while (i + 64 <= size) {
             const __m256 va0 = _mm256_loadu_ps(this_data + i + 0);
             const __m256 vb0 = _mm256_loadu_ps(other_data + i + 0);
@@ -243,17 +507,16 @@ void AVX2Backend::operation_fp32(const TensorBackend& other, OperationType op_ty
             const __m256 vb6 = _mm256_loadu_ps(other_data + i + 48);
             const __m256 va7 = _mm256_loadu_ps(this_data + i + 56);
             const __m256 vb7 = _mm256_loadu_ps(other_data + i + 56);
-            _mm256_storeu_ps(this_data + i + 0, _mm256_mul_ps(va0, vb0));
-            _mm256_storeu_ps(this_data + i + 8, _mm256_mul_ps(va1, vb1));
-            _mm256_storeu_ps(this_data + i + 16, _mm256_mul_ps(va2, vb2));
-            _mm256_storeu_ps(this_data + i + 24, _mm256_mul_ps(va3, vb3));
-            _mm256_storeu_ps(this_data + i + 32, _mm256_mul_ps(va4, vb4));
-            _mm256_storeu_ps(this_data + i + 40, _mm256_mul_ps(va5, vb5));
-            _mm256_storeu_ps(this_data + i + 48, _mm256_mul_ps(va6, vb6));
-            _mm256_storeu_ps(this_data + i + 56, _mm256_mul_ps(va7, vb7));
+            _mm256_storeu_ps(this_data + i + 0,  _mm256_sub_ps(va0, vb0));
+            _mm256_storeu_ps(this_data + i + 8,  _mm256_sub_ps(va1, vb1));
+            _mm256_storeu_ps(this_data + i + 16, _mm256_sub_ps(va2, vb2));
+            _mm256_storeu_ps(this_data + i + 24, _mm256_sub_ps(va3, vb3));
+            _mm256_storeu_ps(this_data + i + 32, _mm256_sub_ps(va4, vb4));
+            _mm256_storeu_ps(this_data + i + 40, _mm256_sub_ps(va5, vb5));
+            _mm256_storeu_ps(this_data + i + 48, _mm256_sub_ps(va6, vb6));
+            _mm256_storeu_ps(this_data + i + 56, _mm256_sub_ps(va7, vb7));
             i += 64;
         }
-        // Tail 32 floats
         if (i + 32 <= size) {
             const __m256 va0 = _mm256_loadu_ps(this_data + i);
             const __m256 vb0 = _mm256_loadu_ps(other_data + i);
@@ -263,116 +526,35 @@ void AVX2Backend::operation_fp32(const TensorBackend& other, OperationType op_ty
             const __m256 vb2 = _mm256_loadu_ps(other_data + i + 16);
             const __m256 va3 = _mm256_loadu_ps(this_data + i + 24);
             const __m256 vb3 = _mm256_loadu_ps(other_data + i + 24);
-            _mm256_storeu_ps(this_data + i, _mm256_mul_ps(va0, vb0));
-            _mm256_storeu_ps(this_data + i + 8, _mm256_mul_ps(va1, vb1));
-            _mm256_storeu_ps(this_data + i + 16, _mm256_mul_ps(va2, vb2));
-            _mm256_storeu_ps(this_data + i + 24, _mm256_mul_ps(va3, vb3));
+            _mm256_storeu_ps(this_data + i, _mm256_sub_ps(va0, vb0));
+            _mm256_storeu_ps(this_data + i + 8, _mm256_sub_ps(va1, vb1));
+            _mm256_storeu_ps(this_data + i + 16, _mm256_sub_ps(va2, vb2));
+            _mm256_storeu_ps(this_data + i + 24, _mm256_sub_ps(va3, vb3));
             i += 32;
         }
-        // Tail 16 floats
         if (i + 16 <= size) {
             const __m256 va0 = _mm256_loadu_ps(this_data + i);
             const __m256 vb0 = _mm256_loadu_ps(other_data + i);
             const __m256 va1 = _mm256_loadu_ps(this_data + i + 8);
             const __m256 vb1 = _mm256_loadu_ps(other_data + i + 8);
-            _mm256_storeu_ps(this_data + i, _mm256_mul_ps(va0, vb0));
-            _mm256_storeu_ps(this_data + i + 8, _mm256_mul_ps(va1, vb1));
+            _mm256_storeu_ps(this_data + i, _mm256_sub_ps(va0, vb0));
+            _mm256_storeu_ps(this_data + i + 8, _mm256_sub_ps(va1, vb1));
             i += 16;
         }
-        // Tail 8 floats
         if (i + 8 <= size) {
             const __m256 va = _mm256_loadu_ps(this_data + i);
             const __m256 vb = _mm256_loadu_ps(other_data + i);
-            _mm256_storeu_ps(this_data + i, _mm256_mul_ps(va, vb));
+            _mm256_storeu_ps(this_data + i, _mm256_sub_ps(va, vb));
             i += 8;
         }
-        // Tail 4 floats
         if (i + 4 <= size) {
             const __m128 va = _mm_loadu_ps(this_data + i);
             const __m128 vb = _mm_loadu_ps(other_data + i);
-            _mm_storeu_ps(this_data + i, _mm_mul_ps(va, vb));
+            _mm_storeu_ps(this_data + i, _mm_sub_ps(va, vb));
             i += 4;
         }
-        // Scalar tail
-        while (i < size) {
-            this_data[i] *= other_data[i];
-            ++i;
-        }
-        return;
     }
-    // SUB (default)
-    while (i + 64 <= size) {
-        const __m256 va0 = _mm256_loadu_ps(this_data + i + 0);
-        const __m256 vb0 = _mm256_loadu_ps(other_data + i + 0);
-        const __m256 va1 = _mm256_loadu_ps(this_data + i + 8);
-        const __m256 vb1 = _mm256_loadu_ps(other_data + i + 8);
-        const __m256 va2 = _mm256_loadu_ps(this_data + i + 16);
-        const __m256 vb2 = _mm256_loadu_ps(other_data + i + 16);
-        const __m256 va3 = _mm256_loadu_ps(this_data + i + 24);
-        const __m256 vb3 = _mm256_loadu_ps(other_data + i + 24);
-        const __m256 va4 = _mm256_loadu_ps(this_data + i + 32);
-        const __m256 vb4 = _mm256_loadu_ps(other_data + i + 32);
-        const __m256 va5 = _mm256_loadu_ps(this_data + i + 40);
-        const __m256 vb5 = _mm256_loadu_ps(other_data + i + 40);
-        const __m256 va6 = _mm256_loadu_ps(this_data + i + 48);
-        const __m256 vb6 = _mm256_loadu_ps(other_data + i + 48);
-        const __m256 va7 = _mm256_loadu_ps(this_data + i + 56);
-        const __m256 vb7 = _mm256_loadu_ps(other_data + i + 56);
-        _mm256_storeu_ps(this_data + i + 0, _mm256_sub_ps(va0, vb0));
-        _mm256_storeu_ps(this_data + i + 8, _mm256_sub_ps(va1, vb1));
-        _mm256_storeu_ps(this_data + i + 16, _mm256_sub_ps(va2, vb2));
-        _mm256_storeu_ps(this_data + i + 24, _mm256_sub_ps(va3, vb3));
-        _mm256_storeu_ps(this_data + i + 32, _mm256_sub_ps(va4, vb4));
-        _mm256_storeu_ps(this_data + i + 40, _mm256_sub_ps(va5, vb5));
-        _mm256_storeu_ps(this_data + i + 48, _mm256_sub_ps(va6, vb6));
-        _mm256_storeu_ps(this_data + i + 56, _mm256_sub_ps(va7, vb7));
-        i += 64;
-    }
-    // Tail 32 floats
-    if (i + 32 <= size) {
-        const __m256 va0 = _mm256_loadu_ps(this_data + i);
-        const __m256 vb0 = _mm256_loadu_ps(other_data + i);
-        const __m256 va1 = _mm256_loadu_ps(this_data + i + 8);
-        const __m256 vb1 = _mm256_loadu_ps(other_data + i + 8);
-        const __m256 va2 = _mm256_loadu_ps(this_data + i + 16);
-        const __m256 vb2 = _mm256_loadu_ps(other_data + i + 16);
-        const __m256 va3 = _mm256_loadu_ps(this_data + i + 24);
-        const __m256 vb3 = _mm256_loadu_ps(other_data + i + 24);
-        _mm256_storeu_ps(this_data + i, _mm256_sub_ps(va0, vb0));
-        _mm256_storeu_ps(this_data + i + 8, _mm256_sub_ps(va1, vb1));
-        _mm256_storeu_ps(this_data + i + 16, _mm256_sub_ps(va2, vb2));
-        _mm256_storeu_ps(this_data + i + 24, _mm256_sub_ps(va3, vb3));
-        i += 32;
-    }
-    // Tail 16 floats
-    if (i + 16 <= size) {
-        const __m256 va0 = _mm256_loadu_ps(this_data + i);
-        const __m256 vb0 = _mm256_loadu_ps(other_data + i);
-        const __m256 va1 = _mm256_loadu_ps(this_data + i + 8);
-        const __m256 vb1 = _mm256_loadu_ps(other_data + i + 8);
-        _mm256_storeu_ps(this_data + i, _mm256_sub_ps(va0, vb0));
-        _mm256_storeu_ps(this_data + i + 8, _mm256_sub_ps(va1, vb1));
-        i += 16;
-    }
-    // Tail 8 floats
-    if (i + 8 <= size) {
-        const __m256 va = _mm256_loadu_ps(this_data + i);
-        const __m256 vb = _mm256_loadu_ps(other_data + i);
-        _mm256_storeu_ps(this_data + i, _mm256_sub_ps(va, vb));
-        i += 8;
-    }
-    // Tail 4 floats
-    if (i + 4 <= size) {
-        const __m128 va = _mm_loadu_ps(this_data + i);
-        const __m128 vb = _mm_loadu_ps(other_data + i);
-        _mm_storeu_ps(this_data + i, _mm_sub_ps(va, vb));
-        i += 4;
-    }
-    // Scalar tail
-    while (i < size) {
-        this_data[i] -= other_data[i];
-        ++i;
-    }
+    while (i < size) { this_data[i] -= other_data[i]; ++i; }
 }
 
 // =======================

@@ -25,6 +25,12 @@ TWINE := $(VENV_PYTHON) -m twine
 PYPI_TOKEN ?=
 TEST_PYPI_TOKEN ?=
 
+# Prefer venv if available to avoid PEP 668 system pip restrictions
+ifneq (,$(wildcard $(VENV_PIP)))
+	PIP := $(VENV_PIP)
+	PYTHON := $(VENV_PYTHON)
+endif
+
 # --------------------------------------
 # Compiler detection
 # --------------------------------------
@@ -100,14 +106,14 @@ smoke:
 # --------------------------------------
 .PHONY: test
 test: smoke
-	pytest -v
+	$(PYTHON) -m pytest -v
 
 # --------------------------------------
 # Python coverage
 # --------------------------------------
 .PHONY: coverage
 coverage:
-	pytest --cov=$(PKG_NAME) --cov-report=term-missing || true
+	$(PYTHON) -m pytest --cov=$(PKG_NAME) --cov-report=term-missing || true
 
 # --------------------------------------
 # C++ Coverage (optional, portable)

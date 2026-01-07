@@ -1,8 +1,8 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
-#include "../include/labneura/types.hpp"
-#include "../include/labneura/tensor.h"
-#include "../include/labneura/backends/backend_factory.h"
+#include "labneura/types.hpp"
+#include "labneura/tensor.h"
+#include "labneura/backends/backend_factory.h"
 
 namespace py = pybind11;
 

@@ -1,13 +1,25 @@
 #include "labneura/backends/generic.h"
+#include <cstdlib>
+#include "labneura/utils/alignment.hpp"
 
 namespace labneura {
 
 GenericBackend::GenericBackend(std::size_t size, QuantizationMode mode)
     : size_(size), quantization_mode_(mode) {
+    // 64-byte aligned allocation with fallback to malloc (generic fallback backend)
+    auto free_aligned_float = [](float* p){ if (p) std::free(p); };
+    auto free_aligned_int8 = [](int8_t* p){ if (p) std::free(p); };
+    auto allocate_aligned = [](std::size_t bytes){
+        void* p = nullptr;
+        if (posix_memalign(&p, labneura::util::DEFAULT_ALIGN, bytes) == 0) return p;
+        return std::malloc(bytes);
+    };
     if (mode == QuantizationMode::FP32) {
-        data_fp32_ = std::make_unique<float[]>(size);
+        float* p = static_cast<float*>(allocate_aligned(size * sizeof(float)));
+        data_fp32_ = std::unique_ptr<float, void(*)(float*)>(p, free_aligned_float);
     } else if (mode == QuantizationMode::INT8) {
-        data_int8_ = std::make_unique<int8_t[]>(size);
+        int8_t* p = static_cast<int8_t*>(allocate_aligned(size * sizeof(int8_t)));
+        data_int8_ = std::unique_ptr<int8_t, void(*)(int8_t*)>(p, free_aligned_int8);
     }
 }
 

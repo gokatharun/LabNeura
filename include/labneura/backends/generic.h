@@ -17,7 +17,7 @@ namespace labneura {
         private:
             std::size_t size_;
             QuantizationMode quantization_mode_;
-            std::unique_ptr<float[]> data_fp32_;
-            std::unique_ptr<int8_t[]> data_int8_;
+            std::unique_ptr<float, void(*)(float*)> data_fp32_{nullptr, nullptr};
+            std::unique_ptr<int8_t, void(*)(int8_t*)> data_int8_{nullptr, nullptr};
     };
 }  // namespace labneura
