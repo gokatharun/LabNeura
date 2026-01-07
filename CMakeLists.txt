@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.14)
 project(LabNeura LANGUAGES CXX)
 
+include(CheckCXXCompilerFlag)
 # ======================================
 # C++ Standard
 # ======================================
@@ -37,6 +38,21 @@ add_library(labneura
   src/labneura/backends/cpu_features.cpp
   src/labneura/backends/backend_factory.cpp
 )
+
+if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+  check_cxx_compile_flag("-mavx2", LABNEURA_COMPILER_SUPPORTS_AVX2)
+  if(LABNEURA_COMPILER_SUPPORTS_AVX2)
+    set_source_files_properties(src/labneura/backends/avx2.cpp PROPERTIES COMPILE_FLAGS "-mavx2")
+    target_compile_definitions(labneura PRIVATE LABNEURA_ENABLE_AVX2=1)
+    message(STATUS "LabNeura: AVX2 backend enabled (-mavx2)")
+  else()
+    message((STATUS "LabNeura: AVX2 backend disabled (compiler lacks -mavx2)"))
+  endif()
+endif()
+
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
+  target_compile_definitions(labneura PRIVATE LABNEURA_ENABLE_NEON=1)
+endif()
 
 target_include_directories(labneura
   PUBLIC

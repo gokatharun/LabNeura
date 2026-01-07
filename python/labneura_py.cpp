@@ -2,6 +2,7 @@
 #include <pybind11/stl.h>
 #include "../include/labneura/types.hpp"
 #include "../include/labneura/tensor.h"
+#include "../include/labneura/backends/backend_factory.h"
 
 namespace py = pybind11;
 
@@ -61,5 +62,8 @@ PYBIND11_MODULE(labneura, m) {
         .def("add_inplace", &labneura::Tensor::add_inplace, "In-place addition (modifies self)")
         .def("sub_inplace", &labneura::Tensor::sub_inplace, "In-place subtraction (modifies self)")
         .def("mul_inplace", &labneura::Tensor::mul_inplace, "In-place multiplication (modifies self)");
+
+    // Backend detection
+    m.def("detect_backend", &labneura::detect_backend, "Detect the preferred backend based on CPU features");
 }
 

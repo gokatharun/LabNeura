@@ -1,12 +1,25 @@
 from setuptools import setup, Extension
 import sys
 import os
+import platform
 
 try:
     import pybind11
 except ImportError:
     print("pybind11 is required to build the extension; please install it first.")
     sys.exit(1)
+
+def detect_simd_flags():
+    """Return a list of compiler flags based on build machine architecture.
+    - On x86_64: attempt to enable AVX2 and SSE4.2.
+    - On arm64/aarch64: NEON is generally enabled by default; no extra flags.
+    """
+    flags = []
+    arch = platform.machine().lower()
+    if arch in ("x86_64", "amd64"):
+        # Common SIMD flags for x86_64 compilers (Clang/GCC). If unsupported, the build will ignore/handle.
+        flags.extend(["-mavx2", "-msse4.2"])  # CMake gates AVX2 source; runtime selects backend safely.
+    return flags
 
 # --------------------------------------
 # Common configuration
@@ -19,6 +32,7 @@ include_dirs = [
 extra_compile_args = [
     "-O3",
     "-std=c++17",
+    *detect_simd_flags(),  # Add SIMD flags if supported
 ]
 
 extra_link_args = []
