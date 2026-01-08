@@ -43,7 +43,6 @@ create_best_backend(std::size_t size, QuantizationMode mode) {
 #if defined(__aarch64__) || defined(__ARM_NEON)
     if (cpu_supports_neon()) {
 #if defined(__ARM_NEON)
-        std::cout << "Using NEON backend" << std::endl;
         return std::make_unique<NEONBackend>(size, mode);
 #endif
     }
