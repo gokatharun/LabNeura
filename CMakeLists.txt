@@ -77,24 +77,32 @@ target_include_directories(labneura
 # Compiler optimizations and warnings
 # ======================================
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+  # Base optimizations common to Clang and GCC
   target_compile_options(labneura PRIVATE
     -Wall
     -Wextra
     -Wpedantic
     -O3
     -ffast-math
-    -fvectorize
     -funroll-loops
     -fomit-frame-pointer
     -fno-math-errno
   )
-  
+
+  # Enable vectorization flags per compiler
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    # GCC: tree vectorizer is enabled at -O3, but -ftree-vectorize is accepted
+    target_compile_options(labneura PRIVATE -ftree-vectorize)
+  elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    # Clang: auto-vectorization enabled at -O3; avoid non-portable -fvectorize/-fslp-vectorize
+    # No extra flags needed
+  endif()
+
   if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64" AND APPLE)
     # Apple M1/M2 optimizations (APPLE-only)
     target_compile_options(labneura PRIVATE
       -mcpu=apple-m1
       -mtune=native
-      -fslp-vectorize
     )
     message(STATUS "M1 optimization flags enabled: -mcpu=apple-m1 -mtune=native")
   elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")

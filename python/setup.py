@@ -3,6 +3,7 @@ import sys
 import os
 import platform
 from pathlib import Path
+import sysconfig
 
 try:
     import pybind11
@@ -20,6 +21,10 @@ def detect_simd_flags():
     - On x86_64: enables AVX2 and SSE4.1 compilation (if supported by compiler)
     - On arm64/aarch64: NEON is generally enabled by default; no extra flags.
     """
+    # Allow disabling SIMD flags via env for older toolchains
+    if os.environ.get("LABNEURA_DISABLE_SIMD") == "1":
+        return []
+
     flags = []
     arch = platform.machine().lower()
     if arch in ("x86_64", "amd64"):
@@ -49,25 +54,22 @@ is_coverage = os.environ.get("LABNEURA_COVERAGE") == "1"
 arch = platform.machine().lower()
 
 if not is_coverage:  # Skip architecture-specific flags in coverage mode
-    if arch in ("arm64", "aarch64"):
-        # ARM-specific optimizations (portable for PyPI wheels)
-        extra_compile_args.extend([
-            "-fvectorize",               # Enable auto-vectorization
-            "-funroll-loops",            # Unroll loops for performance
-            "-fomit-frame-pointer",      # Extra register for computations
-            "-fno-math-errno",           # Faster math without errno
-        ])
-        # Note: -mcpu=apple-m1 and -mcpu=native are NOT used for wheel portability
-        # Runtime NEON detection handles Apple Silicon optimization
-    elif arch in ("x86_64", "amd64"):
-        # Intel/AMD specific optimizations (portable for PyPI)
-        extra_compile_args.extend([
-            "-fvectorize",               # Enable auto-vectorization
-            "-funroll-loops",            # Unroll loops
-            "-fomit-frame-pointer",      # Extra register
-            # Note: -march=native is NOT used for wheel distribution
-            # Runtime CPU detection handles architecture selection
-        ])
+    # Common portable optimizations across architectures
+    extra_compile_args.extend([
+        "-funroll-loops",            # Unroll loops for performance
+        "-fomit-frame-pointer",      # Extra register for computations
+        "-fno-math-errno",           # Faster math without errno
+    ])
+
+    # Prefer compiler-aware vectorization flags
+    cc = (sysconfig.get_config_var("CC") or "").lower()
+    is_gcc = ("gcc" in cc) or ("g++" in cc)
+    is_clang = ("clang" in cc)
+
+    if is_gcc:
+        # GCC: tree vectorizer (usually implied by -O3, but flag is accepted)
+        extra_compile_args.append("-ftree-vectorize")
+    # Clang auto-vectorization is enabled by -O3; avoid non-portable -fvectorize
 
 extra_link_args = []
 
@@ -128,7 +130,7 @@ long_desc = readme_path.read_text(encoding="utf-8") if readme_path.exists() else
 
 setup(
     name="labneura2",
-    version="0.1.7",
+    version="0.1.9",
     description="SIMD-accelerated tensor operations for neural networks",
     long_description=long_desc,
     long_description_content_type="text/markdown",
