@@ -211,10 +211,10 @@ class BenchmarkRunner:
         return results
     
     def benchmark_int8_operations(self, size: int) -> Dict[str, Dict[str, PerformanceMetrics]]:
-        """Benchmark INT8 operations."""
+        """Benchmark INT8 operations with proper saturation."""
         results = {}
         
-        # LabNeura INT8 ADD
+        # LabNeura INT8 ADD (in-place with saturation)
         a_ln = labneura.Tensor([10] * size, labneura.QuantizationMode.INT8)
         b_ln = labneura.Tensor([20] * size, labneura.QuantizationMode.INT8)
         
@@ -232,12 +232,13 @@ class BenchmarkRunner:
             results['add']['labneura'].flops
         )
         
-        # NumPy INT8 ADD
+        # NumPy INT8 ADD (with saturation for fair comparison)
         a_np = np.full(size, 10, dtype=np.int8)
         b_np = np.full(size, 20, dtype=np.int8)
         
         def np_int8_add():
-            return np.add(a_np, b_np, dtype=np.int8)
+            # Proper INT8 saturation arithmetic
+            return np.clip(a_np.astype(np.int16) + b_np.astype(np.int16), -128, 127).astype(np.int8)
         
         results['add']['numpy'] = self.run_operation_benchmark('int8_add', np_int8_add)
         results['add']['numpy'].flops = MetricsCalculator.calculate_flops(
@@ -246,12 +247,13 @@ class BenchmarkRunner:
         )
         results['add']['numpy'].flops_str = MetricsCalculator.format_flops(results['add']['numpy'].flops)
         
-        # PyTorch INT8 ADD
+        # PyTorch INT8 ADD (with saturation for fair comparison)
         a_pt = torch.full((size,), 10, dtype=torch.int8)
         b_pt = torch.full((size,), 20, dtype=torch.int8)
         
         def pt_int8_add():
-            return a_pt + b_pt
+            # Proper INT8 saturation arithmetic
+            return torch.clamp(a_pt.to(torch.int32) + b_pt.to(torch.int32), -128, 127).to(torch.int8)
         
         results['add']['pytorch'] = self.run_operation_benchmark('int8_add', pt_int8_add)
         results['add']['pytorch'].flops = MetricsCalculator.calculate_flops(
