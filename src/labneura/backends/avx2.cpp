@@ -156,10 +156,19 @@ void AVX2Backend::operation_fp32(const TensorBackend& other, OperationType op_ty
     const bool aligned32 = labneura::util::is_aligned(this_data, labneura::util::AVX2_ALIGN) &&
                            labneura::util::is_aligned(other_data, labneura::util::AVX2_ALIGN);
 
+    // Prefetch distance: 512 bytes (8 cache lines) ahead for medium-sized arrays
+    constexpr std::size_t PREFETCH_DISTANCE = 128;  // 128 floats = 512 bytes
+
     if (op_type == OperationType::ADD) {
         if (aligned32) {
-            // Aligned main loop: 64 floats/iteration
+            // Aligned main loop: 64 floats/iteration with prefetching
             while (i + 64 <= size) {
+                // Prefetch data ahead for better cache utilization (helps 100K-1M range)
+                if (i + PREFETCH_DISTANCE < size) {
+                    _mm_prefetch(reinterpret_cast<const char*>(this_data + i + PREFETCH_DISTANCE), _MM_HINT_T0);
+                    _mm_prefetch(reinterpret_cast<const char*>(other_data + i + PREFETCH_DISTANCE), _MM_HINT_T0);
+                }
+                
                 const __m256 va0 = _mm256_load_ps(this_data + i + 0);
                 const __m256 vb0 = _mm256_load_ps(other_data + i + 0);
                 const __m256 va1 = _mm256_load_ps(this_data + i + 8);
@@ -223,8 +232,14 @@ void AVX2Backend::operation_fp32(const TensorBackend& other, OperationType op_ty
                 i += 4;
             }
         } else {
-            // Unaligned path
+            // Unaligned path with prefetching
             while (i + 64 <= size) {
+                // Prefetch for unaligned access
+                if (i + PREFETCH_DISTANCE < size) {
+                    _mm_prefetch(reinterpret_cast<const char*>(this_data + i + PREFETCH_DISTANCE), _MM_HINT_T0);
+                    _mm_prefetch(reinterpret_cast<const char*>(other_data + i + PREFETCH_DISTANCE), _MM_HINT_T0);
+                }
+                
                 const __m256 va0 = _mm256_loadu_ps(this_data + i + 0);
                 const __m256 vb0 = _mm256_loadu_ps(other_data + i + 0);
                 const __m256 va1 = _mm256_loadu_ps(this_data + i + 8);
@@ -294,6 +309,12 @@ void AVX2Backend::operation_fp32(const TensorBackend& other, OperationType op_ty
     if (op_type == OperationType::MUL) {
         if (aligned32) {
             while (i + 64 <= size) {
+                // Prefetch for multiply operation
+                if (i + PREFETCH_DISTANCE < size) {
+                    _mm_prefetch(reinterpret_cast<const char*>(this_data + i + PREFETCH_DISTANCE), _MM_HINT_T0);
+                    _mm_prefetch(reinterpret_cast<const char*>(other_data + i + PREFETCH_DISTANCE), _MM_HINT_T0);
+                }
+                
                 const __m256 va0 = _mm256_load_ps(this_data + i + 0);
                 const __m256 vb0 = _mm256_load_ps(other_data + i + 0);
                 const __m256 va1 = _mm256_load_ps(this_data + i + 8);
@@ -358,6 +379,12 @@ void AVX2Backend::operation_fp32(const TensorBackend& other, OperationType op_ty
             }
         } else {
             while (i + 64 <= size) {
+                // Prefetch for unaligned multiply
+                if (i + PREFETCH_DISTANCE < size) {
+                    _mm_prefetch(reinterpret_cast<const char*>(this_data + i + PREFETCH_DISTANCE), _MM_HINT_T0);
+                    _mm_prefetch(reinterpret_cast<const char*>(other_data + i + PREFETCH_DISTANCE), _MM_HINT_T0);
+                }
+                
                 const __m256 va0 = _mm256_loadu_ps(this_data + i + 0);
                 const __m256 vb0 = _mm256_loadu_ps(other_data + i + 0);
                 const __m256 va1 = _mm256_loadu_ps(this_data + i + 8);
@@ -427,6 +454,12 @@ void AVX2Backend::operation_fp32(const TensorBackend& other, OperationType op_ty
     // SUB (default)
     if (aligned32) {
         while (i + 64 <= size) {
+            // Prefetch for subtract operation
+            if (i + PREFETCH_DISTANCE < size) {
+                _mm_prefetch(reinterpret_cast<const char*>(this_data + i + PREFETCH_DISTANCE), _MM_HINT_T0);
+                _mm_prefetch(reinterpret_cast<const char*>(other_data + i + PREFETCH_DISTANCE), _MM_HINT_T0);
+            }
+            
             const __m256 va0 = _mm256_load_ps(this_data + i + 0);
             const __m256 vb0 = _mm256_load_ps(other_data + i + 0);
             const __m256 va1 = _mm256_load_ps(this_data + i + 8);
@@ -491,6 +524,12 @@ void AVX2Backend::operation_fp32(const TensorBackend& other, OperationType op_ty
         }
     } else {
         while (i + 64 <= size) {
+            // Prefetch for unaligned subtract
+            if (i + PREFETCH_DISTANCE < size) {
+                _mm_prefetch(reinterpret_cast<const char*>(this_data + i + PREFETCH_DISTANCE), _MM_HINT_T0);
+                _mm_prefetch(reinterpret_cast<const char*>(other_data + i + PREFETCH_DISTANCE), _MM_HINT_T0);
+            }
+            
             const __m256 va0 = _mm256_loadu_ps(this_data + i + 0);
             const __m256 vb0 = _mm256_loadu_ps(other_data + i + 0);
             const __m256 va1 = _mm256_loadu_ps(this_data + i + 8);

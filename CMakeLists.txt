@@ -40,13 +40,24 @@ add_library(labneura
 )
 
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+  # Check for AVX2 support
   check_cxx_compile_flag("-mavx2", LABNEURA_COMPILER_SUPPORTS_AVX2)
   if(LABNEURA_COMPILER_SUPPORTS_AVX2)
     set_source_files_properties(src/labneura/backends/avx2.cpp PROPERTIES COMPILE_FLAGS "-mavx2")
     target_compile_definitions(labneura PRIVATE LABNEURA_ENABLE_AVX2=1)
     message(STATUS "LabNeura: AVX2 backend enabled (-mavx2)")
   else()
-    message((STATUS "LabNeura: AVX2 backend disabled (compiler lacks -mavx2)"))
+    message(STATUS "LabNeura: AVX2 backend disabled (compiler lacks -mavx2)")
+  endif()
+
+  # Check for SSE4.1 support (fallback for older Intel/AMD CPUs)
+  check_cxx_compile_flag("-msse4.1", LABNEURA_COMPILER_SUPPORTS_SSE41)
+  if(LABNEURA_COMPILER_SUPPORTS_SSE41)
+    set_source_files_properties(src/labneura/backends/sse41.cpp PROPERTIES COMPILE_FLAGS "-msse4.1")
+    target_compile_definitions(labneura PRIVATE LABNEURA_ENABLE_SSE41=1)
+    message(STATUS "LabNeura: SSE4.1 backend enabled (-msse4.1)")
+  else()
+    message(STATUS "LabNeura: SSE4.1 backend disabled (compiler lacks -msse4.1)")
   endif()
 endif()
 
@@ -63,14 +74,44 @@ target_include_directories(labneura
 )
 
 # ======================================
-# Compiler warnings (optional but recommended)
+# Compiler optimizations and warnings
 # ======================================
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
   target_compile_options(labneura PRIVATE
     -Wall
     -Wextra
     -Wpedantic
+    -O3
+    -ffast-math
+    -fvectorize
+    -funroll-loops
+    -fomit-frame-pointer
+    -fno-math-errno
   )
+  
+  if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64" AND APPLE)
+    # Apple M1/M2 optimizations (APPLE-only)
+    target_compile_options(labneura PRIVATE
+      -mcpu=apple-m1
+      -mtune=native
+      -fslp-vectorize
+    )
+    message(STATUS "M1 optimization flags enabled: -mcpu=apple-m1 -mtune=native")
+  elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
+    # Generic ARM64 optimizations for Linux/other platforms
+    target_compile_options(labneura PRIVATE
+      -mtune=generic
+    )
+    message(STATUS "ARM64 optimization flags enabled: -mtune=generic")
+  elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+    # Intel/AMD optimizations
+    # Note: Using -mtune=generic for PyPI wheel compatibility (not -march=native)
+    # Runtime CPU detection selects optimal backend (AVX2, SSE4.1, or Generic)
+    target_compile_options(labneura PRIVATE
+      -mtune=generic
+    )
+    message(STATUS "x86_64 optimization flags enabled (portable): -mtune=generic")
+  endif()
 endif()
 
 # ======================================

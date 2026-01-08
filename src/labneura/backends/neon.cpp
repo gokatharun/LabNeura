@@ -97,6 +97,10 @@ void NEONBackend::operation_fp32(const TensorBackend& other, OperationType op_ty
     const float* other_data = other.data_fp32();
     float* this_data = data_fp32();
 
+    // Prefetch distance for ARM NEON: 256 bytes (64 floats) ahead
+    // M1 has larger caches but benefits from prefetch at 100K-1M sizes
+    constexpr std::size_t PREFETCH_DISTANCE = 64;  // 64 floats = 256 bytes
+
     // Hierarchical processing: 32 → 16 → 8 → 4 → scalar
     const std::size_t len32 = (size_ / 32) * 32;
     const std::size_t len16 = len32 + ((size_ - len32) / 16) * 16;
@@ -106,6 +110,11 @@ void NEONBackend::operation_fp32(const TensorBackend& other, OperationType op_ty
     if (op_type == OperationType::ADD) {
         // Main loop: 32 floats (8 registers × 4 floats)
         for (std::size_t i = 0; i < len32; i += 32) {
+            // Prefetch next iteration's data (ARM intrinsic)
+            if (i + PREFETCH_DISTANCE < size_) {
+                __builtin_prefetch(&this_data[i + PREFETCH_DISTANCE], 1, 1);  // write, temporal
+                __builtin_prefetch(&other_data[i + PREFETCH_DISTANCE], 0, 1); // read, temporal
+            }
             const float32x4_t va0 = vld1q_f32(&this_data[i + 0]);
             const float32x4_t va1 = vld1q_f32(&this_data[i + 4]);
             const float32x4_t va2 = vld1q_f32(&this_data[i + 8]);
@@ -176,6 +185,11 @@ void NEONBackend::operation_fp32(const TensorBackend& other, OperationType op_ty
     if (op_type == OperationType::MUL) {
         // Main loop: 32 floats
         for (std::size_t i = 0; i < len32; i += 32) {
+            // Prefetch for multiply operation
+            if (i + PREFETCH_DISTANCE < size_) {
+                __builtin_prefetch(&this_data[i + PREFETCH_DISTANCE], 1, 1);
+                __builtin_prefetch(&other_data[i + PREFETCH_DISTANCE], 0, 1);
+            }
             const float32x4_t va0 = vld1q_f32(&this_data[i + 0]);
             const float32x4_t va1 = vld1q_f32(&this_data[i + 4]);
             const float32x4_t va2 = vld1q_f32(&this_data[i + 8]);
@@ -245,6 +259,12 @@ void NEONBackend::operation_fp32(const TensorBackend& other, OperationType op_ty
 
     // SUB path (default)
     for (std::size_t i = 0; i < len32; i += 32) {
+        // Prefetch for subtract operation
+        if (i + PREFETCH_DISTANCE < size_) {
+            __builtin_prefetch(&this_data[i + PREFETCH_DISTANCE], 1, 1);
+            __builtin_prefetch(&other_data[i + PREFETCH_DISTANCE], 0, 1);
+        }
+        
         const float32x4_t va0 = vld1q_f32(&this_data[i + 0]);
         const float32x4_t va1 = vld1q_f32(&this_data[i + 4]);
         const float32x4_t va2 = vld1q_f32(&this_data[i + 8]);
@@ -321,7 +341,6 @@ void NEONBackend::operation_int8(const TensorBackend& other, OperationType op_ty
 
     const std::size_t neon_len = (size_ / 16) * 16;
     const std::size_t len8     = ((size_ - neon_len) / 8) * 8 + neon_len;
-    const std::size_t len4     = ((size_ - len8) / 4) * 4 + len8;
 
     if (op_type == OperationType::ADD) {
         for (std::size_t i = 0; i < neon_len; i += 16) {
@@ -336,13 +355,7 @@ void NEONBackend::operation_int8(const TensorBackend& other, OperationType op_ty
             const int8x8_t vr = vadd_s8(va, vb);
             vst1_s8(&this_data[i], vr);
         }
-        for (std::size_t i = len8; i < len4; i += 4) {
-            const int8x8_t va = vld1_s8(&this_data[i]);
-            const int8x8_t vb = vld1_s8(&other_data[i]);
-            const int8x8_t vr = vadd_s8(va, vb);
-            vst1_s8(&this_data[i], vr);
-        }
-        for (std::size_t i = len4; i < size_; ++i) {
+        for (std::size_t i = len8; i < size_; ++i) {
             int16_t sum = static_cast<int16_t>(this_data[i]) + static_cast<int16_t>(other_data[i]);
             this_data[i] = static_cast<int8_t>(std::max(-128, std::min(127, static_cast<int>(sum))));
         }
@@ -371,16 +384,7 @@ void NEONBackend::operation_int8(const TensorBackend& other, OperationType op_ty
             const int8x8_t vr = vqmovn_s16(prod);
             vst1_s8(&this_data[i], vr);
         }
-        for (std::size_t i = len8; i < len4; i += 4) {
-            const int8x8_t va = vld1_s8(&this_data[i]);
-            const int8x8_t vb = vld1_s8(&other_data[i]);
-            const int16x8_t va16 = vmovl_s8(va);
-            const int16x8_t vb16 = vmovl_s8(vb);
-            const int16x8_t prod = vmulq_s16(va16, vb16);
-            const int8x8_t vr = vqmovn_s16(prod);
-            vst1_s8(&this_data[i], vr);
-        }
-        for (std::size_t i = len4; i < size_; ++i) {
+        for (std::size_t i = len8; i < size_; ++i) {
             int16_t prod = static_cast<int16_t>(this_data[i]) * static_cast<int16_t>(other_data[i]);
             this_data[i] = static_cast<int8_t>(std::max(-128, std::min(127, static_cast<int>(prod))));
         }
@@ -399,13 +403,7 @@ void NEONBackend::operation_int8(const TensorBackend& other, OperationType op_ty
         const int8x8_t vr = vsub_s8(va, vb);
         vst1_s8(&this_data[i], vr);
     }
-    for (std::size_t i = len8; i < len4; i += 4) {
-        const int8x8_t va = vld1_s8(&this_data[i]);
-        const int8x8_t vb = vld1_s8(&other_data[i]);
-        const int8x8_t vr = vsub_s8(va, vb);
-        vst1_s8(&this_data[i], vr);
-    }
-    for (std::size_t i = len4; i < size_; ++i) {
+    for (std::size_t i = len8; i < size_; ++i) {
         int16_t diff = static_cast<int16_t>(this_data[i]) - static_cast<int16_t>(other_data[i]);
         this_data[i] = static_cast<int8_t>(std::max(-128, std::min(127, static_cast<int>(diff))));
     }

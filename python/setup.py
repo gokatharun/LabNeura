@@ -11,15 +11,21 @@ except ImportError:
     sys.exit(1)
 
 def detect_simd_flags():
-    """Return a list of compiler flags based on build machine architecture.
-    - On x86_64: attempt to enable AVX2 and SSE4.2.
+    """Return a list of compiler flags for SIMD support.
+    
+    IMPORTANT: Does NOT use -march=native to ensure wheel compatibility.
+    Instead, uses conditional compilation (-mavx2, -msse4.1) with runtime
+    CPU detection via cpuid to select the best backend at runtime.
+    
+    - On x86_64: enables AVX2 and SSE4.1 compilation (if supported by compiler)
     - On arm64/aarch64: NEON is generally enabled by default; no extra flags.
     """
     flags = []
     arch = platform.machine().lower()
     if arch in ("x86_64", "amd64"):
         # Common SIMD flags for x86_64 compilers (Clang/GCC). If unsupported, the build will ignore/handle.
-        flags.extend(["-mavx2", "-msse4.2"])  # CMake gates AVX2 source; runtime selects backend safely.
+        # Note: Using -msse4.1 instead of -msse4.2 for better compatibility
+        flags.extend(["-mavx2", "-msse4.1"])  # CMake gates source; runtime CPU detection selects backend safely.
     return flags
 
 # --------------------------------------
@@ -36,6 +42,32 @@ extra_compile_args = [
     "-std=c++17",
     *detect_simd_flags(),  # Add SIMD flags if supported
 ]
+
+# Add aggressive optimization flags for target architecture
+# Only when NOT building universal binary and NOT in coverage mode
+is_coverage = os.environ.get("LABNEURA_COVERAGE") == "1"
+arch = platform.machine().lower()
+
+if not is_coverage:  # Skip architecture-specific flags in coverage mode
+    if arch in ("arm64", "aarch64"):
+        # ARM-specific optimizations (portable for PyPI wheels)
+        extra_compile_args.extend([
+            "-fvectorize",               # Enable auto-vectorization
+            "-funroll-loops",            # Unroll loops for performance
+            "-fomit-frame-pointer",      # Extra register for computations
+            "-fno-math-errno",           # Faster math without errno
+        ])
+        # Note: -mcpu=apple-m1 and -mcpu=native are NOT used for wheel portability
+        # Runtime NEON detection handles Apple Silicon optimization
+    elif arch in ("x86_64", "amd64"):
+        # Intel/AMD specific optimizations (portable for PyPI)
+        extra_compile_args.extend([
+            "-fvectorize",               # Enable auto-vectorization
+            "-funroll-loops",            # Unroll loops
+            "-fomit-frame-pointer",      # Extra register
+            # Note: -march=native is NOT used for wheel distribution
+            # Runtime CPU detection handles architecture selection
+        ])
 
 extra_link_args = []
 
@@ -59,19 +91,9 @@ if os.environ.get("LABNEURA_COVERAGE") == "1":
 else:
     print("✓ LLVM coverage DISABLED")
 
-# --------------------------------------
-# Platform-specific flags
-# --------------------------------------
-if sys.platform == "darwin":
-    # macOS (Clang)
-    extra_compile_args += [
-        "-ffast-math",
-    ]
-elif sys.platform.startswith("linux"):
-    # Linux (Clang/GCC)
-    extra_compile_args += [
-        "-ffast-math",
-    ]
+# Add -ffast-math for all platforms (unless coverage is enabled)
+if os.environ.get("LABNEURA_COVERAGE") != "1":
+    extra_compile_args.append("-ffast-math")
 
 # --------------------------------------
 # Extension module
@@ -106,7 +128,7 @@ long_desc = readme_path.read_text(encoding="utf-8") if readme_path.exists() else
 
 setup(
     name="labneura2",
-    version="0.1.6",
+    version="0.1.7",
     description="SIMD-accelerated tensor operations for neural networks",
     long_description=long_desc,
     long_description_content_type="text/markdown",
