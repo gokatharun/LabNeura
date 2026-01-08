@@ -1,0 +1,233 @@
+Using NEON backend
+Using NEON backend
+Using NEON backend
+Using NEON backend
+Using NEON backend
+Using NEON backend
+Using NEON backend
+Using NEON backend
+Using NEON backend
+Using NEON backend
+Using NEON backend
+Using NEON backend
+Using NEON backend
+Using NEON backend
+Using NEON backend
+Using NEON backend
+Using NEON backend
+Using NEON backend
+Using NEON backend
+Using NEON backend
+Using NEON backend
+Using NEON backend
+Using NEON backend
+Using NEON backend
+Using NEON backend
+Using NEON backend
+Using NEON backend
+Using NEON backend
+Using NEON backend
+Using NEON backend
+Using NEON backend
+Using NEON backend
+Using NEON backend
+Using NEON backend
+Using NEON backend
+Using NEON backend
+Using NEON backend
+Using NEON backend
+Using NEON backend
+Using NEON backend
+================================================================================
+LabNeura Comprehensive Benchmarking Suite
+================================================================================
+
+Running benchmarks...
+
+
+================================================================================
+Size: 100 elements
+================================================================================
+
+Addition Benchmark...
+  LabNeura: 209.42 MFLOPS | Time: 0.05ms
+  NumPy:    42.05 MFLOPS | Time: 0.24ms
+  PyTorch:  106.20 MFLOPS | Time: 0.09ms
+  Speedup vs NumPy:
+    LabNeura: 4.98x
+    PyTorch:  2.53x
+
+Multiplication Benchmark...
+  LabNeura: 209.06 MFLOPS | Time: 0.05ms
+  NumPy:    204.43 MFLOPS | Time: 0.05ms
+  PyTorch:  108.11 MFLOPS | Time: 0.09ms
+  Speedup vs NumPy:
+    LabNeura: 1.02x
+    PyTorch:  0.53x
+
+Subtraction Benchmark...
+  LabNeura: 216.22 MFLOPS | Time: 0.05ms
+  NumPy:    207.43 MFLOPS | Time: 0.05ms
+  PyTorch:  110.34 MFLOPS | Time: 0.09ms
+  Speedup vs NumPy:
+    LabNeura: 1.04x
+    PyTorch:  0.53x
+
+INT8 Addition Benchmark...
+  LabNeura: 156.56 MFLOPS | Time: 0.06ms
+  NumPy:    180.45 MFLOPS | Time: 0.06ms
+  PyTorch:  106.24 MFLOPS | Time: 0.09ms
+  Speedup vs NumPy:
+    LabNeura: 0.87x
+    PyTorch:  0.59x
+
+================================================================================
+Size: 1,000 elements
+================================================================================
+
+Addition Benchmark...
+  LabNeura: 1.86 GFLOPS | Time: 0.05ms
+  NumPy:    1.59 GFLOPS | Time: 0.06ms
+  PyTorch:  1.03 GFLOPS | Time: 0.10ms
+  Speedup vs NumPy:
+    LabNeura: 1.17x
+    PyTorch:  0.64x
+
+Multiplication Benchmark...
+  LabNeura: 1.85 GFLOPS | Time: 0.05ms
+  NumPy:    1.62 GFLOPS | Time: 0.06ms
+  PyTorch:  1.02 GFLOPS | Time: 0.10ms
+  Speedup vs NumPy:
+    LabNeura: 1.14x
+    PyTorch:  0.63x
+
+Subtraction Benchmark...
+  LabNeura: 1.91 GFLOPS | Time: 0.05ms
+  NumPy:    1.62 GFLOPS | Time: 0.06ms
+  PyTorch:  796.02 MFLOPS | Time: 0.13ms
+  Speedup vs NumPy:
+    LabNeura: 1.18x
+    PyTorch:  0.49x
+
+INT8 Addition Benchmark...
+  LabNeura: 663.53 MFLOPS | Time: 0.15ms
+  NumPy:    1.56 GFLOPS | Time: 0.06ms
+  PyTorch:  672.45 MFLOPS | Time: 0.15ms
+  Speedup vs NumPy:
+    LabNeura: 0.43x
+    PyTorch:  0.43x
+
+================================================================================
+Size: 10,000 elements
+================================================================================
+
+Addition Benchmark...
+  LabNeura: 7.70 GFLOPS | Time: 0.13ms
+  NumPy:    2.07 GFLOPS | Time: 0.48ms
+  PyTorch:  3.59 GFLOPS | Time: 0.28ms
+  Speedup vs NumPy:
+    LabNeura: 3.72x
+    PyTorch:  1.73x
+
+Multiplication Benchmark...
+  LabNeura: 7.86 GFLOPS | Time: 0.13ms
+  NumPy:    4.58 GFLOPS | Time: 0.22ms
+  PyTorch:  3.75 GFLOPS | Time: 0.27ms
+  Speedup vs NumPy:
+    LabNeura: 1.72x
+    PyTorch:  0.82x
+
+Subtraction Benchmark...
+  LabNeura: 4.42 GFLOPS | Time: 0.23ms
+  NumPy:    2.29 GFLOPS | Time: 0.44ms
+  PyTorch:  4.00 GFLOPS | Time: 0.25ms
+  Speedup vs NumPy:
+    LabNeura: 1.93x
+    PyTorch:  1.75x
+
+INT8 Addition Benchmark...
+  LabNeura: 8.65 GFLOPS | Time: 0.12ms
+  NumPy:    7.02 GFLOPS | Time: 0.14ms
+  PyTorch:  1.59 GFLOPS | Time: 0.63ms
+  Speedup vs NumPy:
+    LabNeura: 1.23x
+    PyTorch:  0.23x
+
+================================================================================
+Size: 100,000 elements
+================================================================================
+
+Addition Benchmark...
+  LabNeura: 7.70 GFLOPS | Time: 1.30ms
+  NumPy:    6.53 GFLOPS | Time: 1.53ms
+  PyTorch:  2.95 GFLOPS | Time: 3.39ms
+  Speedup vs NumPy:
+    LabNeura: 1.18x
+    PyTorch:  0.45x
+
+Multiplication Benchmark...
+  LabNeura: 7.66 GFLOPS | Time: 1.31ms
+  NumPy:    6.49 GFLOPS | Time: 1.54ms
+  PyTorch:  2.16 GFLOPS | Time: 4.62ms
+  Speedup vs NumPy:
+    LabNeura: 1.18x
+    PyTorch:  0.33x
+
+Subtraction Benchmark...
+  LabNeura: 7.47 GFLOPS | Time: 1.34ms
+  NumPy:    6.58 GFLOPS | Time: 1.52ms
+  PyTorch:  3.08 GFLOPS | Time: 3.25ms
+  Speedup vs NumPy:
+    LabNeura: 1.13x
+    PyTorch:  0.47x
+
+INT8 Addition Benchmark...
+  LabNeura: 21.82 GFLOPS | Time: 0.46ms
+  NumPy:    19.76 GFLOPS | Time: 0.51ms
+  PyTorch:  1.68 GFLOPS | Time: 5.95ms
+  Speedup vs NumPy:
+    LabNeura: 1.10x
+    PyTorch:  0.08x
+
+================================================================================
+Size: 1,000,000 elements
+================================================================================
+
+Addition Benchmark...
+  LabNeura: 7.43 GFLOPS | Time: 13.45ms
+  NumPy:    6.91 GFLOPS | Time: 14.48ms
+  PyTorch:  9.78 GFLOPS | Time: 10.22ms
+  Speedup vs NumPy:
+    LabNeura: 1.08x
+    PyTorch:  1.42x
+
+Multiplication Benchmark...
+  LabNeura: 7.27 GFLOPS | Time: 13.75ms
+  NumPy:    7.18 GFLOPS | Time: 13.94ms
+  PyTorch:  10.28 GFLOPS | Time: 9.73ms
+  Speedup vs NumPy:
+    LabNeura: 1.01x
+    PyTorch:  1.43x
+
+Subtraction Benchmark...
+  LabNeura: 7.79 GFLOPS | Time: 12.84ms
+  NumPy:    7.10 GFLOPS | Time: 14.08ms
+  PyTorch:  9.66 GFLOPS | Time: 10.35ms
+  Speedup vs NumPy:
+    LabNeura: 1.10x
+    PyTorch:  1.36x
+
+INT8 Addition Benchmark...
+  LabNeura: 23.51 GFLOPS | Time: 4.25ms
+  NumPy:    29.57 GFLOPS | Time: 3.38ms
+  PyTorch:  4.23 GFLOPS | Time: 23.63ms
+  Speedup vs NumPy:
+    LabNeura: 0.80x
+    PyTorch:  0.14x
+
+
+================================================================================
+Benchmark Complete!
+================================================================================
+
+Results exported to: /Users/tharungoka/LabNeura/benchmarking/benchmark_results.json
