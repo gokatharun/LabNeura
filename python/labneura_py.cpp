@@ -19,9 +19,18 @@ PYBIND11_MODULE(labneura, m) {
     m.def("dequantize_int8", &labneura::dequantize_int8,
           "Dequantize an int8 to float", py::arg("q"), py::arg("scale"), py::arg("zero_point") = 0);
 
+    m.def("quantize_fp16", 
+          [](float x) { return labneura::quantize_fp16(x); },
+          "Quantize a float32 to float16 (returns uint16_t as Python int)");
+
+    m.def("dequantize_fp16",
+          [](uint16_t h) { return labneura::dequantize_fp16(h); },
+          "Dequantize a float16 to float32 (takes uint16_t as Python int)");
+
     // QuantizationMode enum
     py::enum_<labneura::QuantizationMode>(m, "QuantizationMode")
         .value("FP32", labneura::QuantizationMode::FP32)
+        .value("FP16", labneura::QuantizationMode::FP16)
         .value("INT8", labneura::QuantizationMode::INT8);
 
     // Tensor class

@@ -339,22 +339,91 @@ void NEONBackend::operation_int8(const TensorBackend& other, OperationType op_ty
     const int8_t* other_data = other.data_int8();
     int8_t* this_data = data_int8();
 
-    const std::size_t neon_len = (size_ / 16) * 16;
-    const std::size_t len8     = ((size_ - neon_len) / 8) * 8 + neon_len;
+    // Hierarchical processing: 128 → 64 → 32 → 16 → 8 → scalar
+    const std::size_t len128 = (size_ / 128) * 128;
+    const std::size_t len64  = len128 + ((size_ - len128) / 64) * 64;
+    const std::size_t len32  = len64  + ((size_ - len64) / 32) * 32;
+    const std::size_t len16  = len32  + ((size_ - len32) / 16) * 16;
+    const std::size_t len8   = len16  + ((size_ - len16) / 8) * 8;
+
+    // Prefetch distance for INT8: 256 bytes (256 int8s)
+    constexpr std::size_t PREFETCH_DISTANCE = 256;
 
     if (op_type == OperationType::ADD) {
-        for (std::size_t i = 0; i < neon_len; i += 16) {
+        // Main loop: 128 int8s (8 registers × 16 int8s)
+        for (std::size_t i = 0; i < len128; i += 128) {
+            if (i + PREFETCH_DISTANCE < size_) {
+                __builtin_prefetch(&this_data[i + PREFETCH_DISTANCE], 1, 1);
+                __builtin_prefetch(&other_data[i + PREFETCH_DISTANCE], 0, 1);
+            }
+            const int8x16_t va0 = vld1q_s8(&this_data[i + 0]);
+            const int8x16_t va1 = vld1q_s8(&this_data[i + 16]);
+            const int8x16_t va2 = vld1q_s8(&this_data[i + 32]);
+            const int8x16_t va3 = vld1q_s8(&this_data[i + 48]);
+            const int8x16_t va4 = vld1q_s8(&this_data[i + 64]);
+            const int8x16_t va5 = vld1q_s8(&this_data[i + 80]);
+            const int8x16_t va6 = vld1q_s8(&this_data[i + 96]);
+            const int8x16_t va7 = vld1q_s8(&this_data[i + 112]);
+            
+            const int8x16_t vb0 = vld1q_s8(&other_data[i + 0]);
+            const int8x16_t vb1 = vld1q_s8(&other_data[i + 16]);
+            const int8x16_t vb2 = vld1q_s8(&other_data[i + 32]);
+            const int8x16_t vb3 = vld1q_s8(&other_data[i + 48]);
+            const int8x16_t vb4 = vld1q_s8(&other_data[i + 64]);
+            const int8x16_t vb5 = vld1q_s8(&other_data[i + 80]);
+            const int8x16_t vb6 = vld1q_s8(&other_data[i + 96]);
+            const int8x16_t vb7 = vld1q_s8(&other_data[i + 112]);
+            
+            vst1q_s8(&this_data[i + 0],   vaddq_s8(va0, vb0));
+            vst1q_s8(&this_data[i + 16],  vaddq_s8(va1, vb1));
+            vst1q_s8(&this_data[i + 32],  vaddq_s8(va2, vb2));
+            vst1q_s8(&this_data[i + 48],  vaddq_s8(va3, vb3));
+            vst1q_s8(&this_data[i + 64],  vaddq_s8(va4, vb4));
+            vst1q_s8(&this_data[i + 80],  vaddq_s8(va5, vb5));
+            vst1q_s8(&this_data[i + 96],  vaddq_s8(va6, vb6));
+            vst1q_s8(&this_data[i + 112], vaddq_s8(va7, vb7));
+        }
+        // Tail: 64 int8s (4 registers × 16 int8s)
+        if (len64 > len128) {
+            const std::size_t i = len128;
+            const int8x16_t va0 = vld1q_s8(&this_data[i + 0]);
+            const int8x16_t va1 = vld1q_s8(&this_data[i + 16]);
+            const int8x16_t va2 = vld1q_s8(&this_data[i + 32]);
+            const int8x16_t va3 = vld1q_s8(&this_data[i + 48]);
+            const int8x16_t vb0 = vld1q_s8(&other_data[i + 0]);
+            const int8x16_t vb1 = vld1q_s8(&other_data[i + 16]);
+            const int8x16_t vb2 = vld1q_s8(&other_data[i + 32]);
+            const int8x16_t vb3 = vld1q_s8(&other_data[i + 48]);
+            vst1q_s8(&this_data[i + 0],  vaddq_s8(va0, vb0));
+            vst1q_s8(&this_data[i + 16], vaddq_s8(va1, vb1));
+            vst1q_s8(&this_data[i + 32], vaddq_s8(va2, vb2));
+            vst1q_s8(&this_data[i + 48], vaddq_s8(va3, vb3));
+        }
+        // Tail: 32 int8s (2 registers × 16 int8s)
+        if (len32 > len64) {
+            const std::size_t i = len64;
+            const int8x16_t va0 = vld1q_s8(&this_data[i + 0]);
+            const int8x16_t va1 = vld1q_s8(&this_data[i + 16]);
+            const int8x16_t vb0 = vld1q_s8(&other_data[i + 0]);
+            const int8x16_t vb1 = vld1q_s8(&other_data[i + 16]);
+            vst1q_s8(&this_data[i + 0],  vaddq_s8(va0, vb0));
+            vst1q_s8(&this_data[i + 16], vaddq_s8(va1, vb1));
+        }
+        // Tail: 16 int8s (1 register)
+        if (len16 > len32) {
+            const std::size_t i = len32;
             const int8x16_t va = vld1q_s8(&this_data[i]);
             const int8x16_t vb = vld1q_s8(&other_data[i]);
-            const int8x16_t vr = vaddq_s8(va, vb);
-            vst1q_s8(&this_data[i], vr);
+            vst1q_s8(&this_data[i], vaddq_s8(va, vb));
         }
-        for (std::size_t i = neon_len; i < len8; i += 8) {
+        // Tail: 8 int8s (half register)
+        if (len8 > len16) {
+            const std::size_t i = len16;
             const int8x8_t va = vld1_s8(&this_data[i]);
             const int8x8_t vb = vld1_s8(&other_data[i]);
-            const int8x8_t vr = vadd_s8(va, vb);
-            vst1_s8(&this_data[i], vr);
+            vst1_s8(&this_data[i], vadd_s8(va, vb));
         }
+        // Scalar tail
         for (std::size_t i = len8; i < size_; ++i) {
             int16_t sum = static_cast<int16_t>(this_data[i]) + static_cast<int16_t>(other_data[i]);
             this_data[i] = static_cast<int8_t>(std::max(-128, std::min(127, static_cast<int>(sum))));
@@ -363,7 +432,98 @@ void NEONBackend::operation_int8(const TensorBackend& other, OperationType op_ty
     }
 
     if (op_type == OperationType::MUL) {
-        for (std::size_t i = 0; i < neon_len; i += 16) {
+        // Main loop: 128 int8s (8 registers × 16 int8s)
+        for (std::size_t i = 0; i < len128; i += 128) {
+            if (i + PREFETCH_DISTANCE < size_) {
+                __builtin_prefetch(&this_data[i + PREFETCH_DISTANCE], 1, 1);
+                __builtin_prefetch(&other_data[i + PREFETCH_DISTANCE], 0, 1);
+            }
+            const int8x16_t va0 = vld1q_s8(&this_data[i + 0]);
+            const int8x16_t va1 = vld1q_s8(&this_data[i + 16]);
+            const int8x16_t va2 = vld1q_s8(&this_data[i + 32]);
+            const int8x16_t va3 = vld1q_s8(&this_data[i + 48]);
+            const int8x16_t va4 = vld1q_s8(&this_data[i + 64]);
+            const int8x16_t va5 = vld1q_s8(&this_data[i + 80]);
+            const int8x16_t va6 = vld1q_s8(&this_data[i + 96]);
+            const int8x16_t va7 = vld1q_s8(&this_data[i + 112]);
+            
+            const int8x16_t vb0 = vld1q_s8(&other_data[i + 0]);
+            const int8x16_t vb1 = vld1q_s8(&other_data[i + 16]);
+            const int8x16_t vb2 = vld1q_s8(&other_data[i + 32]);
+            const int8x16_t vb3 = vld1q_s8(&other_data[i + 48]);
+            const int8x16_t vb4 = vld1q_s8(&other_data[i + 64]);
+            const int8x16_t vb5 = vld1q_s8(&other_data[i + 80]);
+            const int8x16_t vb6 = vld1q_s8(&other_data[i + 96]);
+            const int8x16_t vb7 = vld1q_s8(&other_data[i + 112]);
+            
+            // For multiply, we need to widen to int16, multiply, then narrow back
+            // Process each 16-element vector separately
+            auto mul_int8x16 = [](const int8x16_t& a, const int8x16_t& b) -> int8x16_t {
+                const int16x8_t a_low = vmovl_s8(vget_low_s8(a));
+                const int16x8_t a_high = vmovl_s8(vget_high_s8(a));
+                const int16x8_t b_low = vmovl_s8(vget_low_s8(b));
+                const int16x8_t b_high = vmovl_s8(vget_high_s8(b));
+                const int16x8_t prod_low = vmulq_s16(a_low, b_low);
+                const int16x8_t prod_high = vmulq_s16(a_high, b_high);
+                return vcombine_s8(vqmovn_s16(prod_low), vqmovn_s16(prod_high));
+            };
+            
+            vst1q_s8(&this_data[i + 0],   mul_int8x16(va0, vb0));
+            vst1q_s8(&this_data[i + 16],  mul_int8x16(va1, vb1));
+            vst1q_s8(&this_data[i + 32],  mul_int8x16(va2, vb2));
+            vst1q_s8(&this_data[i + 48],  mul_int8x16(va3, vb3));
+            vst1q_s8(&this_data[i + 64],  mul_int8x16(va4, vb4));
+            vst1q_s8(&this_data[i + 80],  mul_int8x16(va5, vb5));
+            vst1q_s8(&this_data[i + 96],  mul_int8x16(va6, vb6));
+            vst1q_s8(&this_data[i + 112], mul_int8x16(va7, vb7));
+        }
+        // Tail: 64 int8s
+        if (len64 > len128) {
+            const std::size_t i = len128;
+            auto mul_int8x16 = [](const int8x16_t& a, const int8x16_t& b) -> int8x16_t {
+                const int16x8_t a_low = vmovl_s8(vget_low_s8(a));
+                const int16x8_t a_high = vmovl_s8(vget_high_s8(a));
+                const int16x8_t b_low = vmovl_s8(vget_low_s8(b));
+                const int16x8_t b_high = vmovl_s8(vget_high_s8(b));
+                const int16x8_t prod_low = vmulq_s16(a_low, b_low);
+                const int16x8_t prod_high = vmulq_s16(a_high, b_high);
+                return vcombine_s8(vqmovn_s16(prod_low), vqmovn_s16(prod_high));
+            };
+            const int8x16_t va0 = vld1q_s8(&this_data[i + 0]);
+            const int8x16_t va1 = vld1q_s8(&this_data[i + 16]);
+            const int8x16_t va2 = vld1q_s8(&this_data[i + 32]);
+            const int8x16_t va3 = vld1q_s8(&this_data[i + 48]);
+            const int8x16_t vb0 = vld1q_s8(&other_data[i + 0]);
+            const int8x16_t vb1 = vld1q_s8(&other_data[i + 16]);
+            const int8x16_t vb2 = vld1q_s8(&other_data[i + 32]);
+            const int8x16_t vb3 = vld1q_s8(&other_data[i + 48]);
+            vst1q_s8(&this_data[i + 0],  mul_int8x16(va0, vb0));
+            vst1q_s8(&this_data[i + 16], mul_int8x16(va1, vb1));
+            vst1q_s8(&this_data[i + 32], mul_int8x16(va2, vb2));
+            vst1q_s8(&this_data[i + 48], mul_int8x16(va3, vb3));
+        }
+        // Tail: 32 int8s
+        if (len32 > len64) {
+            const std::size_t i = len64;
+            auto mul_int8x16 = [](const int8x16_t& a, const int8x16_t& b) -> int8x16_t {
+                const int16x8_t a_low = vmovl_s8(vget_low_s8(a));
+                const int16x8_t a_high = vmovl_s8(vget_high_s8(a));
+                const int16x8_t b_low = vmovl_s8(vget_low_s8(b));
+                const int16x8_t b_high = vmovl_s8(vget_high_s8(b));
+                const int16x8_t prod_low = vmulq_s16(a_low, b_low);
+                const int16x8_t prod_high = vmulq_s16(a_high, b_high);
+                return vcombine_s8(vqmovn_s16(prod_low), vqmovn_s16(prod_high));
+            };
+            const int8x16_t va0 = vld1q_s8(&this_data[i + 0]);
+            const int8x16_t va1 = vld1q_s8(&this_data[i + 16]);
+            const int8x16_t vb0 = vld1q_s8(&other_data[i + 0]);
+            const int8x16_t vb1 = vld1q_s8(&other_data[i + 16]);
+            vst1q_s8(&this_data[i + 0],  mul_int8x16(va0, vb0));
+            vst1q_s8(&this_data[i + 16], mul_int8x16(va1, vb1));
+        }
+        // Tail: 16 int8s
+        if (len16 > len32) {
+            const std::size_t i = len32;
             const int8x16_t va = vld1q_s8(&this_data[i]);
             const int8x16_t vb = vld1q_s8(&other_data[i]);
             const int16x8_t va_low = vmovl_s8(vget_low_s8(va));
@@ -372,18 +532,19 @@ void NEONBackend::operation_int8(const TensorBackend& other, OperationType op_ty
             const int16x8_t vb_high = vmovl_s8(vget_high_s8(vb));
             const int16x8_t prod_low = vmulq_s16(va_low, vb_low);
             const int16x8_t prod_high = vmulq_s16(va_high, vb_high);
-            const int8x16_t vr = vcombine_s8(vqmovn_s16(prod_low), vqmovn_s16(prod_high));
-            vst1q_s8(&this_data[i], vr);
+            vst1q_s8(&this_data[i], vcombine_s8(vqmovn_s16(prod_low), vqmovn_s16(prod_high)));
         }
-        for (std::size_t i = neon_len; i < len8; i += 8) {
+        // Tail: 8 int8s
+        if (len8 > len16) {
+            const std::size_t i = len16;
             const int8x8_t va = vld1_s8(&this_data[i]);
             const int8x8_t vb = vld1_s8(&other_data[i]);
             const int16x8_t va16 = vmovl_s8(va);
             const int16x8_t vb16 = vmovl_s8(vb);
             const int16x8_t prod = vmulq_s16(va16, vb16);
-            const int8x8_t vr = vqmovn_s16(prod);
-            vst1_s8(&this_data[i], vr);
+            vst1_s8(&this_data[i], vqmovn_s16(prod));
         }
+        // Scalar tail
         for (std::size_t i = len8; i < size_; ++i) {
             int16_t prod = static_cast<int16_t>(this_data[i]) * static_cast<int16_t>(other_data[i]);
             this_data[i] = static_cast<int8_t>(std::max(-128, std::min(127, static_cast<int>(prod))));
@@ -391,18 +552,81 @@ void NEONBackend::operation_int8(const TensorBackend& other, OperationType op_ty
         return;
     }
 
-    for (std::size_t i = 0; i < neon_len; i += 16) {
+    // SUB path (default)
+    // Main loop: 128 int8s (8 registers × 16 int8s)
+    for (std::size_t i = 0; i < len128; i += 128) {
+        if (i + PREFETCH_DISTANCE < size_) {
+            __builtin_prefetch(&this_data[i + PREFETCH_DISTANCE], 1, 1);
+            __builtin_prefetch(&other_data[i + PREFETCH_DISTANCE], 0, 1);
+        }
+        const int8x16_t va0 = vld1q_s8(&this_data[i + 0]);
+        const int8x16_t va1 = vld1q_s8(&this_data[i + 16]);
+        const int8x16_t va2 = vld1q_s8(&this_data[i + 32]);
+        const int8x16_t va3 = vld1q_s8(&this_data[i + 48]);
+        const int8x16_t va4 = vld1q_s8(&this_data[i + 64]);
+        const int8x16_t va5 = vld1q_s8(&this_data[i + 80]);
+        const int8x16_t va6 = vld1q_s8(&this_data[i + 96]);
+        const int8x16_t va7 = vld1q_s8(&this_data[i + 112]);
+        
+        const int8x16_t vb0 = vld1q_s8(&other_data[i + 0]);
+        const int8x16_t vb1 = vld1q_s8(&other_data[i + 16]);
+        const int8x16_t vb2 = vld1q_s8(&other_data[i + 32]);
+        const int8x16_t vb3 = vld1q_s8(&other_data[i + 48]);
+        const int8x16_t vb4 = vld1q_s8(&other_data[i + 64]);
+        const int8x16_t vb5 = vld1q_s8(&other_data[i + 80]);
+        const int8x16_t vb6 = vld1q_s8(&other_data[i + 96]);
+        const int8x16_t vb7 = vld1q_s8(&other_data[i + 112]);
+        
+        vst1q_s8(&this_data[i + 0],   vsubq_s8(va0, vb0));
+        vst1q_s8(&this_data[i + 16],  vsubq_s8(va1, vb1));
+        vst1q_s8(&this_data[i + 32],  vsubq_s8(va2, vb2));
+        vst1q_s8(&this_data[i + 48],  vsubq_s8(va3, vb3));
+        vst1q_s8(&this_data[i + 64],  vsubq_s8(va4, vb4));
+        vst1q_s8(&this_data[i + 80],  vsubq_s8(va5, vb5));
+        vst1q_s8(&this_data[i + 96],  vsubq_s8(va6, vb6));
+        vst1q_s8(&this_data[i + 112], vsubq_s8(va7, vb7));
+    }
+    // Tail: 64 int8s
+    if (len64 > len128) {
+        const std::size_t i = len128;
+        const int8x16_t va0 = vld1q_s8(&this_data[i + 0]);
+        const int8x16_t va1 = vld1q_s8(&this_data[i + 16]);
+        const int8x16_t va2 = vld1q_s8(&this_data[i + 32]);
+        const int8x16_t va3 = vld1q_s8(&this_data[i + 48]);
+        const int8x16_t vb0 = vld1q_s8(&other_data[i + 0]);
+        const int8x16_t vb1 = vld1q_s8(&other_data[i + 16]);
+        const int8x16_t vb2 = vld1q_s8(&other_data[i + 32]);
+        const int8x16_t vb3 = vld1q_s8(&other_data[i + 48]);
+        vst1q_s8(&this_data[i + 0],  vsubq_s8(va0, vb0));
+        vst1q_s8(&this_data[i + 16], vsubq_s8(va1, vb1));
+        vst1q_s8(&this_data[i + 32], vsubq_s8(va2, vb2));
+        vst1q_s8(&this_data[i + 48], vsubq_s8(va3, vb3));
+    }
+    // Tail: 32 int8s
+    if (len32 > len64) {
+        const std::size_t i = len64;
+        const int8x16_t va0 = vld1q_s8(&this_data[i + 0]);
+        const int8x16_t va1 = vld1q_s8(&this_data[i + 16]);
+        const int8x16_t vb0 = vld1q_s8(&other_data[i + 0]);
+        const int8x16_t vb1 = vld1q_s8(&other_data[i + 16]);
+        vst1q_s8(&this_data[i + 0],  vsubq_s8(va0, vb0));
+        vst1q_s8(&this_data[i + 16], vsubq_s8(va1, vb1));
+    }
+    // Tail: 16 int8s
+    if (len16 > len32) {
+        const std::size_t i = len32;
         const int8x16_t va = vld1q_s8(&this_data[i]);
         const int8x16_t vb = vld1q_s8(&other_data[i]);
-        const int8x16_t vr = vsubq_s8(va, vb);
-        vst1q_s8(&this_data[i], vr);
+        vst1q_s8(&this_data[i], vsubq_s8(va, vb));
     }
-    for (std::size_t i = neon_len; i < len8; i += 8) {
+    // Tail: 8 int8s
+    if (len8 > len16) {
+        const std::size_t i = len16;
         const int8x8_t va = vld1_s8(&this_data[i]);
         const int8x8_t vb = vld1_s8(&other_data[i]);
-        const int8x8_t vr = vsub_s8(va, vb);
-        vst1_s8(&this_data[i], vr);
+        vst1_s8(&this_data[i], vsub_s8(va, vb));
     }
+    // Scalar tail
     for (std::size_t i = len8; i < size_; ++i) {
         int16_t diff = static_cast<int16_t>(this_data[i]) - static_cast<int16_t>(other_data[i]);
         this_data[i] = static_cast<int8_t>(std::max(-128, std::min(127, static_cast<int>(diff))));
