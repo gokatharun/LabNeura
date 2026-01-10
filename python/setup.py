@@ -38,13 +38,11 @@ def detect_simd_flags():
 # --------------------------------------
 # Resolve paths robustly regardless of invocation cwd
 repo_dir = Path(__file__).resolve().parent
-root_dir = repo_dir.parent
 
 include_dirs = [
     pybind11.get_include(),
     str(repo_dir / "src"),          # python/src
-    str(repo_dir / "include"),      # python/include
-    str(root_dir / "include"),      # top-level include (fallback if building from root)
+    str(repo_dir / "include"),      # python/include (authoritative headers)
 ]
 
 extra_compile_args = [

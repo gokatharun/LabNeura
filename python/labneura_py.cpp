@@ -94,10 +94,11 @@ PYBIND11_MODULE(labneura, m) {
             if (self.quantization_mode() != labneura::QuantizationMode::FP16) {
                 throw std::runtime_error("Tensor is not in FP16 mode");
             }
-            const int16_t* ptr = self.data_fp16();
+            // Accept either int16_t* or uint16_t* depending on header signature
+            const auto* ptr = self.data_fp16();
             std::vector<int> result(self.size());
             for (std::size_t i = 0; i < self.size(); ++i) {
-                // Convert signed storage to unsigned 16-bit representation
+                // Normalize to unsigned 16-bit for Python-facing API
                 result[i] = static_cast<int>(static_cast<uint16_t>(ptr[i]));
             }
             return result;

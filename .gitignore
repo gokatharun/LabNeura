@@ -23,3 +23,5 @@ coverage_html/*
 .DS_Store
 labneura*
 default.profraw
+!python/src/*
+!python/include/*
