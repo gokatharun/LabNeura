@@ -150,6 +150,18 @@ Tensor Tensor::add(const Tensor& other) const {
     return result;
 }
 
+Tensor Tensor::mul(const Tensor& other) const {
+    Tensor result(*this);
+    result.mul_inplace(other);
+    return result;
+}
+
+Tensor Tensor::sub(const Tensor& other) const {
+    Tensor result(*this);
+    result.sub_inplace(other);
+    return result;
+}
+
 void Tensor::add_inplace(const Tensor& other) {
     if (!backend_) {
         throw std::runtime_error("Tensor backend not initialized");

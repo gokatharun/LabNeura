@@ -88,10 +88,14 @@ public:
     // Operations
     // Addition: result = this + other
     Tensor add(const Tensor& other) const;
+    // Multiplication: result = this * other
+    Tensor mul(const Tensor& other) const;
+    // Subtraction: result = this - other
+    Tensor sub(const Tensor& other) const;
     
     // In-place addition: this += other
     void add_inplace(const Tensor& other);
-    // In-place multiplication: this = this . other
+    // In-place multiplication: this *= other
     void mul_inplace(const Tensor& other);
     // In-place subtraction: this -= other
     void sub_inplace(const Tensor& other);

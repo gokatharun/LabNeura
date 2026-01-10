@@ -105,9 +105,11 @@ PYBIND11_MODULE(labneura, m) {
         
         // Operations
         .def("add", &labneura::Tensor::add, "Add two tensors (returns new tensor)")
+        .def("mul", &labneura::Tensor::mul, "Multiply two tensors (returns new tensor)")
+        .def("sub", &labneura::Tensor::sub, "Subtract two tensors (returns new tensor)")
         .def("add_inplace", &labneura::Tensor::add_inplace, "In-place addition (modifies self)")
-        .def("sub_inplace", &labneura::Tensor::sub_inplace, "In-place subtraction (modifies self)")
-        .def("mul_inplace", &labneura::Tensor::mul_inplace, "In-place multiplication (modifies self)");
+        .def("mul_inplace", &labneura::Tensor::mul_inplace, "In-place multiplication (modifies self)")
+        .def("sub_inplace", &labneura::Tensor::sub_inplace, "In-place subtraction (modifies self)");
 
     // Backend detection
     m.def("detect_backend", &labneura::detect_backend, "Detect the preferred backend based on CPU features");
