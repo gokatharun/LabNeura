@@ -33,14 +33,14 @@
 
 namespace labneura {
 
-// Quantization modes (data types)
+// Quantization modes
 enum class QuantizationMode {
-    FP64,      // 64-bit floating point (double) - default for floats
-    FP32,      // 32-bit floating point (float)
-    FP16,      // 16-bit floating point (half)
-    INT32,     // 32-bit signed integer - default for ints
-    INT16,     // 16-bit signed integer
-    INT8,      // 8-bit signed integer
+    FP64,      // 64-bit floating point
+    FP32,      // 32-bit floating point (default)
+    FP16,      // 16-bit floating point
+    INT32,     // 32-bit signed integer quantization
+    INT16,     // 16-bit signed integer quantization
+    INT8,      // 8-bit signed integer quantization
 };
 
 enum OperationType {
@@ -57,14 +57,11 @@ class Tensor {
 public:
     // Constructor with array/scalar and optional quantization
     // Supports int, float, or std::vector<int/float>
-    // Default: FP64 for floats, INT32 for ints
     Tensor();
-    explicit Tensor(const std::vector<double>& data, QuantizationMode mode = QuantizationMode::FP32);
     explicit Tensor(const std::vector<float>& data, QuantizationMode mode = QuantizationMode::FP32);
-    explicit Tensor(const std::vector<int>& data, QuantizationMode mode = QuantizationMode::INT32);
-    explicit Tensor(double scalar, QuantizationMode mode = QuantizationMode::FP32);
+    explicit Tensor(const std::vector<int>& data, QuantizationMode mode = QuantizationMode::FP32);
     explicit Tensor(float scalar, QuantizationMode mode = QuantizationMode::FP32);
-    explicit Tensor(int scalar, QuantizationMode mode = QuantizationMode::INT32);
+    explicit Tensor(int scalar, QuantizationMode mode = QuantizationMode::FP32);
 
     // Destructor
     ~Tensor();
@@ -81,37 +78,29 @@ public:
     QuantizationMode quantization_mode() const { return quantization_mode_; }
 
     // Get raw data pointer (for internal use and operations)
-    double* data_fp64();
-    const double* data_fp64() const;
     float* data_fp32();
     const float* data_fp32() const;
-    int16_t* data_fp16();
-    const int16_t* data_fp16() const;
-    int32_t* data_int32();
-    const int32_t* data_int32() const;
-    int16_t* data_int16();
-    const int16_t* data_int16() const;
     int8_t* data_int8();
     const int8_t* data_int8() const;
+    int16_t* data_fp16();
+    const int16_t* data_fp16() const;
+    int16_t* data_int16();
+    const int16_t* data_int16() const;
 
     // Operations
     // Addition: result = this + other
     Tensor add(const Tensor& other) const;
-    
+    // Multiplication: result = this * other
+    Tensor mul(const Tensor& other) const;
     // Subtraction: result = this - other
     Tensor sub(const Tensor& other) const;
     
-    // Multiplication: result = this * other (element-wise)
-    Tensor mul(const Tensor& other) const;
-    
     // In-place addition: this += other
     void add_inplace(const Tensor& other);
-    
+    // In-place multiplication: this *= other
+    void mul_inplace(const Tensor& other);
     // In-place subtraction: this -= other
     void sub_inplace(const Tensor& other);
-    
-    // In-place multiplication: this *= other (element-wise)
-    void mul_inplace(const Tensor& other);
 
 private:
     QuantizationMode quantization_mode_;

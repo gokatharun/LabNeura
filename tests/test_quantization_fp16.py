@@ -286,11 +286,11 @@ class TestEdgeCases:
         """Test that consecutive quantized values differ by smallest unit"""
         # Quantize 1.0 and smallest increments
         q1 = labneura.quantize_fp16(1.0)
-        q_next = labneura.quantize_fp16(1.0 + 2**-11)  # Approximate increment
+        q_next = labneura.quantize_fp16(1.0 + 2**-10)  # One ULP at 1.0
         
         # These should be different FP16 values
-        # (FP16 has 10-bit mantissa, so 2^-11 is roughly one ULP)
-        assert q1 != q_next or (q1 == q_next and 1.0 + 2**-11 == 1.0), \
+        # (FP16 has 10-bit mantissa, so 2^-10 is one ULP at 1.0)
+        assert q1 != q_next or (q1 == q_next and 1.0 + 2**-10 == 1.0), \
             "Consecutive values should differ or be equal if indistinguishable"
 
 

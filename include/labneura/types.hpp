@@ -79,7 +79,26 @@ inline uint16_t quantize_fp16(float x) {
             result = (sign << 15);
         } else {
             // Normal: combine sign, exponent (5 bits), mantissa (10 bits)
+            // Round to nearest, ties to even
+            uint32_t round_bit = (mantissa >> 12) & 0x1;  // Bit that will be rounded off
+            uint32_t sticky_bits = mantissa & 0xFFF;      // All lower bits
             uint16_t new_mantissa = (mantissa >> 13) & 0x3FF;
+            
+            // Round up if: round_bit is 1 AND (sticky_bits != 0 OR new_mantissa is odd)
+            if (round_bit && (sticky_bits || (new_mantissa & 1))) {
+                new_mantissa++;
+                // Check for mantissa overflow
+                if (new_mantissa > 0x3FF) {
+                    new_mantissa = 0;
+                    new_exponent++;
+                    if (new_exponent >= 31) {
+                        // Overflow to infinity
+                        result = (sign << 15) | (31 << 10);
+                        return result;
+                    }
+                }
+            }
+            
             result = (sign << 15) | ((new_exponent & 0x1F) << 10) | new_mantissa;
         }
     }

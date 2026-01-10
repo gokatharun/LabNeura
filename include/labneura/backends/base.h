@@ -17,9 +17,11 @@ public:
     virtual const float* data_fp32() const = 0;
     virtual int8_t* data_int8() = 0;
     virtual const int8_t* data_int8() const = 0;
-    // Optional FP16 accessors (default throw)
-    virtual uint16_t* data_fp16();
-    virtual const uint16_t* data_fp16() const;
+    // Optional FP16/INT16 accessors (default throw)
+    virtual int16_t* data_fp16();
+    virtual const int16_t* data_fp16() const;
+    virtual int16_t* data_int16();
+    virtual const int16_t* data_int16() const;
 
     // ---- Cloning ----
     virtual std::unique_ptr<TensorBackend> clone() const = 0;
@@ -34,8 +36,9 @@ protected:
     // ---- Backend-specific kernels (virtual hooks) ----
     virtual void operation_fp32(const TensorBackend& other, OperationType op) = 0;
     virtual void operation_int8(const TensorBackend& other, OperationType op) = 0;
-    // Optional FP16 kernel (default throws)
+    // Optional FP16/INT16 kernels (default throw)
     virtual void operation_fp16(const TensorBackend& other, OperationType op);
+    virtual void operation_int16(const TensorBackend& other, OperationType op);
 };
 
 } // namespace labneura
