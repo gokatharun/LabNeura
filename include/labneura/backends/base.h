@@ -1,10 +1,11 @@
 #pragma once
 #include <memory>
 #include "labneura/tensor.h"
+#include "labneura/visibility.h"
 
 namespace labneura {
 
-class TensorBackend {
+class LABNEURA_API TensorBackend {
 public:
     virtual ~TensorBackend() = default;
 
