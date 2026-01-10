@@ -109,21 +109,6 @@ void GenericBackend::operation_int8(const TensorBackend& other, OperationType op
     }
 }
 
-// Stub implementations for unsupported types
-double* GenericBackend::data_fp64() { throw std::runtime_error("FP64 not implemented"); }
-const double* GenericBackend::data_fp64() const { throw std::runtime_error("FP64 not implemented"); }
-int16_t* GenericBackend::data_fp16() { throw std::runtime_error("FP16 not implemented"); }
-const int16_t* GenericBackend::data_fp16() const { throw std::runtime_error("FP16 not implemented"); }
-int32_t* GenericBackend::data_int32() { throw std::runtime_error("INT32 not implemented"); }
-const int32_t* GenericBackend::data_int32() const { throw std::runtime_error("INT32 not implemented"); }
-int16_t* GenericBackend::data_int16() { throw std::runtime_error("INT16 not implemented"); }
-const int16_t* GenericBackend::data_int16() const { throw std::runtime_error("INT16 not implemented"); }
-
-void GenericBackend::operation_fp64(const TensorBackend&, OperationType) { throw std::runtime_error("FP64 operations not implemented"); }
-void GenericBackend::operation_fp16(const TensorBackend&, OperationType) { throw std::runtime_error("FP16 operations not implemented"); }
-void GenericBackend::operation_int32(const TensorBackend&, OperationType) { throw std::runtime_error("INT32 operations not implemented"); }
-void GenericBackend::operation_int16(const TensorBackend&, OperationType) { throw std::runtime_error("INT16 operations not implemented"); }
-
-void GenericBackend::store_fp16_value(std::size_t, float) { throw std::runtime_error("FP16 not implemented"); }
-
 }  // namespace labneura
+
+

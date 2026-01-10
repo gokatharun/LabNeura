@@ -28,20 +28,16 @@ void TensorBackend::operation(const TensorBackend& other, OperationType op) {
         operation_fp32(other, op);
     } else if (quantization_mode() == QuantizationMode::FP16) {
         operation_fp16(other, op);
-    } else if (quantization_mode() == QuantizationMode::INT16) {
-        operation_int16(other, op);
-    } else if (quantization_mode() == QuantizationMode::INT8) {
-        operation_int8(other, op);
     } else {
-        throw std::runtime_error("Unsupported quantization mode");
+        operation_int8(other, op);
     }
 }
 
-int16_t* TensorBackend::data_fp16() {
+uint16_t* TensorBackend::data_fp16() {
     throw std::runtime_error("FP16 data access not implemented for this backend");
 }
 
-const int16_t* TensorBackend::data_fp16() const {
+const uint16_t* TensorBackend::data_fp16() const {
     throw std::runtime_error("FP16 data access not implemented for this backend");
 }
 

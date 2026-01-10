@@ -3,7 +3,6 @@
 #include "labneura/backends/neon.h"
 #include "labneura/backends/avx2.h"
 #include "labneura/backends/backend_factory.h"
-#include "labneura/types.hpp"
 #include <cstring>
 #include <algorithm>
 #include <cmath>
@@ -26,15 +25,9 @@ Tensor::Tensor(const std::vector<float>& data, QuantizationMode mode)
                 fp32_data[i] = data[i];
             }
         } else if (mode == QuantizationMode::FP16) {
-            int16_t* fp16_data = data_fp16();
+            uint16_t* fp16_data = data_fp16();
             for (std::size_t i = 0; i < data.size(); ++i) {
                 fp16_data[i] = labneura::quantize_fp16(data[i]);
-            }
-        } else if (mode == QuantizationMode::INT16) {
-            int16_t* int16_data = data_int16();
-            for (std::size_t i = 0; i < data.size(); ++i) {
-                int v = static_cast<int>(std::lrintf(data[i]));
-                int16_data[i] = static_cast<int16_t>(std::max(-32768, std::min(32767, v)));
             }
         } else if (mode == QuantizationMode::INT8) {
             int8_t* int8_data = data_int8();
@@ -60,13 +53,6 @@ Tensor::Tensor(const std::vector<int>& data, QuantizationMode mode)
         for (std::size_t i = 0; i < data.size(); ++i) {
             fp32_data[i] = static_cast<float>(data[i]);
         }
-    } else if (mode == QuantizationMode::INT16) {
-        int16_t* int16_data = data_int16();
-        for (std::size_t i = 0; i < data.size(); ++i) {
-            int16_data[i] = static_cast<int16_t>(
-                std::max(-32768, std::min(32767, data[i]))
-            );
-        }
     } else if (mode == QuantizationMode::INT8) {
         int8_t* int8_data = data_int8();
         for (std::size_t i = 0; i < data.size(); ++i) {
@@ -84,9 +70,6 @@ Tensor::Tensor(float scalar, QuantizationMode mode)
         data_fp32()[0] = scalar;
     } else if (mode == QuantizationMode::FP16) {
         data_fp16()[0] = labneura::quantize_fp16(scalar);
-    } else if (mode == QuantizationMode::INT16) {
-        int v = static_cast<int>(std::lrintf(scalar));
-        data_int16()[0] = static_cast<int16_t>(std::max(-32768, std::min(32767, v)));
     } else if (mode == QuantizationMode::INT8) {
         int v = static_cast<int>(std::lrintf(scalar));
         data_int8()[0] = static_cast<int8_t>(std::max(-128, std::min(127, v)));
@@ -100,10 +83,6 @@ Tensor::Tensor(int scalar, QuantizationMode mode)
     init_backend(1);
     if (mode == QuantizationMode::FP32) {
         data_fp32()[0] = static_cast<float>(scalar);
-    } else if (mode == QuantizationMode::INT16) {
-        data_int16()[0] = static_cast<int16_t>(
-            std::max(-32768, std::min(32767, scalar))
-        );
     } else if (mode == QuantizationMode::INT8) {
         data_int8()[0] = static_cast<int8_t>(
             std::max(-128, std::min(127, scalar))
@@ -157,20 +136,12 @@ const int8_t* Tensor::data_int8() const {
     return backend_ ? backend_->data_int8() : nullptr;
 }
 
-int16_t* Tensor::data_fp16() {
+uint16_t* Tensor::data_fp16() {
     return backend_ ? backend_->data_fp16() : nullptr;
 }
 
-const int16_t* Tensor::data_fp16() const {
+const uint16_t* Tensor::data_fp16() const {
     return backend_ ? backend_->data_fp16() : nullptr;
-}
-
-int16_t* Tensor::data_int16() {
-    return backend_ ? backend_->data_int16() : nullptr;
-}
-
-const int16_t* Tensor::data_int16() const {
-    return backend_ ? backend_->data_int16() : nullptr;
 }
 
 Tensor Tensor::add(const Tensor& other) const {

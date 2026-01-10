@@ -25,15 +25,10 @@ NEONBackend::NEONBackend(std::size_t size, QuantizationMode mode)
         data_fp32_ = std::unique_ptr<float, void(*)(float*)>(p, labneura::util::free_aligned_float);
         std::fill(data_fp32_.get() + size_, data_fp32_.get() + aligned_size_, 0.0f);
     } else if (mode == QuantizationMode::FP16) {
-        int16_t* p = labneura::util::allocate_aligned<int16_t>(aligned_size_, labneura::util::NEON_ALIGN);
-        auto fp16_deleter = [](int16_t* ptr){ labneura::util::aligned_free(ptr); };
-        data_fp16_ = std::unique_ptr<int16_t, void(*)(int16_t*)>(p, fp16_deleter);
-        std::fill(data_fp16_.get() + size_, data_fp16_.get() + aligned_size_, static_cast<int16_t>(0));
-    } else if (mode == QuantizationMode::INT16) {
-        int16_t* p = labneura::util::allocate_aligned<int16_t>(aligned_size_, labneura::util::NEON_ALIGN);
-        auto int16_deleter = [](int16_t* ptr){ labneura::util::aligned_free(ptr); };
-        data_int16_ = std::unique_ptr<int16_t, void(*)(int16_t*)>(p, int16_deleter);
-        std::fill(data_int16_.get() + size_, data_int16_.get() + aligned_size_, static_cast<int16_t>(0));
+        uint16_t* p = labneura::util::allocate_aligned<uint16_t>(aligned_size_, labneura::util::NEON_ALIGN);
+        auto fp16_deleter = [](uint16_t* ptr){ labneura::util::aligned_free(ptr); };
+        data_fp16_ = std::unique_ptr<uint16_t, void(*)(uint16_t*)>(p, fp16_deleter);
+        std::fill(data_fp16_.get() + size_, data_fp16_.get() + aligned_size_, static_cast<uint16_t>(0));
     } else {
         int8_t* p = labneura::util::allocate_aligned<int8_t>(aligned_size_, labneura::util::NEON_ALIGN);
         data_int8_ = std::unique_ptr<int8_t, void(*)(int8_t*)>(p, labneura::util::free_aligned_int8);
@@ -85,48 +80,18 @@ const int8_t* NEONBackend::data_int8() const {
     return data_int8_.get();
 }
 
-int16_t* NEONBackend::data_fp16() {
+uint16_t* NEONBackend::data_fp16() {
     if (quantization_mode_ != QuantizationMode::FP16) {
         throw std::runtime_error("Tensor is not in FP16 mode");
     }
     return data_fp16_.get();
 }
 
-const int16_t* NEONBackend::data_fp16() const {
+const uint16_t* NEONBackend::data_fp16() const {
     if (quantization_mode_ != QuantizationMode::FP16) {
         throw std::runtime_error("Tensor is not in FP16 mode");
     }
     return data_fp16_.get();
-}
-
-int16_t* NEONBackend::data_int16() {
-    if (quantization_mode_ != QuantizationMode::INT16) {
-        throw std::runtime_error("Tensor is not in INT16 mode");
-    }
-    return data_int16_.get();
-}
-
-const int16_t* NEONBackend::data_int16() const {
-    if (quantization_mode_ != QuantizationMode::INT16) {
-        throw std::runtime_error("Tensor is not in INT16 mode");
-    }
-    return data_int16_.get();
-}
-
-double* NEONBackend::data_fp64() {
-    throw std::runtime_error("FP64 not yet implemented for NEON");
-}
-
-const double* NEONBackend::data_fp64() const {
-    throw std::runtime_error("FP64 not yet implemented for NEON");
-}
-
-int32_t* NEONBackend::data_int32() {
-    throw std::runtime_error("INT32 not yet implemented for NEON");
-}
-
-const int32_t* NEONBackend::data_int32() const {
-    throw std::runtime_error("INT32 not yet implemented for NEON");
 }
 
 // =======================
@@ -139,8 +104,6 @@ std::unique_ptr<TensorBackend> NEONBackend::clone() const {
         std::copy(data_fp32_.get(), data_fp32_.get() + size_, backend->data_fp32());
     } else if (quantization_mode_ == QuantizationMode::FP16) {
         std::copy(data_fp16_.get(), data_fp16_.get() + size_, backend->data_fp16());
-    } else if (quantization_mode_ == QuantizationMode::INT16) {
-        std::copy(data_int16_.get(), data_int16_.get() + size_, backend->data_int16());
     } else {
         std::copy(data_int8_.get(), data_int8_.get() + size_, backend->data_int8());
     }
@@ -948,63 +911,6 @@ void NEONBackend::operation_int8(const TensorBackend& other, OperationType op_ty
     for (std::size_t i = len8; i < size_; ++i) {
         int16_t diff = static_cast<int16_t>(this_data[i]) - static_cast<int16_t>(other_data[i]);
         this_data[i] = static_cast<int8_t>(std::max(-128, std::min(127, static_cast<int>(diff))));
-    }
-}
-
-void NEONBackend::operation_fp64(const TensorBackend&, OperationType) {
-    throw std::runtime_error("FP64 operations not yet implemented for NEON");
-}
-
-void NEONBackend::operation_int32(const TensorBackend&, OperationType) {
-    throw std::runtime_error("INT32 operations not yet implemented for NEON");
-}
-
-void NEONBackend::operation_int16(const TensorBackend& other, OperationType op_type) {
-    const int16_t* other_data = other.data_int16();
-    int16_t* this_data = data_int16();
-    const std::size_t len128 = (size_ / 8) * 8;  // 8 int16s per 128-bit register
-
-    if (op_type == OperationType::ADD) {
-        // Main vectorized loop: process 8 int16 at a time
-        for (std::size_t i = 0; i < len128; i += 8) {
-            const int16x8_t va = vld1q_s16(&this_data[i]);
-            const int16x8_t vb = vld1q_s16(&other_data[i]);
-            const int16x8_t r = vqaddq_s16(va, vb);  // Saturating add
-            vst1q_s16(&this_data[i], r);
-        }
-        // Scalar tail
-        for (std::size_t i = len128; i < size_; ++i) {
-            int32_t sum = static_cast<int32_t>(this_data[i]) + static_cast<int32_t>(other_data[i]);
-            this_data[i] = static_cast<int16_t>(std::max(-32768, std::min(32767, static_cast<int>(sum))));
-        }
-        return;
-    }
-    if (op_type == OperationType::MUL) {
-        // Process 8 int16 at a time using multiplication
-        for (std::size_t i = 0; i < len128; i += 8) {
-            const int16x8_t va = vld1q_s16(&this_data[i]);
-            const int16x8_t vb = vld1q_s16(&other_data[i]);
-            const int16x8_t r = vmulq_s16(va, vb);
-            vst1q_s16(&this_data[i], r);
-        }
-        // Scalar tail
-        for (std::size_t i = len128; i < size_; ++i) {
-            int32_t prod = static_cast<int32_t>(this_data[i]) * static_cast<int32_t>(other_data[i]);
-            this_data[i] = static_cast<int16_t>(std::max(-32768, std::min(32767, prod)));
-        }
-        return;
-    }
-    // SUB operation
-    for (std::size_t i = 0; i < len128; i += 8) {
-        const int16x8_t va = vld1q_s16(&this_data[i]);
-        const int16x8_t vb = vld1q_s16(&other_data[i]);
-        const int16x8_t r = vqsubq_s16(va, vb);  // Saturating subtract
-        vst1q_s16(&this_data[i], r);
-    }
-    // Scalar tail
-    for (std::size_t i = len128; i < size_; ++i) {
-        int32_t diff = static_cast<int32_t>(this_data[i]) - static_cast<int32_t>(other_data[i]);
-        this_data[i] = static_cast<int16_t>(std::max(-32768, std::min(32767, diff)));
     }
 }
 
