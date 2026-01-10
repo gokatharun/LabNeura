@@ -264,6 +264,110 @@ class BenchmarkRunner:
         
         return results
     
+    def benchmark_int16_operations(self, size: int) -> Dict[str, Dict[str, PerformanceMetrics]]:
+        """Benchmark INT16 operations with proper saturation."""
+        results = {}
+        
+        # LabNeura INT16 ADD
+        a_ln = labneura.Tensor([100] * size, labneura.QuantizationMode.INT16)
+        b_ln = labneura.Tensor([200] * size, labneura.QuantizationMode.INT16)
+        
+        def ln_int16_add():
+            a_ln.add_inplace(b_ln)
+        
+        results['add'] = {}
+        results['add']['labneura'] = self.run_operation_benchmark('int16_add', ln_int16_add)
+        num_ops = size
+        results['add']['labneura'].flops = MetricsCalculator.calculate_flops(
+            num_ops * self.benchmark_iterations,
+            results['add']['labneura'].total_time
+        )
+        results['add']['labneura'].flops_str = MetricsCalculator.format_flops(
+            results['add']['labneura'].flops
+        )
+        
+        # NumPy INT16 ADD (with saturation)
+        a_np = np.full(size, 100, dtype=np.int16)
+        b_np = np.full(size, 200, dtype=np.int16)
+        
+        def np_int16_add():
+            return np.clip(a_np.astype(np.int32) + b_np.astype(np.int32), -32768, 32767).astype(np.int16)
+        
+        results['add']['numpy'] = self.run_operation_benchmark('int16_add', np_int16_add)
+        results['add']['numpy'].flops = MetricsCalculator.calculate_flops(
+            num_ops * self.benchmark_iterations,
+            results['add']['numpy'].total_time
+        )
+        results['add']['numpy'].flops_str = MetricsCalculator.format_flops(results['add']['numpy'].flops)
+        
+        # PyTorch INT16 ADD (with saturation)
+        a_pt = torch.full((size,), 100, dtype=torch.int16)
+        b_pt = torch.full((size,), 200, dtype=torch.int16)
+        
+        def pt_int16_add():
+            return torch.clamp(a_pt.to(torch.int32) + b_pt.to(torch.int32), -32768, 32767).to(torch.int16)
+        
+        results['add']['pytorch'] = self.run_operation_benchmark('int16_add', pt_int16_add)
+        results['add']['pytorch'].flops = MetricsCalculator.calculate_flops(
+            num_ops * self.benchmark_iterations,
+            results['add']['pytorch'].total_time
+        )
+        results['add']['pytorch'].flops_str = MetricsCalculator.format_flops(results['add']['pytorch'].flops)
+        
+        return results
+    
+    def benchmark_fp16_operations(self, size: int) -> Dict[str, Dict[str, PerformanceMetrics]]:
+        """Benchmark FP16 operations."""
+        results = {}
+        
+        # LabNeura FP16 ADD
+        a_ln = labneura.Tensor([1.5] * size, labneura.QuantizationMode.FP16)
+        b_ln = labneura.Tensor([2.5] * size, labneura.QuantizationMode.FP16)
+        
+        def ln_fp16_add():
+            a_ln.add_inplace(b_ln)
+        
+        results['add'] = {}
+        results['add']['labneura'] = self.run_operation_benchmark('fp16_add', ln_fp16_add)
+        num_ops = size
+        results['add']['labneura'].flops = MetricsCalculator.calculate_flops(
+            num_ops * self.benchmark_iterations,
+            results['add']['labneura'].total_time
+        )
+        results['add']['labneura'].flops_str = MetricsCalculator.format_flops(
+            results['add']['labneura'].flops
+        )
+        
+        # NumPy FP16 ADD
+        a_np = np.full(size, 1.5, dtype=np.float16)
+        b_np = np.full(size, 2.5, dtype=np.float16)
+        
+        def np_fp16_add():
+            return a_np + b_np
+        
+        results['add']['numpy'] = self.run_operation_benchmark('fp16_add', np_fp16_add)
+        results['add']['numpy'].flops = MetricsCalculator.calculate_flops(
+            num_ops * self.benchmark_iterations,
+            results['add']['numpy'].total_time
+        )
+        results['add']['numpy'].flops_str = MetricsCalculator.format_flops(results['add']['numpy'].flops)
+        
+        # PyTorch FP16 ADD (using torch.float16 / torch.half)
+        a_pt = torch.full((size,), 1.5, dtype=torch.float16)
+        b_pt = torch.full((size,), 2.5, dtype=torch.float16)
+        
+        def pt_fp16_add():
+            return a_pt + b_pt
+        
+        results['add']['pytorch'] = self.run_operation_benchmark('fp16_add', pt_fp16_add)
+        results['add']['pytorch'].flops = MetricsCalculator.calculate_flops(
+            num_ops * self.benchmark_iterations,
+            results['add']['pytorch'].total_time
+        )
+        results['add']['pytorch'].flops_str = MetricsCalculator.format_flops(results['add']['pytorch'].flops)
+        
+        return results
+
     def get_comparison_speedup(
         self,
         results: Dict[str, PerformanceMetrics],

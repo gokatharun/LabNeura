@@ -1,0 +1,189 @@
+================================================================================
+LABNEURA INT16/FP16 BENCHMARK vs NumPy & PyTorch
+================================================================================
+
+================================================================================
+Tensor Size: 1,000 elements
+================================================================================
+
+--- INT16 ADD ---
+  labneura_int16      :       0.36 μs
+  numpy_int16         :       4.37 μs
+  torch_int16         :      25.56 μs
+    numpy_int16 speedup: 0.08x
+    torch_int16 speedup: 0.01x
+
+--- INT16 SUB ---
+  labneura_int16      :       0.33 μs
+  numpy_int16         :       0.78 μs
+  torch_int16         :      21.99 μs
+    numpy_int16 speedup: 0.43x
+    torch_int16 speedup: 0.02x
+
+--- INT16 MUL ---
+  labneura_int16      :       0.34 μs
+  numpy_int16         :       0.76 μs
+  torch_int16         :      24.46 μs
+    numpy_int16 speedup: 0.45x
+    torch_int16 speedup: 0.01x
+
+--- FP16 ADD ---
+  labneura_fp16       :       0.33 μs
+  numpy_fp16          :       4.55 μs
+  torch_fp16          :       4.37 μs
+    numpy_fp16 speedup: 0.07x
+    torch_fp16 speedup: 0.07x
+
+--- FP16 SUB ---
+  labneura_fp16       :       0.32 μs
+  numpy_fp16          :       4.53 μs
+  torch_fp16          :       0.68 μs
+    numpy_fp16 speedup: 0.07x
+    torch_fp16 speedup: 0.47x
+
+--- FP16 MUL ---
+  labneura_fp16       :       0.32 μs
+  numpy_fp16          :       9.46 μs
+  torch_fp16          :       0.92 μs
+    numpy_fp16 speedup: 0.03x
+    torch_fp16 speedup: 0.34x
+
+================================================================================
+Tensor Size: 10,000 elements
+================================================================================
+
+--- INT16 ADD ---
+  labneura_int16      :       0.67 μs
+  numpy_int16         :       4.27 μs
+  torch_int16         :       6.10 μs
+    numpy_int16 speedup: 0.16x
+    torch_int16 speedup: 0.11x
+
+--- INT16 SUB ---
+  labneura_int16      :       0.66 μs
+  numpy_int16         :       4.25 μs
+  torch_int16         :       5.96 μs
+    numpy_int16 speedup: 0.16x
+    torch_int16 speedup: 0.11x
+
+--- INT16 MUL ---
+  labneura_int16      :       0.84 μs
+  numpy_int16         :       4.37 μs
+  torch_int16         :       4.20 μs
+    numpy_int16 speedup: 0.19x
+    torch_int16 speedup: 0.20x
+
+--- FP16 ADD ---
+  labneura_fp16       :       0.66 μs
+  numpy_fp16          :      41.78 μs
+  torch_fp16          :       1.23 μs
+    numpy_fp16 speedup: 0.02x
+    torch_fp16 speedup: 0.54x
+
+--- FP16 SUB ---
+  labneura_fp16       :       0.74 μs
+  numpy_fp16          :      41.29 μs
+  torch_fp16          :       1.25 μs
+    numpy_fp16 speedup: 0.02x
+    torch_fp16 speedup: 0.59x
+
+--- FP16 MUL ---
+  labneura_fp16       :       0.67 μs
+  numpy_fp16          :      91.98 μs
+  torch_fp16          :       1.14 μs
+    numpy_fp16 speedup: 0.01x
+    torch_fp16 speedup: 0.59x
+
+================================================================================
+Tensor Size: 100,000 elements
+================================================================================
+
+--- INT16 ADD ---
+  labneura_int16      :       8.19 μs
+  numpy_int16         :      39.49 μs
+  torch_int16         :      49.09 μs
+    numpy_int16 speedup: 0.21x
+    torch_int16 speedup: 0.17x
+
+--- INT16 SUB ---
+  labneura_int16      :       6.87 μs
+  numpy_int16         :      41.18 μs
+  torch_int16         :      45.79 μs
+    numpy_int16 speedup: 0.17x
+    torch_int16 speedup: 0.15x
+
+--- INT16 MUL ---
+  labneura_int16      :       6.97 μs
+  numpy_int16         :      40.76 μs
+  torch_int16         :      45.36 μs
+    numpy_int16 speedup: 0.17x
+    torch_int16 speedup: 0.15x
+
+--- FP16 ADD ---
+  labneura_fp16       :       6.91 μs
+  numpy_fp16          :     411.99 μs
+  torch_fp16          :      16.82 μs
+    numpy_fp16 speedup: 0.02x
+    torch_fp16 speedup: 0.41x
+
+--- FP16 SUB ---
+  labneura_fp16       :       6.91 μs
+  numpy_fp16          :     412.22 μs
+  torch_fp16          :      21.78 μs
+    numpy_fp16 speedup: 0.02x
+    torch_fp16 speedup: 0.32x
+
+--- FP16 MUL ---
+  labneura_fp16       :       7.12 μs
+  numpy_fp16          :     919.41 μs
+  torch_fp16          :      19.86 μs
+    numpy_fp16 speedup: 0.01x
+    torch_fp16 speedup: 0.36x
+
+================================================================================
+Tensor Size: 1,000,000 elements
+================================================================================
+
+--- INT16 ADD ---
+  labneura_int16      :      67.98 μs
+  numpy_int16         :     414.38 μs
+  torch_int16         :     193.64 μs
+    numpy_int16 speedup: 0.16x
+    torch_int16 speedup: 0.35x
+
+--- INT16 SUB ---
+  labneura_int16      :      68.61 μs
+  numpy_int16         :     412.95 μs
+  torch_int16         :     188.08 μs
+    numpy_int16 speedup: 0.17x
+    torch_int16 speedup: 0.36x
+
+--- INT16 MUL ---
+  labneura_int16      :      71.49 μs
+  numpy_int16         :     417.14 μs
+  torch_int16         :     140.18 μs
+    numpy_int16 speedup: 0.17x
+    torch_int16 speedup: 0.51x
+
+--- FP16 ADD ---
+  labneura_fp16       :      67.94 μs
+  numpy_fp16          :    4102.61 μs
+  torch_fp16          :      57.66 μs
+    numpy_fp16 speedup: 0.02x
+    torch_fp16 speedup: 1.18x
+
+--- FP16 SUB ---
+  labneura_fp16       :      69.85 μs
+  numpy_fp16          :    4192.53 μs
+  torch_fp16          :      56.12 μs
+    numpy_fp16 speedup: 0.02x
+    torch_fp16 speedup: 1.24x
+
+--- FP16 MUL ---
+  labneura_fp16       :      67.94 μs
+  numpy_fp16          :    9155.19 μs
+  torch_fp16          :      55.30 μs
+    numpy_fp16 speedup: 0.01x
+    torch_fp16 speedup: 1.23x
+
+✅ Results saved to benchmark_int16_fp16_results.json

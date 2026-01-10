@@ -26,7 +26,7 @@ def print_summary_table():
     print("LabNeura vs NumPy vs PyTorch - Performance Summary (CPU Only)")
     print("="*130 + "\n")
     
-    operations = ['addition', 'multiplication', 'subtraction', 'int8_addition']
+    operations = ['addition', 'multiplication', 'subtraction', 'int8_addition', 'int16_addition', 'fp16_addition']
     sizes = [100, 1000, 10000, 100000, 1000000]
     
     for op in operations:
@@ -122,7 +122,7 @@ def print_speedup_summary():
     print("SPEEDUP vs NumPy (Baseline = 1.0x) and vs PyTorch")
     print("="*120 + "\n")
     
-    operations = ['addition', 'multiplication', 'subtraction', 'int8_addition']
+    operations = ['addition', 'multiplication', 'subtraction', 'int8_addition', 'int16_addition', 'fp16_addition']
     sizes = [100, 1000, 10000, 100000, 1000000]
     
     speedup_matrix = {}
@@ -191,7 +191,7 @@ def print_latency_analysis():
     print("LATENCY ANALYSIS (Total Time for 100 Iterations)")
     print("="*130 + "\n")
     
-    operations = ['addition', 'multiplication', 'subtraction', 'int8_addition']
+    operations = ['addition', 'multiplication', 'subtraction', 'int8_addition', 'int16_addition', 'fp16_addition']
     sizes = [100000, 1000000]
     
     for op in operations:

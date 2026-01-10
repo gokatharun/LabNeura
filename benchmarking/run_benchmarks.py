@@ -110,6 +110,40 @@ def run_comprehensive_benchmarks():
         print(f"  Speedup vs NumPy:")
         print(f"    LabNeura: {speedups['labneura']:.2f}x")
         print(f"    PyTorch:  {speedups['pytorch']:.2f}x")
+        
+        # INT16 Operations
+        print(f"\nINT16 Addition Benchmark...")
+        int16_results = runner.benchmark_int16_operations(size)
+        all_results[size]['int16_addition'] = int16_results['add']
+        
+        print(f"  LabNeura: {int16_results['add']['labneura'].flops_str} | "
+              f"Time: {int16_results['add']['labneura'].total_time*1000:.2f}ms")
+        print(f"  NumPy:    {int16_results['add']['numpy'].flops_str} | "
+              f"Time: {int16_results['add']['numpy'].total_time*1000:.2f}ms")
+        print(f"  PyTorch:  {int16_results['add']['pytorch'].flops_str} | "
+              f"Time: {int16_results['add']['pytorch'].total_time*1000:.2f}ms")
+        
+        speedups = runner.get_comparison_speedup(int16_results['add'], baseline='numpy')
+        print(f"  Speedup vs NumPy:")
+        print(f"    LabNeura: {speedups['labneura']:.2f}x")
+        print(f"    PyTorch:  {speedups['pytorch']:.2f}x")
+        
+        # FP16 Operations
+        print(f"\nFP16 Addition Benchmark...")
+        fp16_results = runner.benchmark_fp16_operations(size)
+        all_results[size]['fp16_addition'] = fp16_results['add']
+        
+        print(f"  LabNeura: {fp16_results['add']['labneura'].flops_str} | "
+              f"Time: {fp16_results['add']['labneura'].total_time*1000:.2f}ms")
+        print(f"  NumPy:    {fp16_results['add']['numpy'].flops_str} | "
+              f"Time: {fp16_results['add']['numpy'].total_time*1000:.2f}ms")
+        print(f"  PyTorch:  {fp16_results['add']['pytorch'].flops_str} | "
+              f"Time: {fp16_results['add']['pytorch'].total_time*1000:.2f}ms")
+        
+        speedups = runner.get_comparison_speedup(fp16_results['add'], baseline='numpy')
+        print(f"  Speedup vs NumPy:")
+        print(f"    LabNeura: {speedups['labneura']:.2f}x")
+        print(f"    PyTorch:  {speedups['pytorch']:.2f}x")
     
     print(f"\n\n{'='*80}")
     print("Benchmark Complete!")

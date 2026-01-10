@@ -20,6 +20,20 @@ inline float dequantize_int8(int8_t q, float scale, int32_t zero_point = 0) {
     return scale * (static_cast<int32_t>(q) - zero_point);
 }
 
+// Quantize a single float into signed 16-bit using scale and zero-point.
+inline int16_t quantize_int16(float x, float scale, int32_t zero_point = 0) {
+    if (scale == 0.0f) return static_cast<int16_t>(zero_point);
+    int32_t q = static_cast<int32_t>(std::nearbyint(x / scale)) + zero_point;
+    if (q > 32767) q = 32767;
+    if (q < -32768) q = -32768;
+    return static_cast<int16_t>(q);
+}
+
+// Dequantize signed 16-bit back to float.
+inline float dequantize_int16(int16_t q, float scale, int32_t zero_point = 0) {
+    return scale * (static_cast<int32_t>(q) - zero_point);
+}
+
 // Convert float32 to float16 (IEEE half-precision)
 inline uint16_t quantize_fp16(float x) {
     // Use bit manipulation for FP32 to FP16 conversion

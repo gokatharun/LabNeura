@@ -19,6 +19,12 @@ PYBIND11_MODULE(labneura, m) {
     m.def("dequantize_int8", &labneura::dequantize_int8,
           "Dequantize an int8 to float", py::arg("q"), py::arg("scale"), py::arg("zero_point") = 0);
 
+        m.def("quantize_int16", &labneura::quantize_int16,
+            "Quantize a float to int16", py::arg("x"), py::arg("scale"), py::arg("zero_point") = 0);
+
+        m.def("dequantize_int16", &labneura::dequantize_int16,
+            "Dequantize an int16 to float", py::arg("q"), py::arg("scale"), py::arg("zero_point") = 0);
+
     m.def("quantize_fp16", 
           [](float x) { return labneura::quantize_fp16(x); },
           "Quantize a float32 to float16 (returns uint16_t as Python int)");
@@ -31,6 +37,7 @@ PYBIND11_MODULE(labneura, m) {
     py::enum_<labneura::QuantizationMode>(m, "QuantizationMode")
         .value("FP32", labneura::QuantizationMode::FP32)
         .value("FP16", labneura::QuantizationMode::FP16)
+        .value("INT16", labneura::QuantizationMode::INT16)
         .value("INT8", labneura::QuantizationMode::INT8);
 
     // Tensor class
@@ -68,6 +75,19 @@ PYBIND11_MODULE(labneura, m) {
             std::vector<int> result(self.data_int8(), self.data_int8() + self.size());
             return result;
         }, "Get INT8 data as list")
+
+        .def("data_int16", [](labneura::Tensor& self) {
+            // Return as Python list for INT16 mode
+            if (self.quantization_mode() != labneura::QuantizationMode::INT16) {
+                throw std::runtime_error("Tensor is not in INT16 mode");
+            }
+            const int16_t* ptr = self.data_int16();
+            std::vector<int> result(self.size());
+            for (std::size_t i = 0; i < self.size(); ++i) {
+                result[i] = static_cast<int>(ptr[i]);
+            }
+            return result;
+        }, "Get INT16 data as list")
 
         .def("data_fp16", [](labneura::Tensor& self) {
             // Return as Python list of uint16 values for FP16 mode

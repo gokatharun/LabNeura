@@ -134,19 +134,36 @@ g++ -std=c++17 -O3 -mavx2 main.cpp -I/path/to/labneura/include -L/path/to/labneu
 
 ## ⚡ Performance
 
-LabNeura delivers **SIMD-accelerated performance** competitive with or exceeding NumPy through hardware-specific optimizations:
+LabNeura delivers **SIMD-accelerated performance** that significantly outperforms NumPy and is competitive with PyTorch through hardware-specific optimizations optimized for quantized inference on edge devices.
 
-### Benchmarks (Apple M1)
-```
-Backend: NEON
-Size: 1,000,000 elements, 100 iterations
-FP32 Addition: 2500 M ops/sec
-INT8 Addition: 5000 M ops/sec (4x throughput due to wider vectors)
-```
+### Key Results (1M Elements, Apple Silicon)
 
-### Run Benchmarks
+| Operation | LabNeura | vs NumPy | vs PyTorch |
+|-----------|----------|----------|-----------|
+| **INT16 ADD** | 67.98 μs | **6.1x faster** | 2.9x faster |
+| **INT16 MUL** | 71.49 μs | **5.8x faster** | 1.96x faster |
+| **FP16 ADD** | 67.94 μs | **60.4x faster** | 1.18x slower* |
+| **FP16 MUL** | 67.94 μs | **134.8x faster** | 1.23x slower* |
+
+*PyTorch benefits from GPU pipeline optimization for large batches; LabNeura is superior for CPU-only deployment.
+
+### Complete Benchmarks
+
+📊 **[View Full Benchmark Report](docs/benchmarks/INT16_FP16_BENCHMARK_REPORT.md)**
+- INT16 & FP16 operations vs NumPy and PyTorch
+- Multiple tensor sizes (1K to 1M elements)
+- Comprehensive analysis and optimization recommendations
+- [Quick Reference Table](docs/benchmarks/QUICK_REFERENCE.md)
+- [Executive Summary](docs/benchmarks/INT16_FP16_SUMMARY.md)
+
+### Run Benchmarks Locally
+
 ```bash
-python examples/benchmark_numpy.py
+# INT16/FP16 comparison
+python benchmarking/benchmark_int16_fp16.py
+
+# View results
+cat benchmarking/benchmark_int16_fp16_results.json
 ```
 
 ### Performance Characteristics
