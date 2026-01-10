@@ -68,6 +68,20 @@ PYBIND11_MODULE(labneura, m) {
             std::vector<int> result(self.data_int8(), self.data_int8() + self.size());
             return result;
         }, "Get INT8 data as list")
+
+        .def("data_fp16", [](labneura::Tensor& self) {
+            // Return as Python list of uint16 values for FP16 mode
+            if (self.quantization_mode() != labneura::QuantizationMode::FP16) {
+                throw std::runtime_error("Tensor is not in FP16 mode");
+            }
+            const int16_t* ptr = self.data_fp16();
+            std::vector<int> result(self.size());
+            for (std::size_t i = 0; i < self.size(); ++i) {
+                // Convert signed storage to unsigned 16-bit representation
+                result[i] = static_cast<int>(static_cast<uint16_t>(ptr[i]));
+            }
+            return result;
+        }, "Get FP16 data as list of uint16 values")
         
         // Operations
         .def("add", &labneura::Tensor::add, "Add two tensors (returns new tensor)")

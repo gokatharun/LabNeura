@@ -19,9 +19,28 @@ Tensor::Tensor(const std::vector<float>& data, QuantizationMode mode)
     : quantization_mode_(mode) {
     init_backend(data.size());
     if (!data.empty()) {
-        float* fp32_data = data_fp32();
-        for (std::size_t i = 0; i < data.size(); ++i) {
-            fp32_data[i] = data[i];
+        if (mode == QuantizationMode::FP32) {
+            float* fp32_data = data_fp32();
+            for (std::size_t i = 0; i < data.size(); ++i) {
+                fp32_data[i] = data[i];
+            }
+        } else if (mode == QuantizationMode::FP16) {
+            uint16_t* fp16_data = data_fp16();
+            for (std::size_t i = 0; i < data.size(); ++i) {
+                fp16_data[i] = labneura::quantize_fp16(data[i]);
+            }
+        } else if (mode == QuantizationMode::INT8) {
+            int8_t* int8_data = data_int8();
+            for (std::size_t i = 0; i < data.size(); ++i) {
+                int v = static_cast<int>(std::lrintf(data[i]));
+                int8_data[i] = static_cast<int8_t>(std::max(-128, std::min(127, v)));
+            }
+        } else {
+            // Other modes: default to FP32
+            float* fp32_data = data_fp32();
+            for (std::size_t i = 0; i < data.size(); ++i) {
+                fp32_data[i] = data[i];
+            }
         }
     }
 }
@@ -47,7 +66,16 @@ Tensor::Tensor(const std::vector<int>& data, QuantizationMode mode)
 Tensor::Tensor(float scalar, QuantizationMode mode)
     : quantization_mode_(mode) {
     init_backend(1);
-    data_fp32()[0] = scalar;
+    if (mode == QuantizationMode::FP32) {
+        data_fp32()[0] = scalar;
+    } else if (mode == QuantizationMode::FP16) {
+        data_fp16()[0] = labneura::quantize_fp16(scalar);
+    } else if (mode == QuantizationMode::INT8) {
+        int v = static_cast<int>(std::lrintf(scalar));
+        data_int8()[0] = static_cast<int8_t>(std::max(-128, std::min(127, v)));
+    } else {
+        data_fp32()[0] = scalar;
+    }
 }
 
 Tensor::Tensor(int scalar, QuantizationMode mode)
@@ -106,6 +134,14 @@ int8_t* Tensor::data_int8() {
 
 const int8_t* Tensor::data_int8() const {
     return backend_ ? backend_->data_int8() : nullptr;
+}
+
+uint16_t* Tensor::data_fp16() {
+    return backend_ ? backend_->data_fp16() : nullptr;
+}
+
+const uint16_t* Tensor::data_fp16() const {
+    return backend_ ? backend_->data_fp16() : nullptr;
 }
 
 Tensor Tensor::add(const Tensor& other) const {

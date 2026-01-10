@@ -82,6 +82,8 @@ public:
     const float* data_fp32() const;
     int8_t* data_int8();
     const int8_t* data_int8() const;
+    uint16_t* data_fp16();
+    const uint16_t* data_fp16() const;
 
     // Operations
     // Addition: result = this + other

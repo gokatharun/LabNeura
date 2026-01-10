@@ -18,12 +18,17 @@ namespace labneura {
 NEONBackend::NEONBackend(std::size_t size, QuantizationMode mode)
     : size_(size), quantization_mode_(mode) {
 
-    aligned_size_ = ((size + 3) / 4) * 4;
+    aligned_size_ = ((size + 7) / 8) * 8;  // align to 8 elements for FP16/FP32 safety
 
     if (mode == QuantizationMode::FP32) {
         float* p = labneura::util::allocate_aligned<float>(aligned_size_, labneura::util::NEON_ALIGN);
         data_fp32_ = std::unique_ptr<float, void(*)(float*)>(p, labneura::util::free_aligned_float);
         std::fill(data_fp32_.get() + size_, data_fp32_.get() + aligned_size_, 0.0f);
+    } else if (mode == QuantizationMode::FP16) {
+        uint16_t* p = labneura::util::allocate_aligned<uint16_t>(aligned_size_, labneura::util::NEON_ALIGN);
+        auto fp16_deleter = [](uint16_t* ptr){ labneura::util::aligned_free(ptr); };
+        data_fp16_ = std::unique_ptr<uint16_t, void(*)(uint16_t*)>(p, fp16_deleter);
+        std::fill(data_fp16_.get() + size_, data_fp16_.get() + aligned_size_, static_cast<uint16_t>(0));
     } else {
         int8_t* p = labneura::util::allocate_aligned<int8_t>(aligned_size_, labneura::util::NEON_ALIGN);
         data_int8_ = std::unique_ptr<int8_t, void(*)(int8_t*)>(p, labneura::util::free_aligned_int8);
@@ -75,6 +80,20 @@ const int8_t* NEONBackend::data_int8() const {
     return data_int8_.get();
 }
 
+uint16_t* NEONBackend::data_fp16() {
+    if (quantization_mode_ != QuantizationMode::FP16) {
+        throw std::runtime_error("Tensor is not in FP16 mode");
+    }
+    return data_fp16_.get();
+}
+
+const uint16_t* NEONBackend::data_fp16() const {
+    if (quantization_mode_ != QuantizationMode::FP16) {
+        throw std::runtime_error("Tensor is not in FP16 mode");
+    }
+    return data_fp16_.get();
+}
+
 // =======================
 // Clone
 // =======================
@@ -83,6 +102,8 @@ std::unique_ptr<TensorBackend> NEONBackend::clone() const {
     auto backend = std::make_unique<NEONBackend>(size_, quantization_mode_);
     if (quantization_mode_ == QuantizationMode::FP32) {
         std::copy(data_fp32_.get(), data_fp32_.get() + size_, backend->data_fp32());
+    } else if (quantization_mode_ == QuantizationMode::FP16) {
+        std::copy(data_fp16_.get(), data_fp16_.get() + size_, backend->data_fp16());
     } else {
         std::copy(data_int8_.get(), data_int8_.get() + size_, backend->data_int8());
     }
@@ -328,6 +349,266 @@ void NEONBackend::operation_fp32(const TensorBackend& other, OperationType op_ty
     // Scalar tail
     for (std::size_t i = len4; i < size_; ++i) {
         this_data[i] -= other_data[i];
+    }
+}
+
+// =======================
+// FP16 kernels
+// =======================
+
+void NEONBackend::operation_fp16(const TensorBackend& other, OperationType op_type) {
+    const float16_t* other_data = reinterpret_cast<const float16_t*>(other.data_fp16());
+    float16_t* this_data = reinterpret_cast<float16_t*>(data_fp16());
+
+    // Prefetch distance: 128 float16s (~256 bytes)
+    constexpr std::size_t PREFETCH_DISTANCE = 128;
+
+    // Hierarchical processing: 64 → 32 → 16 → 8 → 4 → scalar
+    const std::size_t len64 = (size_ / 64) * 64;
+    const std::size_t len32 = len64 + ((size_ - len64) / 32) * 32;
+    const std::size_t len16 = len32 + ((size_ - len32) / 16) * 16;
+    const std::size_t len8  = len16 + ((size_ - len16) / 8) * 8;
+    const std::size_t len4  = len8  + ((size_ - len8) / 4) * 4;
+
+    if (op_type == OperationType::ADD) {
+        // Main loop: 64 values (8 registers × 8 float16s)
+        for (std::size_t i = 0; i < len64; i += 64) {
+            if (i + PREFETCH_DISTANCE < size_) {
+                __builtin_prefetch(&this_data[i + PREFETCH_DISTANCE], 1, 1);
+                __builtin_prefetch(&other_data[i + PREFETCH_DISTANCE], 0, 1);
+            }
+            const float16x8_t va0 = vld1q_f16(&this_data[i + 0]);
+            const float16x8_t va1 = vld1q_f16(&this_data[i + 8]);
+            const float16x8_t va2 = vld1q_f16(&this_data[i + 16]);
+            const float16x8_t va3 = vld1q_f16(&this_data[i + 24]);
+            const float16x8_t va4 = vld1q_f16(&this_data[i + 32]);
+            const float16x8_t va5 = vld1q_f16(&this_data[i + 40]);
+            const float16x8_t va6 = vld1q_f16(&this_data[i + 48]);
+            const float16x8_t va7 = vld1q_f16(&this_data[i + 56]);
+
+            const float16x8_t vb0 = vld1q_f16(&other_data[i + 0]);
+            const float16x8_t vb1 = vld1q_f16(&other_data[i + 8]);
+            const float16x8_t vb2 = vld1q_f16(&other_data[i + 16]);
+            const float16x8_t vb3 = vld1q_f16(&other_data[i + 24]);
+            const float16x8_t vb4 = vld1q_f16(&other_data[i + 32]);
+            const float16x8_t vb5 = vld1q_f16(&other_data[i + 40]);
+            const float16x8_t vb6 = vld1q_f16(&other_data[i + 48]);
+            const float16x8_t vb7 = vld1q_f16(&other_data[i + 56]);
+
+            vst1q_f16(&this_data[i + 0],  vaddq_f16(va0, vb0));
+            vst1q_f16(&this_data[i + 8],  vaddq_f16(va1, vb1));
+            vst1q_f16(&this_data[i + 16], vaddq_f16(va2, vb2));
+            vst1q_f16(&this_data[i + 24], vaddq_f16(va3, vb3));
+            vst1q_f16(&this_data[i + 32], vaddq_f16(va4, vb4));
+            vst1q_f16(&this_data[i + 40], vaddq_f16(va5, vb5));
+            vst1q_f16(&this_data[i + 48], vaddq_f16(va6, vb6));
+            vst1q_f16(&this_data[i + 56], vaddq_f16(va7, vb7));
+        }
+        // Tail: 32 values (4 registers × 8 float16s)
+        if (len32 > len64) {
+            const std::size_t i = len64;
+            const float16x8_t va0 = vld1q_f16(&this_data[i + 0]);
+            const float16x8_t va1 = vld1q_f16(&this_data[i + 8]);
+            const float16x8_t va2 = vld1q_f16(&this_data[i + 16]);
+            const float16x8_t va3 = vld1q_f16(&this_data[i + 24]);
+            const float16x8_t vb0 = vld1q_f16(&other_data[i + 0]);
+            const float16x8_t vb1 = vld1q_f16(&other_data[i + 8]);
+            const float16x8_t vb2 = vld1q_f16(&other_data[i + 16]);
+            const float16x8_t vb3 = vld1q_f16(&other_data[i + 24]);
+            vst1q_f16(&this_data[i + 0],  vaddq_f16(va0, vb0));
+            vst1q_f16(&this_data[i + 8],  vaddq_f16(va1, vb1));
+            vst1q_f16(&this_data[i + 16], vaddq_f16(va2, vb2));
+            vst1q_f16(&this_data[i + 24], vaddq_f16(va3, vb3));
+        }
+        // Tail: 16 values (2 registers × 8 float16s)
+        if (len16 > len32) {
+            const std::size_t i = len32;
+            const float16x8_t va0 = vld1q_f16(&this_data[i + 0]);
+            const float16x8_t va1 = vld1q_f16(&this_data[i + 8]);
+            const float16x8_t vb0 = vld1q_f16(&other_data[i + 0]);
+            const float16x8_t vb1 = vld1q_f16(&other_data[i + 8]);
+            vst1q_f16(&this_data[i + 0], vaddq_f16(va0, vb0));
+            vst1q_f16(&this_data[i + 8], vaddq_f16(va1, vb1));
+        }
+        // Tail: 8 values (1 register)
+        if (len8 > len16) {
+            const std::size_t i = len16;
+            const float16x8_t va = vld1q_f16(&this_data[i]);
+            const float16x8_t vb = vld1q_f16(&other_data[i]);
+            vst1q_f16(&this_data[i], vaddq_f16(va, vb));
+        }
+        // Tail: 4 values (half register)
+        if (len4 > len8) {
+            const std::size_t i = len8;
+            const float16x4_t va = vld1_f16(&this_data[i]);
+            const float16x4_t vb = vld1_f16(&other_data[i]);
+            vst1_f16(&this_data[i], vadd_f16(va, vb));
+        }
+        // Scalar tail
+        for (std::size_t i = len4; i < size_; ++i) {
+            this_data[i] = this_data[i] + other_data[i];
+        }
+        return;
+    }
+
+    if (op_type == OperationType::MUL) {
+        // Main loop: 64 values
+        for (std::size_t i = 0; i < len64; i += 64) {
+            if (i + PREFETCH_DISTANCE < size_) {
+                __builtin_prefetch(&this_data[i + PREFETCH_DISTANCE], 1, 1);
+                __builtin_prefetch(&other_data[i + PREFETCH_DISTANCE], 0, 1);
+            }
+            const float16x8_t va0 = vld1q_f16(&this_data[i + 0]);
+            const float16x8_t va1 = vld1q_f16(&this_data[i + 8]);
+            const float16x8_t va2 = vld1q_f16(&this_data[i + 16]);
+            const float16x8_t va3 = vld1q_f16(&this_data[i + 24]);
+            const float16x8_t va4 = vld1q_f16(&this_data[i + 32]);
+            const float16x8_t va5 = vld1q_f16(&this_data[i + 40]);
+            const float16x8_t va6 = vld1q_f16(&this_data[i + 48]);
+            const float16x8_t va7 = vld1q_f16(&this_data[i + 56]);
+
+            const float16x8_t vb0 = vld1q_f16(&other_data[i + 0]);
+            const float16x8_t vb1 = vld1q_f16(&other_data[i + 8]);
+            const float16x8_t vb2 = vld1q_f16(&other_data[i + 16]);
+            const float16x8_t vb3 = vld1q_f16(&other_data[i + 24]);
+            const float16x8_t vb4 = vld1q_f16(&other_data[i + 32]);
+            const float16x8_t vb5 = vld1q_f16(&other_data[i + 40]);
+            const float16x8_t vb6 = vld1q_f16(&other_data[i + 48]);
+            const float16x8_t vb7 = vld1q_f16(&other_data[i + 56]);
+
+            vst1q_f16(&this_data[i + 0],  vmulq_f16(va0, vb0));
+            vst1q_f16(&this_data[i + 8],  vmulq_f16(va1, vb1));
+            vst1q_f16(&this_data[i + 16], vmulq_f16(va2, vb2));
+            vst1q_f16(&this_data[i + 24], vmulq_f16(va3, vb3));
+            vst1q_f16(&this_data[i + 32], vmulq_f16(va4, vb4));
+            vst1q_f16(&this_data[i + 40], vmulq_f16(va5, vb5));
+            vst1q_f16(&this_data[i + 48], vmulq_f16(va6, vb6));
+            vst1q_f16(&this_data[i + 56], vmulq_f16(va7, vb7));
+        }
+        // Tail: 32 values
+        if (len32 > len64) {
+            const std::size_t i = len64;
+            const float16x8_t va0 = vld1q_f16(&this_data[i + 0]);
+            const float16x8_t va1 = vld1q_f16(&this_data[i + 8]);
+            const float16x8_t va2 = vld1q_f16(&this_data[i + 16]);
+            const float16x8_t va3 = vld1q_f16(&this_data[i + 24]);
+            const float16x8_t vb0 = vld1q_f16(&other_data[i + 0]);
+            const float16x8_t vb1 = vld1q_f16(&other_data[i + 8]);
+            const float16x8_t vb2 = vld1q_f16(&other_data[i + 16]);
+            const float16x8_t vb3 = vld1q_f16(&other_data[i + 24]);
+            vst1q_f16(&this_data[i + 0],  vmulq_f16(va0, vb0));
+            vst1q_f16(&this_data[i + 8],  vmulq_f16(va1, vb1));
+            vst1q_f16(&this_data[i + 16], vmulq_f16(va2, vb2));
+            vst1q_f16(&this_data[i + 24], vmulq_f16(va3, vb3));
+        }
+        // Tail: 16 values
+        if (len16 > len32) {
+            const std::size_t i = len32;
+            const float16x8_t va0 = vld1q_f16(&this_data[i + 0]);
+            const float16x8_t va1 = vld1q_f16(&this_data[i + 8]);
+            const float16x8_t vb0 = vld1q_f16(&other_data[i + 0]);
+            const float16x8_t vb1 = vld1q_f16(&other_data[i + 8]);
+            vst1q_f16(&this_data[i + 0], vmulq_f16(va0, vb0));
+            vst1q_f16(&this_data[i + 8], vmulq_f16(va1, vb1));
+        }
+        // Tail: 8 values
+        if (len8 > len16) {
+            const std::size_t i = len16;
+            const float16x8_t va = vld1q_f16(&this_data[i]);
+            const float16x8_t vb = vld1q_f16(&other_data[i]);
+            vst1q_f16(&this_data[i], vmulq_f16(va, vb));
+        }
+        // Tail: 4 values
+        if (len4 > len8) {
+            const std::size_t i = len8;
+            const float16x4_t va = vld1_f16(&this_data[i]);
+            const float16x4_t vb = vld1_f16(&other_data[i]);
+            vst1_f16(&this_data[i], vmul_f16(va, vb));
+        }
+        // Scalar tail
+        for (std::size_t i = len4; i < size_; ++i) {
+            this_data[i] = this_data[i] * other_data[i];
+        }
+        return;
+    }
+
+    // SUB path (default)
+    for (std::size_t i = 0; i < len64; i += 64) {
+        if (i + PREFETCH_DISTANCE < size_) {
+            __builtin_prefetch(&this_data[i + PREFETCH_DISTANCE], 1, 1);
+            __builtin_prefetch(&other_data[i + PREFETCH_DISTANCE], 0, 1);
+        }
+
+        const float16x8_t va0 = vld1q_f16(&this_data[i + 0]);
+        const float16x8_t va1 = vld1q_f16(&this_data[i + 8]);
+        const float16x8_t va2 = vld1q_f16(&this_data[i + 16]);
+        const float16x8_t va3 = vld1q_f16(&this_data[i + 24]);
+        const float16x8_t va4 = vld1q_f16(&this_data[i + 32]);
+        const float16x8_t va5 = vld1q_f16(&this_data[i + 40]);
+        const float16x8_t va6 = vld1q_f16(&this_data[i + 48]);
+        const float16x8_t va7 = vld1q_f16(&this_data[i + 56]);
+
+        const float16x8_t vb0 = vld1q_f16(&other_data[i + 0]);
+        const float16x8_t vb1 = vld1q_f16(&other_data[i + 8]);
+        const float16x8_t vb2 = vld1q_f16(&other_data[i + 16]);
+        const float16x8_t vb3 = vld1q_f16(&other_data[i + 24]);
+        const float16x8_t vb4 = vld1q_f16(&other_data[i + 32]);
+        const float16x8_t vb5 = vld1q_f16(&other_data[i + 40]);
+        const float16x8_t vb6 = vld1q_f16(&other_data[i + 48]);
+        const float16x8_t vb7 = vld1q_f16(&other_data[i + 56]);
+
+        vst1q_f16(&this_data[i + 0],  vsubq_f16(va0, vb0));
+        vst1q_f16(&this_data[i + 8],  vsubq_f16(va1, vb1));
+        vst1q_f16(&this_data[i + 16], vsubq_f16(va2, vb2));
+        vst1q_f16(&this_data[i + 24], vsubq_f16(va3, vb3));
+        vst1q_f16(&this_data[i + 32], vsubq_f16(va4, vb4));
+        vst1q_f16(&this_data[i + 40], vsubq_f16(va5, vb5));
+        vst1q_f16(&this_data[i + 48], vsubq_f16(va6, vb6));
+        vst1q_f16(&this_data[i + 56], vsubq_f16(va7, vb7));
+    }
+    // Tail: 32 values
+    if (len32 > len64) {
+        const std::size_t i = len64;
+        const float16x8_t va0 = vld1q_f16(&this_data[i + 0]);
+        const float16x8_t va1 = vld1q_f16(&this_data[i + 8]);
+        const float16x8_t va2 = vld1q_f16(&this_data[i + 16]);
+        const float16x8_t va3 = vld1q_f16(&this_data[i + 24]);
+        const float16x8_t vb0 = vld1q_f16(&other_data[i + 0]);
+        const float16x8_t vb1 = vld1q_f16(&other_data[i + 8]);
+        const float16x8_t vb2 = vld1q_f16(&other_data[i + 16]);
+        const float16x8_t vb3 = vld1q_f16(&other_data[i + 24]);
+        vst1q_f16(&this_data[i + 0],  vsubq_f16(va0, vb0));
+        vst1q_f16(&this_data[i + 8],  vsubq_f16(va1, vb1));
+        vst1q_f16(&this_data[i + 16], vsubq_f16(va2, vb2));
+        vst1q_f16(&this_data[i + 24], vsubq_f16(va3, vb3));
+    }
+    // Tail: 16 values
+    if (len16 > len32) {
+        const std::size_t i = len32;
+        const float16x8_t va0 = vld1q_f16(&this_data[i + 0]);
+        const float16x8_t va1 = vld1q_f16(&this_data[i + 8]);
+        const float16x8_t vb0 = vld1q_f16(&other_data[i + 0]);
+        const float16x8_t vb1 = vld1q_f16(&other_data[i + 8]);
+        vst1q_f16(&this_data[i + 0], vsubq_f16(va0, vb0));
+        vst1q_f16(&this_data[i + 8], vsubq_f16(va1, vb1));
+    }
+    // Tail: 8 values
+    if (len8 > len16) {
+        const std::size_t i = len16;
+        const float16x8_t va = vld1q_f16(&this_data[i]);
+        const float16x8_t vb = vld1q_f16(&other_data[i]);
+        vst1q_f16(&this_data[i], vsubq_f16(va, vb));
+    }
+    // Tail: 4 values
+    if (len4 > len8) {
+        const std::size_t i = len8;
+        const float16x4_t va = vld1_f16(&this_data[i]);
+        const float16x4_t vb = vld1_f16(&other_data[i]);
+        vst1_f16(&this_data[i], vsub_f16(va, vb));
+    }
+    // Scalar tail
+    for (std::size_t i = len4; i < size_; ++i) {
+        this_data[i] = this_data[i] - other_data[i];
     }
 }
 

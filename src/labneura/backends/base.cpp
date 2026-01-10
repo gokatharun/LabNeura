@@ -26,9 +26,23 @@ void TensorBackend::operation(const TensorBackend& other, OperationType op) {
 
     if (quantization_mode() == QuantizationMode::FP32) {
         operation_fp32(other, op);
+    } else if (quantization_mode() == QuantizationMode::FP16) {
+        operation_fp16(other, op);
     } else {
         operation_int8(other, op);
     }
+}
+
+uint16_t* TensorBackend::data_fp16() {
+    throw std::runtime_error("FP16 data access not implemented for this backend");
+}
+
+const uint16_t* TensorBackend::data_fp16() const {
+    throw std::runtime_error("FP16 data access not implemented for this backend");
+}
+
+void TensorBackend::operation_fp16(const TensorBackend&, OperationType) {
+    throw std::runtime_error("FP16 operations not implemented for this backend");
 }
 
 } // namespace labneura
