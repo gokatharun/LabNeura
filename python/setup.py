@@ -48,6 +48,7 @@ include_dirs = [
 extra_compile_args = [
     "-O3",
     "-std=c++17",
+    "-fvisibility=default",  # Ensure all symbols are exported (critical for Linux)
     *detect_simd_flags(),  # Add SIMD flags if supported
 ]
 

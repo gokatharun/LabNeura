@@ -25,3 +25,5 @@ labneura*
 default.profraw
 !python/src/*
 !python/include/*
+!include/labneura/visibility.h
+!include/labneura/utils/*
