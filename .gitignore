@@ -5,6 +5,8 @@ python/build/*
 python/build/**
 python/labneura.egg-info
 python/labneura.egg-info/*
+python/labneura2.egg-info
+python/labneura2.egg-info/*
 .pytest_cache
 env
 env/*
@@ -21,9 +23,9 @@ __pycache__
 coverage_html
 coverage_html/*
 .DS_Store
-labneura*
-default.profraw
-!python/src/*
-!python/include/*
-!include/labneura/visibility.h
-!include/labneura/utils/*
+
+# Ignore profiling data files
+labneura.profdata
+labneura.profraw
+*.profdata
+*.profraw
