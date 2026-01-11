@@ -23,7 +23,8 @@ class TestCPUFeaturesDetectionAdvanced:
         Tests the cpu_supports_neon() function path.
         """
         backend = labneura.detect_backend()
-        assert backend in ["NEON backend", "NEON", "Generic backend", "GENERIC"], \
+        # Check that we get NEON or GENERIC (with optional " backend" suffix)
+        assert backend in ["NEON", "GENERIC"] or backend.startswith("NEON") or backend.startswith("GENERIC"), \
             f"Expected NEON or GENERIC on ARM M1, got {backend}"
 
     def test_backend_consistency_across_multiple_calls(self):
@@ -47,7 +48,7 @@ class TestCPUFeaturesDetectionAdvanced:
         """
         backend = labneura.detect_backend()
         # AVX2 is x86-only, shouldn't appear on ARM M1
-        assert "AVX2" not in backend, "AVX2 should not be available on ARM M1"
+        assert "AVX2" not in backend.upper(), "AVX2 should not be available on ARM M1"
 
     def test_sse41_returns_false_on_arm_m1(self):
         """
@@ -131,8 +132,9 @@ class TestCPUFeaturesDetectionAdvanced:
         """
         backend = labneura.detect_backend()
         # If we're on ARM M1/M2/M3, NEON must be detected or Generic must be used
-        assert backend.upper() in ["NEON BACKEND", "NEON", "GENERIC BACKEND", "GENERIC"], \
-            f"Invalid backend on ARM: {backend}"
+        backend_upper = backend.upper()
+        assert backend_upper.startswith("NEON") or backend_upper.startswith("GENERIC"), \
+            f"Invalid backend on ARM: {backend}. Expected NEON or GENERIC."
 
 
 class TestCPUDetectionEdgeCases:

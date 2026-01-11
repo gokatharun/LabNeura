@@ -305,11 +305,17 @@ class TestCPUFeaturesDetection:
     def test_detect_backend_returns_valid_string(self):
         """
         detect_backend() should return one of: AVX2, SSE4.1, NEON, GENERIC.
+        Tests that a valid backend is detected for the current platform.
         """
         backend = labneura.detect_backend()
         valid_backends = ["AVX2", "SSE4.1", "NEON", "GENERIC"]
         assert any(backend.startswith(b) for b in valid_backends), \
-            f"Invalid backend: {backend}"
+            f"Invalid backend: {backend}. Must be one of {valid_backends}"
+        
+        # Verify it returns one of the expected backends (not a typo or malformed string)
+        detected = backend.split()[0]  # Get first word in case there's extra info
+        assert detected in valid_backends, \
+            f"Backend '{detected}' not in valid list {valid_backends}"
 
     def test_create_backend_uses_detect_backend(self):
         """
