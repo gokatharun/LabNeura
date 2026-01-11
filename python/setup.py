@@ -38,11 +38,11 @@ def detect_simd_flags():
 # --------------------------------------
 # Resolve paths robustly regardless of invocation cwd
 repo_dir = Path(__file__).resolve().parent
+root_dir = repo_dir.parent  # Top-level LabNeura directory
 
 include_dirs = [
     pybind11.get_include(),
-    str(repo_dir / "src"),          # python/src
-    str(repo_dir / "include"),      # python/include (authoritative headers)
+    str(root_dir / "include"),      # Top-level include directory
 ]
 
 extra_compile_args = [
@@ -109,14 +109,14 @@ ext_modules = [
         name="labneura",
         sources=[
             "labneura_py.cpp",
-            "src/labneura/tensor.cpp",
-            "src/labneura/backends/base.cpp",
-            "src/labneura/backends/generic.cpp",
-            "src/labneura/backends/neon.cpp",
-            "src/labneura/backends/avx2.cpp",
-            "src/labneura/backends/sse41.cpp",
-            "src/labneura/backends/cpu_features.cpp",
-            "src/labneura/backends/backend_factory.cpp",
+            str(root_dir / "src/labneura/tensor.cpp"),
+            str(root_dir / "src/labneura/backends/base.cpp"),
+            str(root_dir / "src/labneura/backends/generic.cpp"),
+            str(root_dir / "src/labneura/backends/neon.cpp"),
+            str(root_dir / "src/labneura/backends/avx2.cpp"),
+            str(root_dir / "src/labneura/backends/sse41.cpp"),
+            str(root_dir / "src/labneura/backends/cpu_features.cpp"),
+            str(root_dir / "src/labneura/backends/backend_factory.cpp"),
         ],
         include_dirs=include_dirs,
         language="c++",
