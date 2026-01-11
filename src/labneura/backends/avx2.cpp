@@ -692,22 +692,295 @@ void AVX2Backend::operation_int8(const TensorBackend& other, OperationType op_ty
 }
 
 // =======================
-// FP16 and INT16 kernels (stub implementations using scalar fallback)
+// FP16 and INT16 kernels (optimized with SIMD, prefetch, and tail chains)
 // =======================
 
 void AVX2Backend::operation_fp16(const TensorBackend& other, OperationType op_type) {
-    // Stub: AVX2 doesn't have native FP16 support, use scalar fallback
+    // FP16 treated as int16_t for bitwise SIMD operations
     const int16_t* other_data = other.data_fp16();
     int16_t* this_data = data_fp16();
+    std::size_t i = 0;
+    const std::size_t size = size_;
     
-    // Scalar fallback - proper FP16 operations would require F16C extension
-    for (std::size_t i = 0; i < size_; ++i) {
-        if (op_type == OperationType::ADD) {
-            this_data[i] = this_data[i];  // Placeholder
-        } else if (op_type == OperationType::MUL) {
-            this_data[i] = this_data[i];  // Placeholder
+    // Check alignment: 32 bytes for AVX2
+    const bool aligned32 = labneura::util::is_aligned(this_data, labneura::util::AVX2_ALIGN) &&
+                           labneura::util::is_aligned(other_data, labneura::util::AVX2_ALIGN);
+    
+    // Prefetch distance for FP16: 64 int16s = 128 bytes
+    constexpr std::size_t PREFETCH_DISTANCE = 64;
+    
+    // AVX2 processes 16 int16 values per __m256i (256 bits / 16 bits = 16 elements)
+    const std::size_t vec_len_64 = (size / 64) * 64;  // 64 int16s = 4 × __m256i
+    const std::size_t vec_len_32 = (size / 32) * 32;  // 32 int16s = 2 × __m256i
+    const std::size_t vec_len_16 = (size / 16) * 16;  // 16 int16s = 1 × __m256i
+    
+    if (op_type == OperationType::ADD) {
+        if (aligned32) {
+            // Aligned path: 64 int16s per iteration
+            while (i < vec_len_64) {
+                if (i + PREFETCH_DISTANCE < size) {
+                    _mm_prefetch(reinterpret_cast<const char*>(this_data + i + PREFETCH_DISTANCE), _MM_HINT_T0);
+                    _mm_prefetch(reinterpret_cast<const char*>(other_data + i + PREFETCH_DISTANCE), _MM_HINT_T0);
+                }
+                const __m256i va0 = _mm256_load_si256(reinterpret_cast<const __m256i*>(this_data + i + 0));
+                const __m256i vb0 = _mm256_load_si256(reinterpret_cast<const __m256i*>(other_data + i + 0));
+                const __m256i va1 = _mm256_load_si256(reinterpret_cast<const __m256i*>(this_data + i + 16));
+                const __m256i vb1 = _mm256_load_si256(reinterpret_cast<const __m256i*>(other_data + i + 16));
+                const __m256i va2 = _mm256_load_si256(reinterpret_cast<const __m256i*>(this_data + i + 32));
+                const __m256i vb2 = _mm256_load_si256(reinterpret_cast<const __m256i*>(other_data + i + 32));
+                const __m256i va3 = _mm256_load_si256(reinterpret_cast<const __m256i*>(this_data + i + 48));
+                const __m256i vb3 = _mm256_load_si256(reinterpret_cast<const __m256i*>(other_data + i + 48));
+                _mm256_store_si256(reinterpret_cast<__m256i*>(this_data + i + 0), _mm256_add_epi16(va0, vb0));
+                _mm256_store_si256(reinterpret_cast<__m256i*>(this_data + i + 16), _mm256_add_epi16(va1, vb1));
+                _mm256_store_si256(reinterpret_cast<__m256i*>(this_data + i + 32), _mm256_add_epi16(va2, vb2));
+                _mm256_store_si256(reinterpret_cast<__m256i*>(this_data + i + 48), _mm256_add_epi16(va3, vb3));
+                i += 64;
+            }
+            if (i < vec_len_32) {
+                const __m256i va0 = _mm256_load_si256(reinterpret_cast<const __m256i*>(this_data + i));
+                const __m256i vb0 = _mm256_load_si256(reinterpret_cast<const __m256i*>(other_data + i));
+                const __m256i va1 = _mm256_load_si256(reinterpret_cast<const __m256i*>(this_data + i + 16));
+                const __m256i vb1 = _mm256_load_si256(reinterpret_cast<const __m256i*>(other_data + i + 16));
+                _mm256_store_si256(reinterpret_cast<__m256i*>(this_data + i), _mm256_add_epi16(va0, vb0));
+                _mm256_store_si256(reinterpret_cast<__m256i*>(this_data + i + 16), _mm256_add_epi16(va1, vb1));
+                i += 32;
+            }
+            if (i < vec_len_16) {
+                const __m256i va = _mm256_load_si256(reinterpret_cast<const __m256i*>(this_data + i));
+                const __m256i vb = _mm256_load_si256(reinterpret_cast<const __m256i*>(other_data + i));
+                _mm256_store_si256(reinterpret_cast<__m256i*>(this_data + i), _mm256_add_epi16(va, vb));
+                i += 16;
+            }
         } else {
-            this_data[i] = this_data[i];  // Placeholder
+            // Unaligned path: 64 int16s per iteration
+            while (i < vec_len_64) {
+                if (i + PREFETCH_DISTANCE < size) {
+                    _mm_prefetch(reinterpret_cast<const char*>(this_data + i + PREFETCH_DISTANCE), _MM_HINT_T0);
+                    _mm_prefetch(reinterpret_cast<const char*>(other_data + i + PREFETCH_DISTANCE), _MM_HINT_T0);
+                }
+                const __m256i va0 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i + 0));
+                const __m256i vb0 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i + 0));
+                const __m256i va1 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i + 16));
+                const __m256i vb1 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i + 16));
+                const __m256i va2 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i + 32));
+                const __m256i vb2 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i + 32));
+                const __m256i va3 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i + 48));
+                const __m256i vb3 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i + 48));
+                _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i + 0), _mm256_add_epi16(va0, vb0));
+                _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i + 16), _mm256_add_epi16(va1, vb1));
+                _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i + 32), _mm256_add_epi16(va2, vb2));
+                _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i + 48), _mm256_add_epi16(va3, vb3));
+                i += 64;
+            }
+            if (i < vec_len_32) {
+                const __m256i va0 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i));
+                const __m256i vb0 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i));
+                const __m256i va1 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i + 16));
+                const __m256i vb1 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i + 16));
+                _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i), _mm256_add_epi16(va0, vb0));
+                _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i + 16), _mm256_add_epi16(va1, vb1));
+                i += 32;
+            }
+            if (i < vec_len_16) {
+                const __m256i va = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i));
+                const __m256i vb = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i));
+                _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i), _mm256_add_epi16(va, vb));
+                i += 16;
+            }
+        }
+        if (i + 8 <= size) {
+            const __m128i va = _mm_loadu_si128(reinterpret_cast<const __m128i*>(this_data + i));
+            const __m128i vb = _mm_loadu_si128(reinterpret_cast<const __m128i*>(other_data + i));
+            _mm_storeu_si128(reinterpret_cast<__m128i*>(this_data + i), _mm_add_epi16(va, vb));
+            i += 8;
+        }
+        if (i + 4 <= size) {
+            for (int j = 0; j < 4; ++j) {
+                this_data[i + j] = static_cast<int16_t>(static_cast<int32_t>(this_data[i + j]) + static_cast<int32_t>(other_data[i + j]));
+            }
+            i += 4;
+        }
+        while (i < size) {
+            this_data[i] = static_cast<int16_t>(static_cast<int32_t>(this_data[i]) + static_cast<int32_t>(other_data[i]));
+            ++i;
+        }
+    } else if (op_type == OperationType::MUL) {
+        if (aligned32) {
+            while (i < vec_len_64) {
+                if (i + PREFETCH_DISTANCE < size) {
+                    _mm_prefetch(reinterpret_cast<const char*>(this_data + i + PREFETCH_DISTANCE), _MM_HINT_T0);
+                    _mm_prefetch(reinterpret_cast<const char*>(other_data + i + PREFETCH_DISTANCE), _MM_HINT_T0);
+                }
+                const __m256i va0 = _mm256_load_si256(reinterpret_cast<const __m256i*>(this_data + i + 0));
+                const __m256i vb0 = _mm256_load_si256(reinterpret_cast<const __m256i*>(other_data + i + 0));
+                const __m256i va1 = _mm256_load_si256(reinterpret_cast<const __m256i*>(this_data + i + 16));
+                const __m256i vb1 = _mm256_load_si256(reinterpret_cast<const __m256i*>(other_data + i + 16));
+                const __m256i va2 = _mm256_load_si256(reinterpret_cast<const __m256i*>(this_data + i + 32));
+                const __m256i vb2 = _mm256_load_si256(reinterpret_cast<const __m256i*>(other_data + i + 32));
+                const __m256i va3 = _mm256_load_si256(reinterpret_cast<const __m256i*>(this_data + i + 48));
+                const __m256i vb3 = _mm256_load_si256(reinterpret_cast<const __m256i*>(other_data + i + 48));
+                _mm256_store_si256(reinterpret_cast<__m256i*>(this_data + i + 0), _mm256_mulhrs_epi16(va0, vb0));
+                _mm256_store_si256(reinterpret_cast<__m256i*>(this_data + i + 16), _mm256_mulhrs_epi16(va1, vb1));
+                _mm256_store_si256(reinterpret_cast<__m256i*>(this_data + i + 32), _mm256_mulhrs_epi16(va2, vb2));
+                _mm256_store_si256(reinterpret_cast<__m256i*>(this_data + i + 48), _mm256_mulhrs_epi16(va3, vb3));
+                i += 64;
+            }
+            if (i < vec_len_32) {
+                const __m256i va0 = _mm256_load_si256(reinterpret_cast<const __m256i*>(this_data + i));
+                const __m256i vb0 = _mm256_load_si256(reinterpret_cast<const __m256i*>(other_data + i));
+                const __m256i va1 = _mm256_load_si256(reinterpret_cast<const __m256i*>(this_data + i + 16));
+                const __m256i vb1 = _mm256_load_si256(reinterpret_cast<const __m256i*>(other_data + i + 16));
+                _mm256_store_si256(reinterpret_cast<__m256i*>(this_data + i), _mm256_mulhrs_epi16(va0, vb0));
+                _mm256_store_si256(reinterpret_cast<__m256i*>(this_data + i + 16), _mm256_mulhrs_epi16(va1, vb1));
+                i += 32;
+            }
+            if (i < vec_len_16) {
+                const __m256i va = _mm256_load_si256(reinterpret_cast<const __m256i*>(this_data + i));
+                const __m256i vb = _mm256_load_si256(reinterpret_cast<const __m256i*>(other_data + i));
+                _mm256_store_si256(reinterpret_cast<__m256i*>(this_data + i), _mm256_mulhrs_epi16(va, vb));
+                i += 16;
+            }
+        } else {
+            while (i < vec_len_64) {
+                if (i + PREFETCH_DISTANCE < size) {
+                    _mm_prefetch(reinterpret_cast<const char*>(this_data + i + PREFETCH_DISTANCE), _MM_HINT_T0);
+                    _mm_prefetch(reinterpret_cast<const char*>(other_data + i + PREFETCH_DISTANCE), _MM_HINT_T0);
+                }
+                const __m256i va0 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i + 0));
+                const __m256i vb0 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i + 0));
+                const __m256i va1 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i + 16));
+                const __m256i vb1 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i + 16));
+                const __m256i va2 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i + 32));
+                const __m256i vb2 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i + 32));
+                const __m256i va3 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i + 48));
+                const __m256i vb3 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i + 48));
+                _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i + 0), _mm256_mulhrs_epi16(va0, vb0));
+                _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i + 16), _mm256_mulhrs_epi16(va1, vb1));
+                _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i + 32), _mm256_mulhrs_epi16(va2, vb2));
+                _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i + 48), _mm256_mulhrs_epi16(va3, vb3));
+                i += 64;
+            }
+            if (i < vec_len_32) {
+                const __m256i va0 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i));
+                const __m256i vb0 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i));
+                const __m256i va1 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i + 16));
+                const __m256i vb1 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i + 16));
+                _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i), _mm256_mulhrs_epi16(va0, vb0));
+                _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i + 16), _mm256_mulhrs_epi16(va1, vb1));
+                i += 32;
+            }
+            if (i < vec_len_16) {
+                const __m256i va = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i));
+                const __m256i vb = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i));
+                _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i), _mm256_mulhrs_epi16(va, vb));
+                i += 16;
+            }
+        }
+        if (i + 8 <= size) {
+            const __m128i va = _mm_loadu_si128(reinterpret_cast<const __m128i*>(this_data + i));
+            const __m128i vb = _mm_loadu_si128(reinterpret_cast<const __m128i*>(other_data + i));
+            _mm_storeu_si128(reinterpret_cast<__m128i*>(this_data + i), _mm_mulhrs_epi16(va, vb));
+            i += 8;
+        }
+        if (i + 4 <= size) {
+            for (int j = 0; j < 4; ++j) {
+                int32_t product = static_cast<int32_t>(this_data[i + j]) * static_cast<int32_t>(other_data[i + j]);
+                this_data[i + j] = static_cast<int16_t>(std::max(-32768, std::min(32767, product)));
+            }
+            i += 4;
+        }
+        while (i < size) {
+            int32_t product = static_cast<int32_t>(this_data[i]) * static_cast<int32_t>(other_data[i]);
+            this_data[i] = static_cast<int16_t>(std::max(-32768, std::min(32767, product)));
+            ++i;
+        }
+    } else {  // SUB
+        if (aligned32) {
+            while (i < vec_len_64) {
+                if (i + PREFETCH_DISTANCE < size) {
+                    _mm_prefetch(reinterpret_cast<const char*>(this_data + i + PREFETCH_DISTANCE), _MM_HINT_T0);
+                    _mm_prefetch(reinterpret_cast<const char*>(other_data + i + PREFETCH_DISTANCE), _MM_HINT_T0);
+                }
+                const __m256i va0 = _mm256_load_si256(reinterpret_cast<const __m256i*>(this_data + i + 0));
+                const __m256i vb0 = _mm256_load_si256(reinterpret_cast<const __m256i*>(other_data + i + 0));
+                const __m256i va1 = _mm256_load_si256(reinterpret_cast<const __m256i*>(this_data + i + 16));
+                const __m256i vb1 = _mm256_load_si256(reinterpret_cast<const __m256i*>(other_data + i + 16));
+                const __m256i va2 = _mm256_load_si256(reinterpret_cast<const __m256i*>(this_data + i + 32));
+                const __m256i vb2 = _mm256_load_si256(reinterpret_cast<const __m256i*>(other_data + i + 32));
+                const __m256i va3 = _mm256_load_si256(reinterpret_cast<const __m256i*>(this_data + i + 48));
+                const __m256i vb3 = _mm256_load_si256(reinterpret_cast<const __m256i*>(other_data + i + 48));
+                _mm256_store_si256(reinterpret_cast<__m256i*>(this_data + i + 0), _mm256_sub_epi16(va0, vb0));
+                _mm256_store_si256(reinterpret_cast<__m256i*>(this_data + i + 16), _mm256_sub_epi16(va1, vb1));
+                _mm256_store_si256(reinterpret_cast<__m256i*>(this_data + i + 32), _mm256_sub_epi16(va2, vb2));
+                _mm256_store_si256(reinterpret_cast<__m256i*>(this_data + i + 48), _mm256_sub_epi16(va3, vb3));
+                i += 64;
+            }
+            if (i < vec_len_32) {
+                const __m256i va0 = _mm256_load_si256(reinterpret_cast<const __m256i*>(this_data + i));
+                const __m256i vb0 = _mm256_load_si256(reinterpret_cast<const __m256i*>(other_data + i));
+                const __m256i va1 = _mm256_load_si256(reinterpret_cast<const __m256i*>(this_data + i + 16));
+                const __m256i vb1 = _mm256_load_si256(reinterpret_cast<const __m256i*>(other_data + i + 16));
+                _mm256_store_si256(reinterpret_cast<__m256i*>(this_data + i), _mm256_sub_epi16(va0, vb0));
+                _mm256_store_si256(reinterpret_cast<__m256i*>(this_data + i + 16), _mm256_sub_epi16(va1, vb1));
+                i += 32;
+            }
+            if (i < vec_len_16) {
+                const __m256i va = _mm256_load_si256(reinterpret_cast<const __m256i*>(this_data + i));
+                const __m256i vb = _mm256_load_si256(reinterpret_cast<const __m256i*>(other_data + i));
+                _mm256_store_si256(reinterpret_cast<__m256i*>(this_data + i), _mm256_sub_epi16(va, vb));
+                i += 16;
+            }
+        } else {
+            while (i < vec_len_64) {
+                if (i + PREFETCH_DISTANCE < size) {
+                    _mm_prefetch(reinterpret_cast<const char*>(this_data + i + PREFETCH_DISTANCE), _MM_HINT_T0);
+                    _mm_prefetch(reinterpret_cast<const char*>(other_data + i + PREFETCH_DISTANCE), _MM_HINT_T0);
+                }
+                const __m256i va0 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i + 0));
+                const __m256i vb0 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i + 0));
+                const __m256i va1 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i + 16));
+                const __m256i vb1 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i + 16));
+                const __m256i va2 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i + 32));
+                const __m256i vb2 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i + 32));
+                const __m256i va3 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i + 48));
+                const __m256i vb3 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i + 48));
+                _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i + 0), _mm256_sub_epi16(va0, vb0));
+                _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i + 16), _mm256_sub_epi16(va1, vb1));
+                _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i + 32), _mm256_sub_epi16(va2, vb2));
+                _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i + 48), _mm256_sub_epi16(va3, vb3));
+                i += 64;
+            }
+            if (i < vec_len_32) {
+                const __m256i va0 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i));
+                const __m256i vb0 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i));
+                const __m256i va1 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i + 16));
+                const __m256i vb1 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i + 16));
+                _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i), _mm256_sub_epi16(va0, vb0));
+                _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i + 16), _mm256_sub_epi16(va1, vb1));
+                i += 32;
+            }
+            if (i < vec_len_16) {
+                const __m256i va = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i));
+                const __m256i vb = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i));
+                _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i), _mm256_sub_epi16(va, vb));
+                i += 16;
+            }
+        }
+        if (i + 8 <= size) {
+            const __m128i va = _mm_loadu_si128(reinterpret_cast<const __m128i*>(this_data + i));
+            const __m128i vb = _mm_loadu_si128(reinterpret_cast<const __m128i*>(other_data + i));
+            _mm_storeu_si128(reinterpret_cast<__m128i*>(this_data + i), _mm_sub_epi16(va, vb));
+            i += 8;
+        }
+        if (i + 4 <= size) {
+            for (int j = 0; j < 4; ++j) {
+                this_data[i + j] = static_cast<int16_t>(static_cast<int32_t>(this_data[i + j]) - static_cast<int32_t>(other_data[i + j]));
+            }
+            i += 4;
+        }
+        while (i < size) {
+            this_data[i] = static_cast<int16_t>(static_cast<int32_t>(this_data[i]) - static_cast<int32_t>(other_data[i]));
+            ++i;
         }
     }
 }
@@ -715,21 +988,465 @@ void AVX2Backend::operation_fp16(const TensorBackend& other, OperationType op_ty
 void AVX2Backend::operation_int16(const TensorBackend& other, OperationType op_type) {
     const int16_t* other_data = other.data_int16();
     int16_t* this_data = data_int16();
+    std::size_t i = 0;
+    const std::size_t size = size_;
+    
+    // Check alignment: 32 bytes for AVX2
+    const bool aligned32 = labneura::util::is_aligned(this_data, labneura::util::AVX2_ALIGN) &&
+                           labneura::util::is_aligned(other_data, labneura::util::AVX2_ALIGN);
+    
+    // Prefetch distance for INT16: 64 int16s = 128 bytes
+    constexpr std::size_t PREFETCH_DISTANCE = 64;
+    
+    // AVX2 processes 16 int16 values per __m256i (256 bits / 16 bits = 16 elements)
+    const std::size_t vec_len_64 = (size / 64) * 64;  // 64 int16s = 4 × __m256i
+    const std::size_t vec_len_32 = (size / 32) * 32;  // 32 int16s = 2 × __m256i
+    const std::size_t vec_len_16 = (size / 16) * 16;  // 16 int16s = 1 × __m256i
     
     if (op_type == OperationType::ADD) {
-        for (std::size_t i = 0; i < size_; ++i) {
+        if (aligned32) {
+            // Aligned path: 64 int16s per iteration
+            while (i < vec_len_64) {
+                if (i + PREFETCH_DISTANCE < size) {
+                    _mm_prefetch(reinterpret_cast<const char*>(this_data + i + PREFETCH_DISTANCE), _MM_HINT_T0);
+                    _mm_prefetch(reinterpret_cast<const char*>(other_data + i + PREFETCH_DISTANCE), _MM_HINT_T0);
+                }
+                const __m256i va0 = _mm256_load_si256(reinterpret_cast<const __m256i*>(this_data + i + 0));
+                const __m256i vb0 = _mm256_load_si256(reinterpret_cast<const __m256i*>(other_data + i + 0));
+                const __m256i va1 = _mm256_load_si256(reinterpret_cast<const __m256i*>(this_data + i + 16));
+                const __m256i vb1 = _mm256_load_si256(reinterpret_cast<const __m256i*>(other_data + i + 16));
+                const __m256i va2 = _mm256_load_si256(reinterpret_cast<const __m256i*>(this_data + i + 32));
+                const __m256i vb2 = _mm256_load_si256(reinterpret_cast<const __m256i*>(other_data + i + 32));
+                const __m256i va3 = _mm256_load_si256(reinterpret_cast<const __m256i*>(this_data + i + 48));
+                const __m256i vb3 = _mm256_load_si256(reinterpret_cast<const __m256i*>(other_data + i + 48));
+                _mm256_store_si256(reinterpret_cast<__m256i*>(this_data + i + 0), _mm256_adds_epi16(va0, vb0));
+                _mm256_store_si256(reinterpret_cast<__m256i*>(this_data + i + 16), _mm256_adds_epi16(va1, vb1));
+                _mm256_store_si256(reinterpret_cast<__m256i*>(this_data + i + 32), _mm256_adds_epi16(va2, vb2));
+                _mm256_store_si256(reinterpret_cast<__m256i*>(this_data + i + 48), _mm256_adds_epi16(va3, vb3));
+                i += 64;
+            }
+            if (i < vec_len_32) {
+                const __m256i va0 = _mm256_load_si256(reinterpret_cast<const __m256i*>(this_data + i));
+                const __m256i vb0 = _mm256_load_si256(reinterpret_cast<const __m256i*>(other_data + i));
+                const __m256i va1 = _mm256_load_si256(reinterpret_cast<const __m256i*>(this_data + i + 16));
+                const __m256i vb1 = _mm256_load_si256(reinterpret_cast<const __m256i*>(other_data + i + 16));
+                _mm256_store_si256(reinterpret_cast<__m256i*>(this_data + i), _mm256_adds_epi16(va0, vb0));
+                _mm256_store_si256(reinterpret_cast<__m256i*>(this_data + i + 16), _mm256_adds_epi16(va1, vb1));
+                i += 32;
+            }
+            if (i < vec_len_16) {
+                const __m256i va = _mm256_load_si256(reinterpret_cast<const __m256i*>(this_data + i));
+                const __m256i vb = _mm256_load_si256(reinterpret_cast<const __m256i*>(other_data + i));
+                _mm256_store_si256(reinterpret_cast<__m256i*>(this_data + i), _mm256_adds_epi16(va, vb));
+                i += 16;
+            }
+        } else {
+            // Unaligned path: 64 int16s per iteration
+            while (i < vec_len_64) {
+                if (i + PREFETCH_DISTANCE < size) {
+                    _mm_prefetch(reinterpret_cast<const char*>(this_data + i + PREFETCH_DISTANCE), _MM_HINT_T0);
+                    _mm_prefetch(reinterpret_cast<const char*>(other_data + i + PREFETCH_DISTANCE), _MM_HINT_T0);
+                }
+                const __m256i va0 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i + 0));
+                const __m256i vb0 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i + 0));
+                const __m256i va1 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i + 16));
+                const __m256i vb1 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i + 16));
+                const __m256i va2 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i + 32));
+                const __m256i vb2 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i + 32));
+                const __m256i va3 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i + 48));
+                const __m256i vb3 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i + 48));
+                _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i + 0), _mm256_adds_epi16(va0, vb0));
+                _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i + 16), _mm256_adds_epi16(va1, vb1));
+                _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i + 32), _mm256_adds_epi16(va2, vb2));
+                _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i + 48), _mm256_adds_epi16(va3, vb3));
+                i += 64;
+            }
+            if (i < vec_len_32) {
+                const __m256i va0 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i));
+                const __m256i vb0 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i));
+                const __m256i va1 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i + 16));
+                const __m256i vb1 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i + 16));
+                _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i), _mm256_adds_epi16(va0, vb0));
+                _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i + 16), _mm256_adds_epi16(va1, vb1));
+                i += 32;
+            }
+            if (i < vec_len_16) {
+                const __m256i va = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i));
+                const __m256i vb = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i));
+                _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i), _mm256_adds_epi16(va, vb));
+                i += 16;
+            }
+        }
+        if (i + 8 <= size) {
+            const __m128i va = _mm_loadu_si128(reinterpret_cast<const __m128i*>(this_data + i));
+            const __m128i vb = _mm_loadu_si128(reinterpret_cast<const __m128i*>(other_data + i));
+            _mm_storeu_si128(reinterpret_cast<__m128i*>(this_data + i), _mm_adds_epi16(va, vb));
+            i += 8;
+        }
+        if (i + 4 <= size) {
+            for (int j = 0; j < 4; ++j) {
+                int32_t sum = static_cast<int32_t>(this_data[i + j]) + static_cast<int32_t>(other_data[i + j]);
+                this_data[i + j] = static_cast<int16_t>(std::max(-32768, std::min(32767, sum)));
+            }
+            i += 4;
+        }
+        while (i < size) {
             int32_t sum = static_cast<int32_t>(this_data[i]) + static_cast<int32_t>(other_data[i]);
             this_data[i] = static_cast<int16_t>(std::max(-32768, std::min(32767, sum)));
+            ++i;
         }
     } else if (op_type == OperationType::MUL) {
-        for (std::size_t i = 0; i < size_; ++i) {
+        if (aligned32) {
+            while (i < vec_len_64) {
+                if (i + PREFETCH_DISTANCE < size) {
+                    _mm_prefetch(reinterpret_cast<const char*>(this_data + i + PREFETCH_DISTANCE), _MM_HINT_T0);
+                    _mm_prefetch(reinterpret_cast<const char*>(other_data + i + PREFETCH_DISTANCE), _MM_HINT_T0);
+                }
+                const __m256i va0 = _mm256_load_si256(reinterpret_cast<const __m256i*>(this_data + i + 0));
+                const __m256i vb0 = _mm256_load_si256(reinterpret_cast<const __m256i*>(other_data + i + 0));
+                const __m256i va1 = _mm256_load_si256(reinterpret_cast<const __m256i*>(this_data + i + 16));
+                const __m256i vb1 = _mm256_load_si256(reinterpret_cast<const __m256i*>(other_data + i + 16));
+                const __m256i va2 = _mm256_load_si256(reinterpret_cast<const __m256i*>(this_data + i + 32));
+                const __m256i vb2 = _mm256_load_si256(reinterpret_cast<const __m256i*>(other_data + i + 32));
+                const __m256i va3 = _mm256_load_si256(reinterpret_cast<const __m256i*>(this_data + i + 48));
+                const __m256i vb3 = _mm256_load_si256(reinterpret_cast<const __m256i*>(other_data + i + 48));
+                _mm256_store_si256(reinterpret_cast<__m256i*>(this_data + i + 0), _mm256_mulhrs_epi16(va0, vb0));
+                _mm256_store_si256(reinterpret_cast<__m256i*>(this_data + i + 16), _mm256_mulhrs_epi16(va1, vb1));
+                _mm256_store_si256(reinterpret_cast<__m256i*>(this_data + i + 32), _mm256_mulhrs_epi16(va2, vb2));
+                _mm256_store_si256(reinterpret_cast<__m256i*>(this_data + i + 48), _mm256_mulhrs_epi16(va3, vb3));
+                i += 64;
+            }
+            if (i < vec_len_32) {
+                const __m256i va0 = _mm256_load_si256(reinterpret_cast<const __m256i*>(this_data + i));
+                const __m256i vb0 = _mm256_load_si256(reinterpret_cast<const __m256i*>(other_data + i));
+                const __m256i va1 = _mm256_load_si256(reinterpret_cast<const __m256i*>(this_data + i + 16));
+                const __m256i vb1 = _mm256_load_si256(reinterpret_cast<const __m256i*>(other_data + i + 16));
+                _mm256_store_si256(reinterpret_cast<__m256i*>(this_data + i), _mm256_mulhrs_epi16(va0, vb0));
+                _mm256_store_si256(reinterpret_cast<__m256i*>(this_data + i + 16), _mm256_mulhrs_epi16(va1, vb1));
+                i += 32;
+            }
+            if (i < vec_len_16) {
+                const __m256i va = _mm256_load_si256(reinterpret_cast<const __m256i*>(this_data + i));
+                const __m256i vb = _mm256_load_si256(reinterpret_cast<const __m256i*>(other_data + i));
+                _mm256_store_si256(reinterpret_cast<__m256i*>(this_data + i), _mm256_mulhrs_epi16(va, vb));
+                i += 16;
+            }
+        } else {
+            while (i < vec_len_64) {
+                if (i + PREFETCH_DISTANCE < size) {
+                    _mm_prefetch(reinterpret_cast<const char*>(this_data + i + PREFETCH_DISTANCE), _MM_HINT_T0);
+                    _mm_prefetch(reinterpret_cast<const char*>(other_data + i + PREFETCH_DISTANCE), _MM_HINT_T0);
+                }
+                const __m256i va0 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i + 0));
+                const __m256i vb0 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i + 0));
+                const __m256i va1 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i + 16));
+                const __m256i vb1 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i + 16));
+                const __m256i va2 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i + 32));
+                const __m256i vb2 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i + 32));
+                const __m256i va3 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i + 48));
+                const __m256i vb3 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i + 48));
+                _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i + 0), _mm256_mulhrs_epi16(va0, vb0));
+                _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i + 16), _mm256_mulhrs_epi16(va1, vb1));
+                _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i + 32), _mm256_mulhrs_epi16(va2, vb2));
+                _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i + 48), _mm256_mulhrs_epi16(va3, vb3));
+                i += 64;
+            }
+            if (i < vec_len_32) {
+                const __m256i va0 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i));
+                const __m256i vb0 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i));
+                const __m256i va1 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i + 16));
+                const __m256i vb1 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i + 16));
+                _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i), _mm256_mulhrs_epi16(va0, vb0));
+                _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i + 16), _mm256_mulhrs_epi16(va1, vb1));
+                i += 32;
+            }
+            if (i < vec_len_16) {
+                const __m256i va = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i));
+                const __m256i vb = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i));
+                _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i), _mm256_mulhrs_epi16(va, vb));
+                i += 16;
+            }
+        }
+        if (i + 8 <= size) {
+            const __m128i va = _mm_loadu_si128(reinterpret_cast<const __m128i*>(this_data + i));
+            const __m128i vb = _mm_loadu_si128(reinterpret_cast<const __m128i*>(other_data + i));
+            _mm_storeu_si128(reinterpret_cast<__m128i*>(this_data + i), _mm_mulhrs_epi16(va, vb));
+            i += 8;
+        }
+        if (i + 4 <= size) {
+            for (int j = 0; j < 4; ++j) {
+                int32_t product = static_cast<int32_t>(this_data[i + j]) * static_cast<int32_t>(other_data[i + j]);
+                this_data[i + j] = static_cast<int16_t>(std::max(-32768, std::min(32767, product)));
+            }
+            i += 4;
+        }
+        while (i < size) {
             int32_t product = static_cast<int32_t>(this_data[i]) * static_cast<int32_t>(other_data[i]);
             this_data[i] = static_cast<int16_t>(std::max(-32768, std::min(32767, product)));
+            ++i;
         }
-    } else {
-        for (std::size_t i = 0; i < size_; ++i) {
+    } else {  // SUB
+        if (aligned32) {
+            while (i < vec_len_64) {
+                if (i + PREFETCH_DISTANCE < size) {
+                    _mm_prefetch(reinterpret_cast<const char*>(this_data + i + PREFETCH_DISTANCE), _MM_HINT_T0);
+                    _mm_prefetch(reinterpret_cast<const char*>(other_data + i + PREFETCH_DISTANCE), _MM_HINT_T0);
+                }
+                const __m256i va0 = _mm256_load_si256(reinterpret_cast<const __m256i*>(this_data + i + 0));
+                const __m256i vb0 = _mm256_load_si256(reinterpret_cast<const __m256i*>(other_data + i + 0));
+                const __m256i va1 = _mm256_load_si256(reinterpret_cast<const __m256i*>(this_data + i + 16));
+                const __m256i vb1 = _mm256_load_si256(reinterpret_cast<const __m256i*>(other_data + i + 16));
+                const __m256i va2 = _mm256_load_si256(reinterpret_cast<const __m256i*>(this_data + i + 32));
+                const __m256i vb2 = _mm256_load_si256(reinterpret_cast<const __m256i*>(other_data + i + 32));
+                const __m256i va3 = _mm256_load_si256(reinterpret_cast<const __m256i*>(this_data + i + 48));
+                const __m256i vb3 = _mm256_load_si256(reinterpret_cast<const __m256i*>(other_data + i + 48));
+                _mm256_store_si256(reinterpret_cast<__m256i*>(this_data + i + 0), _mm256_subs_epi16(va0, vb0));
+                _mm256_store_si256(reinterpret_cast<__m256i*>(this_data + i + 16), _mm256_subs_epi16(va1, vb1));
+                _mm256_store_si256(reinterpret_cast<__m256i*>(this_data + i + 32), _mm256_subs_epi16(va2, vb2));
+                _mm256_store_si256(reinterpret_cast<__m256i*>(this_data + i + 48), _mm256_subs_epi16(va3, vb3));
+                i += 64;
+            }
+            if (i < vec_len_32) {
+                const __m256i va0 = _mm256_load_si256(reinterpret_cast<const __m256i*>(this_data + i));
+                const __m256i vb0 = _mm256_load_si256(reinterpret_cast<const __m256i*>(other_data + i));
+                const __m256i va1 = _mm256_load_si256(reinterpret_cast<const __m256i*>(this_data + i + 16));
+                const __m256i vb1 = _mm256_load_si256(reinterpret_cast<const __m256i*>(other_data + i + 16));
+                _mm256_store_si256(reinterpret_cast<__m256i*>(this_data + i), _mm256_subs_epi16(va0, vb0));
+                _mm256_store_si256(reinterpret_cast<__m256i*>(this_data + i + 16), _mm256_subs_epi16(va1, vb1));
+                i += 32;
+            }
+            if (i < vec_len_16) {
+                const __m256i va = _mm256_load_si256(reinterpret_cast<const __m256i*>(this_data + i));
+                const __m256i vb = _mm256_load_si256(reinterpret_cast<const __m256i*>(other_data + i));
+                _mm256_store_si256(reinterpret_cast<__m256i*>(this_data + i), _mm256_subs_epi16(va, vb));
+                i += 16;
+            }
+        } else {
+            while (i < vec_len_64) {
+                if (i + PREFETCH_DISTANCE < size) {
+                    _mm_prefetch(reinterpret_cast<const char*>(this_data + i + PREFETCH_DISTANCE), _MM_HINT_T0);
+                    _mm_prefetch(reinterpret_cast<const char*>(other_data + i + PREFETCH_DISTANCE), _MM_HINT_T0);
+                }
+                const __m256i va0 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i + 0));
+                const __m256i vb0 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i + 0));
+                const __m256i va1 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i + 16));
+                const __m256i vb1 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i + 16));
+                const __m256i va2 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i + 32));
+                const __m256i vb2 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i + 32));
+                const __m256i va3 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i + 48));
+                const __m256i vb3 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i + 48));
+                _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i + 0), _mm256_subs_epi16(va0, vb0));
+                _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i + 16), _mm256_subs_epi16(va1, vb1));
+                _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i + 32), _mm256_subs_epi16(va2, vb2));
+                _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i + 48), _mm256_subs_epi16(va3, vb3));
+                i += 64;
+            }
+            if (i < vec_len_32) {
+                const __m256i va0 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i));
+                const __m256i vb0 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i));
+                const __m256i va1 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i + 16));
+                const __m256i vb1 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i + 16));
+                _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i), _mm256_subs_epi16(va0, vb0));
+                _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i + 16), _mm256_subs_epi16(va1, vb1));
+                i += 32;
+            }
+            if (i < vec_len_16) {
+                const __m256i va = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i));
+                const __m256i vb = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i));
+                _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i), _mm256_subs_epi16(va, vb));
+                i += 16;
+            }
+        }
+        if (i + 8 <= size) {
+            const __m128i va = _mm_loadu_si128(reinterpret_cast<const __m128i*>(this_data + i));
+            const __m128i vb = _mm_loadu_si128(reinterpret_cast<const __m128i*>(other_data + i));
+            _mm_storeu_si128(reinterpret_cast<__m128i*>(this_data + i), _mm_subs_epi16(va, vb));
+            i += 8;
+        }
+        if (i + 4 <= size) {
+            for (int j = 0; j < 4; ++j) {
+                int32_t diff = static_cast<int32_t>(this_data[i + j]) - static_cast<int32_t>(other_data[i + j]);
+                this_data[i + j] = static_cast<int16_t>(std::max(-32768, std::min(32767, diff)));
+            }
+            i += 4;
+        }
+        while (i < size) {
             int32_t diff = static_cast<int32_t>(this_data[i]) - static_cast<int32_t>(other_data[i]);
             this_data[i] = static_cast<int16_t>(std::max(-32768, std::min(32767, diff)));
+            ++i;
+        }
+    }
+}
+            _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i), r);
+            i += 16;
+        }
+        if (i + 8 <= size) {
+            const __m128i va = _mm_loadu_si128(reinterpret_cast<const __m128i*>(this_data + i));
+            const __m128i vb = _mm_loadu_si128(reinterpret_cast<const __m128i*>(other_data + i));
+            const __m128i r = _mm_adds_epi16(va, vb);
+            _mm_storeu_si128(reinterpret_cast<__m128i*>(this_data + i), r);
+            i += 8;
+        }
+        if (i + 4 <= size) {
+            for (int j = 0; j < 4; ++j) {
+                int32_t sum = static_cast<int32_t>(this_data[i + j]) + static_cast<int32_t>(other_data[i + j]);
+                this_data[i + j] = static_cast<int16_t>(std::max(-32768, std::min(32767, sum)));
+            }
+            i += 4;
+        }
+        
+        // Scalar remainder
+        while (i < size) {
+            int32_t sum = static_cast<int32_t>(this_data[i]) + static_cast<int32_t>(other_data[i]);
+            this_data[i] = static_cast<int16_t>(std::max(-32768, std::min(32767, sum)));
+            ++i;
+        }
+    } else if (op_type == OperationType::MUL) {
+        // Main loop: 64 int16s per iteration with widening multiply
+        while (i < vec_len_64) {
+            // Prefetch ahead
+            if (i + PREFETCH_DISTANCE < size) {
+                _mm_prefetch(reinterpret_cast<const char*>(this_data + i + PREFETCH_DISTANCE), _MM_HINT_T0);
+                _mm_prefetch(reinterpret_cast<const char*>(other_data + i + PREFETCH_DISTANCE), _MM_HINT_T0);
+            }
+            
+            // Process 64 int16s = 4 × __m256i
+            // Strategy: Load 16 int16s, widen to 32-bit, multiply, saturate narrow back to 16-bit
+            const __m256i va0 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i + 0));
+            const __m256i vb0 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i + 0));
+            const __m256i va1 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i + 16));
+            const __m256i vb1 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i + 16));
+            const __m256i va2 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i + 32));
+            const __m256i vb2 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i + 32));
+            const __m256i va3 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i + 48));
+            const __m256i vb3 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i + 48));
+            
+            // Multiply with saturation using _mm256_mulhrs_epi16 (signed multiply high with round and saturate)
+            const __m256i r0 = _mm256_mulhrs_epi16(va0, vb0);
+            const __m256i r1 = _mm256_mulhrs_epi16(va1, vb1);
+            const __m256i r2 = _mm256_mulhrs_epi16(va2, vb2);
+            const __m256i r3 = _mm256_mulhrs_epi16(va3, vb3);
+            
+            _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i + 0), r0);
+            _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i + 16), r1);
+            _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i + 32), r2);
+            _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i + 48), r3);
+            
+            i += 64;
+        }
+        
+        // Tail chain: 32 -> 16 -> 8 -> 4 -> scalar
+        if (i < vec_len_32) {
+            const __m256i va0 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i));
+            const __m256i vb0 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i));
+            const __m256i va1 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i + 16));
+            const __m256i vb1 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i + 16));
+            const __m256i r0 = _mm256_mulhrs_epi16(va0, vb0);
+            const __m256i r1 = _mm256_mulhrs_epi16(va1, vb1);
+            _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i), r0);
+            _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i + 16), r1);
+            i += 32;
+        }
+        if (i < vec_len_16) {
+            const __m256i va = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i));
+            const __m256i vb = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i));
+            const __m256i r = _mm256_mulhrs_epi16(va, vb);
+            _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i), r);
+            i += 16;
+        }
+        if (i + 8 <= size) {
+            const __m128i va = _mm_loadu_si128(reinterpret_cast<const __m128i*>(this_data + i));
+            const __m128i vb = _mm_loadu_si128(reinterpret_cast<const __m128i*>(other_data + i));
+            const __m128i r = _mm_mulhrs_epi16(va, vb);
+            _mm_storeu_si128(reinterpret_cast<__m128i*>(this_data + i), r);
+            i += 8;
+        }
+        if (i + 4 <= size) {
+            for (int j = 0; j < 4; ++j) {
+                int32_t product = static_cast<int32_t>(this_data[i + j]) * static_cast<int32_t>(other_data[i + j]);
+                this_data[i + j] = static_cast<int16_t>(std::max(-32768, std::min(32767, product)));
+            }
+            i += 4;
+        }
+        
+        // Scalar remainder
+        while (i < size) {
+            int32_t product = static_cast<int32_t>(this_data[i]) * static_cast<int32_t>(other_data[i]);
+            this_data[i] = static_cast<int16_t>(std::max(-32768, std::min(32767, product)));
+            ++i;
+        }
+    } else {  // SUB
+        // Main loop: 64 int16s per iteration
+        while (i < vec_len_64) {
+            // Prefetch ahead
+            if (i + PREFETCH_DISTANCE < size) {
+                _mm_prefetch(reinterpret_cast<const char*>(this_data + i + PREFETCH_DISTANCE), _MM_HINT_T0);
+                _mm_prefetch(reinterpret_cast<const char*>(other_data + i + PREFETCH_DISTANCE), _MM_HINT_T0);
+            }
+            
+            // Process 64 int16s = 4 × __m256i
+            const __m256i va0 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i + 0));
+            const __m256i vb0 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i + 0));
+            const __m256i va1 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i + 16));
+            const __m256i vb1 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i + 16));
+            const __m256i va2 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i + 32));
+            const __m256i vb2 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i + 32));
+            const __m256i va3 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i + 48));
+            const __m256i vb3 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i + 48));
+            
+            // Saturating subtract for int16
+            const __m256i r0 = _mm256_subs_epi16(va0, vb0);
+            const __m256i r1 = _mm256_subs_epi16(va1, vb1);
+            const __m256i r2 = _mm256_subs_epi16(va2, vb2);
+            const __m256i r3 = _mm256_subs_epi16(va3, vb3);
+            
+            _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i + 0), r0);
+            _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i + 16), r1);
+            _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i + 32), r2);
+            _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i + 48), r3);
+            
+            i += 64;
+        }
+        
+        // Tail chain: 32 -> 16 -> 8 -> 4 -> scalar
+        if (i < vec_len_32) {
+            const __m256i va0 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i));
+            const __m256i vb0 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i));
+            const __m256i va1 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i + 16));
+            const __m256i vb1 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i + 16));
+            const __m256i r0 = _mm256_subs_epi16(va0, vb0);
+            const __m256i r1 = _mm256_subs_epi16(va1, vb1);
+            _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i), r0);
+            _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i + 16), r1);
+            i += 32;
+        }
+        if (i < vec_len_16) {
+            const __m256i va = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(this_data + i));
+            const __m256i vb = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(other_data + i));
+            const __m256i r = _mm256_subs_epi16(va, vb);
+            _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i), r);
+            i += 16;
+        }
+        if (i + 8 <= size) {
+            const __m128i va = _mm_loadu_si128(reinterpret_cast<const __m128i*>(this_data + i));
+            const __m128i vb = _mm_loadu_si128(reinterpret_cast<const __m128i*>(other_data + i));
+            const __m128i r = _mm_subs_epi16(va, vb);
+            _mm_storeu_si128(reinterpret_cast<__m128i*>(this_data + i), r);
+            i += 8;
+        }
+        if (i + 4 <= size) {
+            for (int j = 0; j < 4; ++j) {
+                int32_t diff = static_cast<int32_t>(this_data[i + j]) - static_cast<int32_t>(other_data[i + j]);
+                this_data[i + j] = static_cast<int16_t>(std::max(-32768, std::min(32767, diff)));
+            }
+            i += 4;
+        }
+        
+        // Scalar remainder
+        while (i < size) {
+            int32_t diff = static_cast<int32_t>(this_data[i]) - static_cast<int32_t>(other_data[i]);
+            this_data[i] = static_cast<int16_t>(std::max(-32768, std::min(32767, diff)));
+            ++i;
         }
     }
 }

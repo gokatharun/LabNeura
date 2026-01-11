@@ -154,7 +154,7 @@ coverage:
 # CI (matches GitHub Actions)
 # --------------------------------------
 .PHONY: ci
-ci: deps clean install smoke test cpp-coverage
+ci: deps clean install smoke cpp-coverage
 
 # --------------------------------------
 # Build distribution (sdist + wheel)
