@@ -79,6 +79,16 @@ AVX2Backend::AVX2Backend(std::size_t size, QuantizationMode mode)
         float* p = labneura::util::allocate_aligned<float>(aligned_size_, labneura::util::AVX2_ALIGN);
         data_fp32_ = std::unique_ptr<float, void(*)(float*)>(p, labneura::util::free_aligned_float);
         std::fill(data_fp32_.get() + size_, data_fp32_.get() + aligned_size_, 0.0f);
+    } else if (mode == QuantizationMode::FP16) {
+        int16_t* p = labneura::util::allocate_aligned<int16_t>(aligned_size_, labneura::util::AVX2_ALIGN);
+        auto fp16_deleter = [](int16_t* ptr){ labneura::util::aligned_free(ptr); };
+        data_fp16_ = std::unique_ptr<int16_t, void(*)(int16_t*)>(p, fp16_deleter);
+        std::fill(data_fp16_.get() + size_, data_fp16_.get() + aligned_size_, static_cast<int16_t>(0));
+    } else if (mode == QuantizationMode::INT16) {
+        int16_t* p = labneura::util::allocate_aligned<int16_t>(aligned_size_, labneura::util::AVX2_ALIGN);
+        auto int16_deleter = [](int16_t* ptr){ labneura::util::aligned_free(ptr); };
+        data_int16_ = std::unique_ptr<int16_t, void(*)(int16_t*)>(p, int16_deleter);
+        std::fill(data_int16_.get() + size_, data_int16_.get() + aligned_size_, static_cast<int16_t>(0));
     } else {
         int8_t* p = labneura::util::allocate_aligned<int8_t>(aligned_size_, labneura::util::AVX2_ALIGN);
         data_int8_ = std::unique_ptr<int8_t, void(*)(int8_t*)>(p, labneura::util::free_aligned_int8);
@@ -116,6 +126,34 @@ const float* AVX2Backend::data_fp32() const {
     return data_fp32_.get();
 }
 
+int16_t* AVX2Backend::data_fp16() {
+    if (quantization_mode_ != QuantizationMode::FP16) {
+        throw std::runtime_error("Tensor is not in FP16 mode");
+    }
+    return data_fp16_.get();
+}
+
+const int16_t* AVX2Backend::data_fp16() const {
+    if (quantization_mode_ != QuantizationMode::FP16) {
+        throw std::runtime_error("Tensor is not in FP16 mode");
+    }
+    return data_fp16_.get();
+}
+
+int16_t* AVX2Backend::data_int16() {
+    if (quantization_mode_ != QuantizationMode::INT16) {
+        throw std::runtime_error("Tensor is not in INT16 mode");
+    }
+    return data_int16_.get();
+}
+
+const int16_t* AVX2Backend::data_int16() const {
+    if (quantization_mode_ != QuantizationMode::INT16) {
+        throw std::runtime_error("Tensor is not in INT16 mode");
+    }
+    return data_int16_.get();
+}
+
 int8_t* AVX2Backend::data_int8() {
     if (quantization_mode_ != QuantizationMode::INT8) {
         throw std::runtime_error("Tensor is not in INT8 mode");
@@ -138,6 +176,10 @@ std::unique_ptr<TensorBackend> AVX2Backend::clone() const {
     auto backend = std::make_unique<AVX2Backend>(size_, quantization_mode_);
     if (quantization_mode_ == QuantizationMode::FP32) {
         std::copy(data_fp32_.get(), data_fp32_.get() + size_, backend->data_fp32());
+    } else if (quantization_mode_ == QuantizationMode::FP16) {
+        std::copy(data_fp16_.get(), data_fp16_.get() + size_, backend->data_fp16());
+    } else if (quantization_mode_ == QuantizationMode::INT16) {
+        std::copy(data_int16_.get(), data_int16_.get() + size_, backend->data_int16());
     } else {
         std::copy(data_int8_.get(), data_int8_.get() + size_, backend->data_int8());
     }
@@ -646,6 +688,49 @@ void AVX2Backend::operation_int8(const TensorBackend& other, OperationType op_ty
     for (std::size_t i = vec_len; i < size_; ++i) {
         int16_t diff = static_cast<int16_t>(this_data[i]) - static_cast<int16_t>(other_data[i]);
         this_data[i] = static_cast<int8_t>(std::max(-128, std::min(127, static_cast<int>(diff))));
+    }
+}
+
+// =======================
+// FP16 and INT16 kernels (stub implementations using scalar fallback)
+// =======================
+
+void AVX2Backend::operation_fp16(const TensorBackend& other, OperationType op_type) {
+    // Stub: AVX2 doesn't have native FP16 support, use scalar fallback
+    const int16_t* other_data = other.data_fp16();
+    int16_t* this_data = data_fp16();
+    
+    // Scalar fallback - proper FP16 operations would require F16C extension
+    for (std::size_t i = 0; i < size_; ++i) {
+        if (op_type == OperationType::ADD) {
+            this_data[i] = this_data[i];  // Placeholder
+        } else if (op_type == OperationType::MUL) {
+            this_data[i] = this_data[i];  // Placeholder
+        } else {
+            this_data[i] = this_data[i];  // Placeholder
+        }
+    }
+}
+
+void AVX2Backend::operation_int16(const TensorBackend& other, OperationType op_type) {
+    const int16_t* other_data = other.data_int16();
+    int16_t* this_data = data_int16();
+    
+    if (op_type == OperationType::ADD) {
+        for (std::size_t i = 0; i < size_; ++i) {
+            int32_t sum = static_cast<int32_t>(this_data[i]) + static_cast<int32_t>(other_data[i]);
+            this_data[i] = static_cast<int16_t>(std::max(-32768, std::min(32767, sum)));
+        }
+    } else if (op_type == OperationType::MUL) {
+        for (std::size_t i = 0; i < size_; ++i) {
+            int32_t product = static_cast<int32_t>(this_data[i]) * static_cast<int32_t>(other_data[i]);
+            this_data[i] = static_cast<int16_t>(std::max(-32768, std::min(32767, product)));
+        }
+    } else {
+        for (std::size_t i = 0; i < size_; ++i) {
+            int32_t diff = static_cast<int32_t>(this_data[i]) - static_cast<int32_t>(other_data[i]);
+            this_data[i] = static_cast<int16_t>(std::max(-32768, std::min(32767, diff)));
+        }
     }
 }
 
