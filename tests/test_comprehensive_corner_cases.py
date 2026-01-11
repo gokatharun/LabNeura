@@ -325,10 +325,150 @@ class TestCornerCases:
         assert a.data_int16()[2] == 32767  # May saturate
 
     # ===== AVX2-SPECIFIC TESTS (x86-64) =====
-    # Note: FP16 is only supported on NEON (ARM), not on AVX2
+    # Note: FP16 is stored as int16_t and works on both NEON and AVX2
     
     @pytest.mark.skipif(platform.machine() not in ['x86_64', 'AMD64'], 
-                        reason="AVX2 only on x86-64")
+                        reason="AVX2 tests on x86-64")
+    def test_avx2_fp16_add_operations(self):
+        """Test AVX2 FP16 ADD operations with various sizes."""
+        sizes = [16, 32, 48, 64, 80, 96, 112, 128, 256, 512]
+        
+        for size in sizes:
+            a = labneura.Tensor([10] * size, mode=labneura.QuantizationMode.FP16)
+            b = labneura.Tensor([5] * size, mode=labneura.QuantizationMode.FP16)
+            a.add_inplace(b)
+            for i in range(min(5, size)):
+                val = labneura.dequantize_fp16(a.data_fp16()[i])
+                assert abs(val - 15.0) < 0.1, f"Size {size}, index {i}: got {val}"
+
+    @pytest.mark.skipif(platform.machine() not in ['x86_64', 'AMD64'], 
+                        reason="AVX2 tests on x86-64")
+    def test_avx2_fp16_mul_operations(self):
+        """Test AVX2 FP16 MUL operations with various sizes."""
+        sizes = [16, 32, 48, 64, 80, 96, 112, 128, 256, 512]
+        
+        for size in sizes:
+            a = labneura.Tensor([5] * size, mode=labneura.QuantizationMode.FP16)
+            b = labneura.Tensor([2] * size, mode=labneura.QuantizationMode.FP16)
+            a.mul_inplace(b)
+            for i in range(min(5, size)):
+                val = labneura.dequantize_fp16(a.data_fp16()[i])
+                assert abs(val - 10.0) < 0.1, f"Size {size}, index {i}: got {val}"
+
+    @pytest.mark.skipif(platform.machine() not in ['x86_64', 'AMD64'], 
+                        reason="AVX2 tests on x86-64")
+    def test_avx2_fp16_sub_operations(self):
+        """Test AVX2 FP16 SUB operations with various sizes."""
+        sizes = [16, 32, 48, 64, 80, 96, 112, 128, 256, 512]
+        
+        for size in sizes:
+            a = labneura.Tensor([20] * size, mode=labneura.QuantizationMode.FP16)
+            b = labneura.Tensor([7] * size, mode=labneura.QuantizationMode.FP16)
+            a.sub_inplace(b)
+            for i in range(min(5, size)):
+                val = labneura.dequantize_fp16(a.data_fp16()[i])
+                assert abs(val - 13.0) < 0.1, f"Size {size}, index {i}: got {val}"
+
+    @pytest.mark.skipif(platform.machine() not in ['x86_64', 'AMD64'], 
+                        reason="AVX2 tests on x86-64")
+    def test_avx2_fp16_tail_chains_comprehensive(self):
+        """Test AVX2 FP16 operations at all tail chain boundaries."""
+        # AVX2 processes 16 int16s at a time, tail chain: 64->32->16->8->4->scalar
+        tail_sizes = [1, 2, 3, 4, 5, 8, 9, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129, 255, 256, 257]
+        
+        for size in tail_sizes:
+            a = labneura.Tensor([5] * size, mode=labneura.QuantizationMode.FP16)
+            b = labneura.Tensor([3] * size, mode=labneura.QuantizationMode.FP16)
+            a.add_inplace(b)
+            for i in range(size):
+                val = labneura.dequantize_fp16(a.data_fp16()[i])
+                assert abs(val - 8.0) < 0.1, f"Size {size}, index {i}: got {val}"
+
+    @pytest.mark.skipif(platform.machine() not in ['x86_64', 'AMD64'], 
+                        reason="AVX2 tests on x86-64")
+    def test_avx2_int16_add_operations(self):
+        """Test AVX2 INT16 ADD operations with various sizes."""
+        sizes = [16, 32, 48, 64, 80, 96, 112, 128, 256, 512]
+        
+        for size in sizes:
+            a = labneura.Tensor([100] * size, mode=labneura.QuantizationMode.INT16)
+            b = labneura.Tensor([50] * size, mode=labneura.QuantizationMode.INT16)
+            a.add_inplace(b)
+            for i in range(min(5, size)):
+                assert a.data_int16()[i] == 150, f"Size {size}, index {i}: got {a.data_int16()[i]}"
+
+    @pytest.mark.skipif(platform.machine() not in ['x86_64', 'AMD64'], 
+                        reason="AVX2 tests on x86-64")
+    def test_avx2_int16_mul_operations(self):
+        """Test AVX2 INT16 MUL operations with various sizes."""
+        sizes = [16, 32, 48, 64, 80, 96, 112, 128, 256, 512]
+        
+        for size in sizes:
+            a = labneura.Tensor([100] * size, mode=labneura.QuantizationMode.INT16)
+            b = labneura.Tensor([10] * size, mode=labneura.QuantizationMode.INT16)
+            a.mul_inplace(b)
+            for i in range(min(5, size)):
+                assert a.data_int16()[i] == 1000, f"Size {size}, index {i}: got {a.data_int16()[i]}"
+
+    @pytest.mark.skipif(platform.machine() not in ['x86_64', 'AMD64'], 
+                        reason="AVX2 tests on x86-64")
+    def test_avx2_int16_sub_operations(self):
+        """Test AVX2 INT16 SUB operations with various sizes."""
+        sizes = [16, 32, 48, 64, 80, 96, 112, 128, 256, 512]
+        
+        for size in sizes:
+            a = labneura.Tensor([500] * size, mode=labneura.QuantizationMode.INT16)
+            b = labneura.Tensor([250] * size, mode=labneura.QuantizationMode.INT16)
+            a.sub_inplace(b)
+            for i in range(min(5, size)):
+                assert a.data_int16()[i] == 250, f"Size {size}, index {i}: got {a.data_int16()[i]}"
+
+    @pytest.mark.skipif(platform.machine() not in ['x86_64', 'AMD64'], 
+                        reason="AVX2 tests on x86-64")
+    def test_avx2_int16_tail_chains_comprehensive(self):
+        """Test AVX2 INT16 operations at all tail chain boundaries."""
+        # AVX2 processes 16 int16s at a time, tail chain: 64->32->16->8->4->scalar
+        tail_sizes = [1, 2, 3, 4, 5, 8, 9, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129, 255, 256, 257]
+        
+        for size in tail_sizes:
+            a = labneura.Tensor([10] * size, mode=labneura.QuantizationMode.INT16)
+            b = labneura.Tensor([3] * size, mode=labneura.QuantizationMode.INT16)
+            a.sub_inplace(b)
+            for i in range(size):
+                assert a.data_int16()[i] == 7, f"Size {size}, index {i}: got {a.data_int16()[i]}"
+
+    @pytest.mark.skipif(platform.machine() not in ['x86_64', 'AMD64'], 
+                        reason="AVX2 tests on x86-64")
+    def test_avx2_int16_saturation(self):
+        """Test AVX2 INT16 saturation on overflow."""
+        # Test positive overflow
+        a = labneura.Tensor([32767] * 100, mode=labneura.QuantizationMode.INT16)
+        b = labneura.Tensor([1] * 100, mode=labneura.QuantizationMode.INT16)
+        a.add_inplace(b)
+        for i in range(100):
+            assert a.data_int16()[i] == 32767, f"Positive overflow at {i}: got {a.data_int16()[i]}"
+        
+        # Test negative overflow
+        a = labneura.Tensor([-32768] * 100, mode=labneura.QuantizationMode.INT16)
+        b = labneura.Tensor([1] * 100, mode=labneura.QuantizationMode.INT16)
+        a.sub_inplace(b)
+        for i in range(100):
+            assert a.data_int16()[i] == -32768, f"Negative overflow at {i}: got {a.data_int16()[i]}"
+
+    @pytest.mark.skipif(platform.machine() not in ['x86_64', 'AMD64'], 
+                        reason="AVX2 tests on x86-64")
+    def test_avx2_fp16_int16_saturation(self):
+        """Test AVX2 FP16 stored operations with saturation."""
+        # Test with FP16 quantized values
+        a = labneura.Tensor([10000] * 100, mode=labneura.QuantizationMode.FP16)
+        b = labneura.Tensor([1] * 100, mode=labneura.QuantizationMode.FP16)
+        a.mul_inplace(b)
+        for i in range(min(10, 100)):
+            val = labneura.dequantize_fp16(a.data_fp16()[i])
+            assert abs(val - 10000.0) < 1.0
+
+    @pytest.mark.skipif(platform.machine() not in ['x86_64', 'AMD64'], 
+                        reason="AVX2 tests on x86-64")
     def test_avx2_int16_tail_chains(self):
         """Test AVX2 INT16 operations at all tail chain boundaries."""
         # AVX2 processes 16 int16s at a time, tail chain: 64->32->16->8->4->scalar
