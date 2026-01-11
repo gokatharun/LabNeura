@@ -9,6 +9,7 @@ import labneura
 import subprocess
 import sys
 import os
+import platform
 
 
 class TestCPUFeaturesDetectionAdvanced:
@@ -23,9 +24,22 @@ class TestCPUFeaturesDetectionAdvanced:
         Tests the cpu_supports_neon() function path.
         """
         backend = labneura.detect_backend()
-        # Check that we get NEON or GENERIC (with optional " backend" suffix)
-        assert backend in ["NEON", "GENERIC"] or backend.startswith("NEON") or backend.startswith("GENERIC"), \
-            f"Expected NEON or GENERIC on ARM M1, got {backend}"
+        
+        # Platform-aware: only check ARM behavior on ARM machines
+        is_arm = platform.machine() in ['arm64', 'aarch64']
+        is_x86 = platform.machine() in ['x86_64', 'AMD64']
+        
+        if is_arm:
+            # On ARM M1, expect NEON or GENERIC
+            assert backend in ["NEON", "GENERIC"] or backend.startswith("NEON") or backend.startswith("GENERIC"), \
+                f"Expected NEON or GENERIC on ARM M1, got {backend}"
+        elif is_x86:
+            # On x86, expect AVX2, SSE4.1, or GENERIC
+            assert any(b in backend.upper() for b in ["AVX2", "SSE4.1", "GENERIC"]), \
+                f"Expected AVX2, SSE4.1, or GENERIC on x86, got {backend}"
+        else:
+            # Generic fallback for other architectures
+            assert isinstance(backend, str) and len(backend) > 0
 
     def test_backend_consistency_across_multiple_calls(self):
         """
@@ -47,8 +61,16 @@ class TestCPUFeaturesDetectionAdvanced:
         Tests the #else path of cpu_supports_avx2().
         """
         backend = labneura.detect_backend()
-        # AVX2 is x86-only, shouldn't appear on ARM M1
-        assert "AVX2" not in backend.upper(), "AVX2 should not be available on ARM M1"
+        
+        # Platform-aware: only check AVX2 absence on ARM machines
+        is_arm = platform.machine() in ['arm64', 'aarch64']
+        
+        if is_arm:
+            # AVX2 is x86-only, shouldn't appear on ARM M1
+            assert "AVX2" not in backend.upper(), "AVX2 should not be available on ARM M1"
+        else:
+            # On x86, we expect AVX2 or SSE4.1 (or fallback to GENERIC)
+            assert "NEON" not in backend.upper(), "NEON should not be available on x86"
 
     def test_sse41_returns_false_on_arm_m1(self):
         """
@@ -131,10 +153,23 @@ class TestCPUFeaturesDetectionAdvanced:
         This tests lines 47-60 of cpu_features.cpp.
         """
         backend = labneura.detect_backend()
-        # If we're on ARM M1/M2/M3, NEON must be detected or Generic must be used
         backend_upper = backend.upper()
-        assert backend_upper.startswith("NEON") or backend_upper.startswith("GENERIC"), \
-            f"Invalid backend on ARM: {backend}. Expected NEON or GENERIC."
+        
+        # Platform-aware: only check ARM behavior on ARM machines
+        is_arm = platform.machine() in ['arm64', 'aarch64']
+        is_x86 = platform.machine() in ['x86_64', 'AMD64']
+        
+        if is_arm:
+            # If we're on ARM M1/M2/M3, NEON must be detected or Generic must be used
+            assert backend_upper.startswith("NEON") or backend_upper.startswith("GENERIC"), \
+                f"Invalid backend on ARM: {backend}. Expected NEON or GENERIC."
+        elif is_x86:
+            # On x86, expect AVX2, SSE4.1, or GENERIC
+            assert any(b in backend_upper for b in ["AVX2", "SSE4.1", "GENERIC"]), \
+                f"Invalid backend on x86: {backend}. Expected AVX2, SSE4.1, or GENERIC."
+        else:
+            # For other architectures, just verify it returns a valid backend
+            assert isinstance(backend, str) and len(backend) > 0
 
 
 class TestCPUDetectionEdgeCases:

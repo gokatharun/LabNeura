@@ -7,6 +7,7 @@ Also improves coverage of cpu_features.cpp through indirect testing.
 import pytest
 import numpy as np
 import labneura
+import platform
 from typing import List
 
 
@@ -282,9 +283,23 @@ class TestCPUFeaturesDetection:
         Test that cpu_supports_neon returns true on ARM (M1).
         On M1: __aarch64__ or __ARM_NEON is defined.
         """
-        # We're on M1, so NEON must be supported
         backend = labneura.detect_backend()
-        assert backend in ["NEON", "GENERIC"]
+        
+        # Platform-aware: only check ARM behavior on ARM machines
+        is_arm = platform.machine() in ['arm64', 'aarch64']
+        is_x86 = platform.machine() in ['x86_64', 'AMD64']
+        
+        if is_arm:
+            # On ARM M1, expect NEON or GENERIC
+            assert backend in ["NEON", "GENERIC"], \
+                f"Expected NEON or GENERIC on ARM M1, got {backend}"
+        elif is_x86:
+            # On x86, expect AVX2, SSE4.1, or GENERIC
+            assert any(b in backend.upper() for b in ["AVX2", "SSE4.1", "GENERIC"]), \
+                f"Expected AVX2, SSE4.1, or GENERIC on x86, got {backend}"
+        else:
+            # Generic fallback
+            assert isinstance(backend, str) and len(backend) > 0
 
     def test_cpu_supports_avx2_returns_false_on_arm(self):
         """
@@ -292,7 +307,20 @@ class TestCPUFeaturesDetection:
         This tests the #else path in cpu_supports_avx2().
         """
         backend = labneura.detect_backend()
-        assert backend != "AVX2", "AVX2 not available on ARM M1"
+        
+        # Platform-aware: only check AVX2 absence on ARM machines
+        is_arm = platform.machine() in ['arm64', 'aarch64']
+        is_x86 = platform.machine() in ['x86_64', 'AMD64']
+        
+        if is_arm:
+            # AVX2 is x86-only, shouldn't appear on ARM M1
+            assert "AVX2" not in backend.upper(), "AVX2 should not be available on ARM M1"
+        elif is_x86:
+            # On x86, we may or may not have AVX2, but shouldn't have NEON
+            assert "NEON" not in backend.upper(), "NEON should not be available on x86"
+        else:
+            # Generic fallback - just verify we have a backend
+            assert isinstance(backend, str) and len(backend) > 0
 
     def test_detect_backend_consistency_across_calls(self):
         """
