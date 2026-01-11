@@ -325,21 +325,8 @@ class TestCornerCases:
         assert a.data_int16()[2] == 32767  # May saturate
 
     # ===== AVX2-SPECIFIC TESTS (x86-64) =====
+    # Note: FP16 is only supported on NEON (ARM), not on AVX2
     
-    @pytest.mark.skipif(platform.machine() not in ['x86_64', 'AMD64'], 
-                        reason="AVX2 only on x86-64")
-    def test_avx2_fp16_tail_chains(self):
-        """Test AVX2 FP16 operations at all tail chain boundaries."""
-        # AVX2 processes 16 int16s at a time, tail chain: 64->32->16->8->4->scalar
-        tail_sizes = [1, 2, 3, 4, 5, 8, 9, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129]
-        
-        for size in tail_sizes:
-            a = labneura.Tensor([5] * size, mode=labneura.QuantizationMode.FP16)
-            b = labneura.Tensor([3] * size, mode=labneura.QuantizationMode.FP16)
-            a.add_inplace(b)
-            for i in range(size):
-                assert a.data_fp16()[i] == 8, f"Size {size}, index {i}: got {a.data_fp16()[i]}"
-
     @pytest.mark.skipif(platform.machine() not in ['x86_64', 'AMD64'], 
                         reason="AVX2 only on x86-64")
     def test_avx2_int16_tail_chains(self):
