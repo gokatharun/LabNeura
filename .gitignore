@@ -3,6 +3,9 @@ build/*
 python/build
 python/build/*
 python/build/**
+python/dist
+python/dist/*
+python/dist/**
 python/labneura.egg-info
 python/labneura.egg-info/*
 python/labneura2.egg-info

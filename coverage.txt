@@ -1,11 +1,11 @@
 Filename                                      Regions    Missed Regions     Cover   Functions  Missed Functions  Executed       Lines      Missed Lines     Cover    Branches   Missed Branches     Cover
 ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 python/labneura_py.cpp                             50                 4    92.00%           8                 0   100.00%         117                 4    96.58%          12                 2    83.33%
-src/labneura/backends/backend_factory.cpp           8                 2    75.00%           2                 0   100.00%          16                 3    81.25%           4                 2    50.00%
-src/labneura/backends/base.cpp                     25                 6    76.00%          10                 6    40.00%          44                18    59.09%          10                 0   100.00%
+src/labneura/backends/backend_factory.cpp          16                 2    87.50%           2                 0   100.00%          27                 3    88.89%          10                 3    70.00%
+src/labneura/backends/base.cpp                     25                 4    84.00%          10                 4    60.00%          44                12    72.73%          10                 0   100.00%
 src/labneura/backends/cpu_features.cpp              3                 2    33.33%           3                 2    33.33%          12                 8    33.33%           0                 0         -
-src/labneura/backends/generic.cpp                  74                74     0.00%          13                13     0.00%          99                99     0.00%          42                42     0.00%
-src/labneura/backends/neon.cpp                    843                33    96.09%          22                 0   100.00%        1052                44    95.82%         206                12    94.17%
-src/labneura/tensor.cpp                           150                60    60.00%          26                 8    69.23%         176                70    60.23%          80                42    47.50%
+src/labneura/backends/generic.cpp                  74                 5    93.24%          13                 0   100.00%          99                 9    90.91%          42                 8    80.95%
+src/labneura/backends/neon.cpp                    843                32    96.20%          22                 0   100.00%        1052                43    95.91%         206                11    94.66%
+src/labneura/tensor.cpp                           150                39    74.00%          26                 6    76.92%         176                39    77.84%          80                29    63.75%
 ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-TOTAL                                            1153               181    84.30%          84                29    65.48%        1516               246    83.77%         354               100    71.75%
+TOTAL                                            1161                88    92.42%          84                12    85.71%        1527               118    92.27%         360                53    85.28%
