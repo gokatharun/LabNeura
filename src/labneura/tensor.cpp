@@ -56,6 +56,13 @@ Tensor::Tensor(const std::vector<int>& data, QuantizationMode mode)
         for (std::size_t i = 0; i < data.size(); ++i) {
             fp32_data[i] = static_cast<float>(data[i]);
         }
+    } else if (mode == QuantizationMode::FP16) {
+        int16_t* fp16_data = data_fp16();
+        for (std::size_t i = 0; i < data.size(); ++i) {
+            // Proper FP16 encoding from int (convert to float first, then quantize)
+            uint16_t encoded = quantize_fp16(static_cast<float>(data[i]));
+            std::memcpy(&fp16_data[i], &encoded, sizeof(uint16_t));
+        }
     } else if (mode == QuantizationMode::INT8) {
         int8_t* int8_data = data_int8();
         for (std::size_t i = 0; i < data.size(); ++i) {
@@ -97,6 +104,9 @@ Tensor::Tensor(int scalar, QuantizationMode mode)
     init_backend(1);
     if (mode == QuantizationMode::FP32) {
         data_fp32()[0] = static_cast<float>(scalar);
+    } else if (mode == QuantizationMode::FP16) {
+        uint16_t encoded = quantize_fp16(static_cast<float>(scalar));
+        std::memcpy(&data_fp16()[0], &encoded, sizeof(uint16_t));
     } else if (mode == QuantizationMode::INT8) {
         data_int8()[0] = static_cast<int8_t>(
             std::max(-128, std::min(127, scalar))

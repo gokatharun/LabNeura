@@ -676,14 +676,14 @@ void NEONBackend::operation_int8(const TensorBackend& other, OperationType op_ty
             const int8x16_t vb6 = vld1q_s8(&other_data[i + 96]);
             const int8x16_t vb7 = vld1q_s8(&other_data[i + 112]);
             
-            vst1q_s8(&this_data[i + 0],   vaddq_s8(va0, vb0));
-            vst1q_s8(&this_data[i + 16],  vaddq_s8(va1, vb1));
-            vst1q_s8(&this_data[i + 32],  vaddq_s8(va2, vb2));
-            vst1q_s8(&this_data[i + 48],  vaddq_s8(va3, vb3));
-            vst1q_s8(&this_data[i + 64],  vaddq_s8(va4, vb4));
-            vst1q_s8(&this_data[i + 80],  vaddq_s8(va5, vb5));
-            vst1q_s8(&this_data[i + 96],  vaddq_s8(va6, vb6));
-            vst1q_s8(&this_data[i + 112], vaddq_s8(va7, vb7));
+            vst1q_s8(&this_data[i + 0],   vqaddq_s8(va0, vb0));
+            vst1q_s8(&this_data[i + 16],  vqaddq_s8(va1, vb1));
+            vst1q_s8(&this_data[i + 32],  vqaddq_s8(va2, vb2));
+            vst1q_s8(&this_data[i + 48],  vqaddq_s8(va3, vb3));
+            vst1q_s8(&this_data[i + 64],  vqaddq_s8(va4, vb4));
+            vst1q_s8(&this_data[i + 80],  vqaddq_s8(va5, vb5));
+            vst1q_s8(&this_data[i + 96],  vqaddq_s8(va6, vb6));
+            vst1q_s8(&this_data[i + 112], vqaddq_s8(va7, vb7));
         }
         // Tail: 64 int8s (4 registers × 16 int8s)
         if (len64 > len128) {
@@ -696,10 +696,10 @@ void NEONBackend::operation_int8(const TensorBackend& other, OperationType op_ty
             const int8x16_t vb1 = vld1q_s8(&other_data[i + 16]);
             const int8x16_t vb2 = vld1q_s8(&other_data[i + 32]);
             const int8x16_t vb3 = vld1q_s8(&other_data[i + 48]);
-            vst1q_s8(&this_data[i + 0],  vaddq_s8(va0, vb0));
-            vst1q_s8(&this_data[i + 16], vaddq_s8(va1, vb1));
-            vst1q_s8(&this_data[i + 32], vaddq_s8(va2, vb2));
-            vst1q_s8(&this_data[i + 48], vaddq_s8(va3, vb3));
+            vst1q_s8(&this_data[i + 0],  vqaddq_s8(va0, vb0));
+            vst1q_s8(&this_data[i + 16], vqaddq_s8(va1, vb1));
+            vst1q_s8(&this_data[i + 32], vqaddq_s8(va2, vb2));
+            vst1q_s8(&this_data[i + 48], vqaddq_s8(va3, vb3));
         }
         // Tail: 32 int8s (2 registers × 16 int8s)
         if (len32 > len64) {
@@ -708,22 +708,22 @@ void NEONBackend::operation_int8(const TensorBackend& other, OperationType op_ty
             const int8x16_t va1 = vld1q_s8(&this_data[i + 16]);
             const int8x16_t vb0 = vld1q_s8(&other_data[i + 0]);
             const int8x16_t vb1 = vld1q_s8(&other_data[i + 16]);
-            vst1q_s8(&this_data[i + 0],  vaddq_s8(va0, vb0));
-            vst1q_s8(&this_data[i + 16], vaddq_s8(va1, vb1));
+            vst1q_s8(&this_data[i + 0],  vqaddq_s8(va0, vb0));
+            vst1q_s8(&this_data[i + 16], vqaddq_s8(va1, vb1));
         }
         // Tail: 16 int8s (1 register)
         if (len16 > len32) {
             const std::size_t i = len32;
             const int8x16_t va = vld1q_s8(&this_data[i]);
             const int8x16_t vb = vld1q_s8(&other_data[i]);
-            vst1q_s8(&this_data[i], vaddq_s8(va, vb));
+            vst1q_s8(&this_data[i], vqaddq_s8(va, vb));
         }
         // Tail: 8 int8s (half register)
         if (len8 > len16) {
             const std::size_t i = len16;
             const int8x8_t va = vld1_s8(&this_data[i]);
             const int8x8_t vb = vld1_s8(&other_data[i]);
-            vst1_s8(&this_data[i], vadd_s8(va, vb));
+            vst1_s8(&this_data[i], vqadd_s8(va, vb));
         }
         // Scalar tail
         for (std::size_t i = len8; i < size_; ++i) {
