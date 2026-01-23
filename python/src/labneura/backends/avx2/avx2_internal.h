@@ -62,6 +62,8 @@ static inline int get_avx2_unroll_factor() {
 static inline std::size_t get_avx2_fp32_chunk() {
     return get_avx2_unroll_factor() * 8;
 
+
+
 } // namespace labneura
 
 #endif // __AVX2__
