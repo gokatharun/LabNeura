@@ -21,8 +21,6 @@ __pycache__
 *.dylib
 *.dll
 *.exe
-.coverage
-.coverage.*
 coverage_html
 coverage_html/*
 .DS_Store
