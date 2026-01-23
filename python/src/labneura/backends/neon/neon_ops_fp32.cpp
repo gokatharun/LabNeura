@@ -5,6 +5,8 @@
 #include "labneura/utils/alignment.hpp"
 #include "labneura/types.hpp"
 #include <arm_neon.h>
+#include <algorithm>
+#include <stdexcept>
 
 namespace labneura {
 

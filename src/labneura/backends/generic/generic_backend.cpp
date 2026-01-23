@@ -1,5 +1,8 @@
 #include "labneura/backends/generic.h"
 #include <cstdlib>
+#include <memory>
+#include <algorithm>
+#include <stdexcept>
 #include "labneura/utils/alignment.hpp"
 
 namespace labneura {

@@ -3,6 +3,8 @@
 #include "labneura/backends/avx2.h"
 #include "avx2_internal.h"
 #include "labneura/utils/alignment.hpp"
+#include <algorithm>
+#include <stdexcept>
 
 namespace labneura {
 

@@ -3,6 +3,8 @@
 #include "labneura/backends/neon.h"
 #include "neon_internal.h"
 #include "labneura/utils/alignment.hpp"
+#include <algorithm>
+#include <stdexcept>
 #include <arm_neon.h>
 
 namespace labneura {

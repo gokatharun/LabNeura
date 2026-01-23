@@ -1,5 +1,6 @@
 #include "labneura/backends/generic.h"
 #include <algorithm>
+#include <stdexcept>
 
 namespace labneura {
 

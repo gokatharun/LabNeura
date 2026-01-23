@@ -3,9 +3,11 @@
 #include "labneura/backends/avx2.h"
 #include "avx2_internal.h"
 #include "labneura/utils/alignment.hpp"
+#include <memory>
+#include <algorithm>
+#include <stdexcept>
 
-
-// Use alignment utility from labneura::util
+namespace labneura {
 
 // =======================
 // Constructor
