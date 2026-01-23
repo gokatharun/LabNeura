@@ -83,6 +83,10 @@ void GenericBackend::operation_fp32(const TensorBackend& other, OperationType op
         for (std::size_t i = 0; i < size_; ++i) this_data[i] *= other_data[i];
         return;
     }
+    if (op_type == OperationType::DIV) {
+        for (std::size_t i = 0; i < size_; ++i) this_data[i] /= other_data[i];
+        return;
+    }
     for (std::size_t i = 0; i < size_; ++i) this_data[i] -= other_data[i];
 }
 void GenericBackend::operation_int8(const TensorBackend& other, OperationType op_type) {
@@ -103,12 +107,23 @@ void GenericBackend::operation_int8(const TensorBackend& other, OperationType op
         }
         return;
     }
+    if (op_type == OperationType::DIV) {
+        for (std::size_t i = 0; i < size_; ++i) {
+            if (other_data[i] == 0) {
+                this_data[i] = 0;  // Division by zero yields 0
+            } else {
+                int16_t quot = static_cast<int16_t>(this_data[i]) / static_cast<int16_t>(other_data[i]);
+                this_data[i] = static_cast<int8_t>(std::max(-128, std::min(127, static_cast<int>(quot))));
+            }
+        }
+        return;
+    }
     for (std::size_t i = 0; i < size_; ++i) {
         int16_t diff = static_cast<int16_t>(this_data[i]) - static_cast<int16_t>(other_data[i]);
         this_data[i] = static_cast<int8_t>(std::max(-128, std::min(127, static_cast<int>(diff))));
     }
 }
 
-}  // namespace labneura
+}// namespace labneura
 
 

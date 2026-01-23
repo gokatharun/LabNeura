@@ -34,7 +34,6 @@ add_library(labneura
   src/labneura/backends/generic.cpp
   src/labneura/backends/neon.cpp
   src/labneura/backends/avx2.cpp
-  src/labneura/backends/sse41.cpp
   src/labneura/backends/cpu_features.cpp
   src/labneura/backends/backend_factory.cpp
 )
@@ -50,15 +49,7 @@ if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
     message(STATUS "LabNeura: AVX2 backend disabled (compiler lacks -mavx2)")
   endif()
 
-  # Check for SSE4.1 support (fallback for older Intel/AMD CPUs)
-  check_cxx_compile_flag("-msse4.1", LABNEURA_COMPILER_SUPPORTS_SSE41)
-  if(LABNEURA_COMPILER_SUPPORTS_SSE41)
-    set_source_files_properties(src/labneura/backends/sse41.cpp PROPERTIES COMPILE_FLAGS "-msse4.1")
-    target_compile_definitions(labneura PRIVATE LABNEURA_ENABLE_SSE41=1)
-    message(STATUS "LabNeura: SSE4.1 backend enabled (-msse4.1)")
-  else()
-    message(STATUS "LabNeura: SSE4.1 backend disabled (compiler lacks -msse4.1)")
-  endif()
+
 endif()
 
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")

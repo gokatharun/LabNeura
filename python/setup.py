@@ -125,7 +125,7 @@ ext_modules = [
             str(root_dir / "src/labneura/backends/generic.cpp"),
             str(root_dir / "src/labneura/backends/neon.cpp"),
             str(root_dir / "src/labneura/backends/avx2.cpp"),
-            str(root_dir / "src/labneura/backends/sse41.cpp"),
+
             str(root_dir / "src/labneura/backends/cpu_features.cpp"),
             str(root_dir / "src/labneura/backends/backend_factory.cpp"),
         ],
