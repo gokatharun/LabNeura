@@ -209,6 +209,49 @@ class BenchmarkRunner:
         results['pytorch'].flops_str = MetricsCalculator.format_flops(results['pytorch'].flops)
         
         return results
+
+    def benchmark_division(self, size: int) -> Dict[str, PerformanceMetrics]:
+        """Benchmark division operation."""
+        results = {}
+        
+        # LabNeura (in-place for fair comparison with add/mul/sub)
+        a_ln = labneura.Tensor([10.0] * size)
+        b_ln = labneura.Tensor([2.0] * size)
+        def ln_div():
+            a_ln.div_inplace(b_ln)
+        results['labneura'] = self.run_operation_benchmark('div', ln_div)
+        num_ops = size
+        results['labneura'].flops = MetricsCalculator.calculate_flops(
+            num_ops * self.benchmark_iterations,
+            results['labneura'].total_time
+        )
+        results['labneura'].flops_str = MetricsCalculator.format_flops(results['labneura'].flops)
+        
+        # NumPy
+        a_np = np.full(size, 10.0, dtype=np.float32)
+        b_np = np.full(size, 2.0, dtype=np.float32)
+        def np_div():
+            return a_np / b_np
+        results['numpy'] = self.run_operation_benchmark('div', np_div)
+        results['numpy'].flops = MetricsCalculator.calculate_flops(
+            num_ops * self.benchmark_iterations,
+            results['numpy'].total_time
+        )
+        results['numpy'].flops_str = MetricsCalculator.format_flops(results['numpy'].flops)
+        
+        # PyTorch
+        a_pt = torch.full((size,), 10.0, dtype=torch.float32)
+        b_pt = torch.full((size,), 2.0, dtype=torch.float32)
+        def pt_div():
+            return a_pt / b_pt
+        results['pytorch'] = self.run_operation_benchmark('div', pt_div)
+        results['pytorch'].flops = MetricsCalculator.calculate_flops(
+            num_ops * self.benchmark_iterations,
+            results['pytorch'].total_time
+        )
+        results['pytorch'].flops_str = MetricsCalculator.format_flops(results['pytorch'].flops)
+        
+        return results
     
     def benchmark_int8_operations(self, size: int) -> Dict[str, Dict[str, PerformanceMetrics]]:
         """Benchmark INT8 operations with proper saturation."""

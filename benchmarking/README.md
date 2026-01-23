@@ -70,6 +70,7 @@ Displays formatted tables of:
 | Operation | Type | Description |
 |-----------|------|-------------|
 | Addition | FP32 | Element-wise addition |
+| Division | FP32 | Element-wise division |
 | Multiplication | FP32 | Element-wise multiplication |
 | Subtraction | FP32 | Element-wise subtraction |
 | INT8 Addition | INT8 | Quantized addition with saturation |
