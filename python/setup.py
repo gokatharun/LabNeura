@@ -121,9 +121,9 @@ ext_modules = [
         sources=[
             "labneura_py.cpp",
             str(root_dir / "src/labneura/tensor.cpp"),
-            str(root_dir / "src/labneura/backends/base.cpp"),
-            str(root_dir / "src/labneura/backends/cpu_features.cpp"),
-            str(root_dir / "src/labneura/backends/backend_factory.cpp"),
+            str(root_dir / "src/labneura/backends/common/base.cpp"),
+            str(root_dir / "src/labneura/backends/common/cpu_features.cpp"),
+            str(root_dir / "src/labneura/backends/common/backend_factory.cpp"),
             # CPU Generic backend (modular)
             str(root_dir / "src/labneura/backends/cpu/generic/generic_backend.cpp"),
             str(root_dir / "src/labneura/backends/cpu/generic/generic_ops_fp32.cpp"),

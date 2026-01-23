@@ -2,7 +2,7 @@
 #include <pybind11/stl.h>
 #include "labneura/types.hpp"
 #include "labneura/tensor.h"
-#include "labneura/backends/backend_factory.h"
+#include "labneura/backends/common/backend_factory.h"
 
 namespace py = pybind11;
 
@@ -108,11 +108,35 @@ PYBIND11_MODULE(labneura, m) {
         .def("add", &labneura::Tensor::add, "Add two tensors (returns new tensor)")
         .def("mul", &labneura::Tensor::mul, "Multiply two tensors (returns new tensor)")
         .def("sub", &labneura::Tensor::sub, "Subtract two tensors (returns new tensor)")
-            .def("div", &labneura::Tensor::div, "Divide two tensors (returns new tensor)")
+        .def("div", &labneura::Tensor::div, "Divide two tensors (returns new tensor)")
         .def("add_inplace", &labneura::Tensor::add_inplace, "In-place addition (modifies self)")
         .def("mul_inplace", &labneura::Tensor::mul_inplace, "In-place multiplication (modifies self)")
         .def("sub_inplace", &labneura::Tensor::sub_inplace, "In-place subtraction (modifies self)")
-        .def("div_inplace", &labneura::Tensor::div_inplace, "In-place division (modifies self)");
+        .def("div_inplace", &labneura::Tensor::div_inplace, "In-place division (modifies self)")
+        
+        // Operator overloading for binary operations
+        .def("__add__", &labneura::Tensor::add, "Tensor addition using + operator")
+        .def("__sub__", &labneura::Tensor::sub, "Tensor subtraction using - operator")
+        .def("__mul__", &labneura::Tensor::mul, "Tensor multiplication using * operator")
+        .def("__truediv__", &labneura::Tensor::div, "Tensor division using / operator")
+        
+        // Operator overloading for in-place operations
+        .def("__iadd__", [](labneura::Tensor& self, const labneura::Tensor& other) {
+            self.add_inplace(other);
+            return self;
+        }, "In-place addition using += operator")
+        .def("__isub__", [](labneura::Tensor& self, const labneura::Tensor& other) {
+            self.sub_inplace(other);
+            return self;
+        }, "In-place subtraction using -= operator")
+        .def("__imul__", [](labneura::Tensor& self, const labneura::Tensor& other) {
+            self.mul_inplace(other);
+            return self;
+        }, "In-place multiplication using *= operator")
+        .def("__itruediv__", [](labneura::Tensor& self, const labneura::Tensor& other) {
+            self.div_inplace(other);
+            return self;
+        }, "In-place division using /= operator");
 
     // Backend detection
     m.def("detect_backend", &labneura::detect_backend, "Detect the preferred backend based on CPU features");

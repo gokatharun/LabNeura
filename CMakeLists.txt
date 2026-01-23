@@ -30,9 +30,9 @@ endif()
 # ======================================
 add_library(labneura
   src/labneura/tensor.cpp
-  src/labneura/backends/base.cpp
-  src/labneura/backends/cpu_features.cpp
-  src/labneura/backends/backend_factory.cpp
+  src/labneura/backends/common/base.cpp
+  src/labneura/backends/common/cpu_features.cpp
+  src/labneura/backends/common/backend_factory.cpp
   # CPU Generic backend (modular)
   src/labneura/backends/cpu/generic/generic_backend.cpp
   src/labneura/backends/cpu/generic/generic_ops_fp32.cpp

@@ -2,7 +2,7 @@
 #include "labneura/backends/cpu/generic.h"
 #include "labneura/backends/cpu/neon.h"
 #include "labneura/backends/cpu/avx2.h"
-#include "labneura/backends/backend_factory.h"
+#include "labneura/backends/common/backend_factory.h"
 #include "labneura/types.hpp"
 #include <cstring>
 #include <algorithm>

@@ -1,5 +1,5 @@
-#include "labneura/backends/backend_factory.h"
-#include "labneura/backends/cpu_features.h"
+#include "labneura/backends/common/backend_factory.h"
+#include "labneura/backends/common/cpu_features.h"
 #include "labneura/backends/cpu/generic.h"
 #include <iostream>
 #include <cstdlib>

@@ -81,6 +81,7 @@ deps:
 clean:
 	rm -rf build dist *.egg-info coverage_html
 	rm -rf python/build python/dist python/*.egg-info
+	rm -f labneura*.so python/labneura*.so
 	find . -name "*.profraw" -delete || true
 	find . -name "*.profdata" -delete || true
 	find . -name "__pycache__" -delete || true
@@ -143,7 +144,7 @@ else
 	-path-equivalence=$(CURDIR)/src/labneura/backends/avx2,$(CURDIR)/src/labneura/backends/cpu/avx2 \
 	-format=html \
 	-output-dir=coverage_html \
-	-ignore-filename-regex='site-packages|python|omp|libc\+\+'; \
+	-ignore-filename-regex='site-packages|python|omp|libc\+\+|backends/base\.|backends/cpu_features\.|backends/backend_factory\.'; \
 	echo "✅ HTML coverage generated at coverage_html/index.html"; \
 	$(LLVM_COV) report $$SO_PATH \
     -instr-profile=labneura.profdata \
@@ -151,7 +152,7 @@ else
 	-path-equivalence=$(CURDIR)/src/labneura/backends/generic,$(CURDIR)/src/labneura/backends/cpu/generic \
 	-path-equivalence=$(CURDIR)/src/labneura/backends/neon,$(CURDIR)/src/labneura/backends/cpu/neon \
 	-path-equivalence=$(CURDIR)/src/labneura/backends/avx2,$(CURDIR)/src/labneura/backends/cpu/avx2 \
-	-ignore-filename-regex='site-packages|python3.9|omp|include' > coverage.txt; \
+	-ignore-filename-regex='site-packages|python3.9|omp|include|backends/base\.|backends/cpu_features\.|backends/backend_factory\.' > coverage.txt; \
 	echo "✅ Coverage report generated at coverage.txt";
 
 endif
