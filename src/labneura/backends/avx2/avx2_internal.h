@@ -61,8 +61,7 @@ static inline int get_avx2_unroll_factor() {
 // FP32: 8 elements per YMM, unroll_factor=8 → 64 floats per iteration
 static inline std::size_t get_avx2_fp32_chunk() {
     return get_avx2_unroll_factor() * 8;
-
-
+}
 
 } // namespace labneura
 

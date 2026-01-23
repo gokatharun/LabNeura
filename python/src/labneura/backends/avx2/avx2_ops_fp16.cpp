@@ -17,10 +17,7 @@ void AVX2Backend::operation_fp16(const TensorBackend& other, OperationType op_ty
     if (op_type == OperationType::DIV) {
         // Helper to convert FP16 bits to FP32 (no actual half-precision, just bit interpretation)
         auto fp16_to_fp32_bits = [](int16_t h) -> float {
-            // Simplified: treat int16 bit pattern as if it were FP32 for SIMD processing
-            // Real FP16 would need proper conversion; this preserves bit patterns
-            union { int16_t i; } bits{h};
-            // For practical purposes with current data, use as scalar conversion
+            // Simplified scalar fallback; replace with proper FP16 conversion if needed
             return static_cast<float>(h) / 1024.0f;  // Rough approximation
         };
         
