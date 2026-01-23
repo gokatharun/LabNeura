@@ -36,9 +36,20 @@ def detect_simd_flags():
 # --------------------------------------
 # Common configuration
 # --------------------------------------
-# Resolve paths robustly regardless of invocation cwd
+# Resolve paths robustly regardless of invocation cwd or layout (repo vs sdist)
 repo_dir = Path(__file__).resolve().parent
-root_dir = repo_dir.parent  # Top-level LabNeura directory
+
+# Prefer the directory that actually contains src/labneura/backends/avx2.cpp
+root_dir_candidates = [repo_dir, repo_dir.parent]
+root_dir = None
+for candidate in root_dir_candidates:
+    if (candidate / "src/labneura/backends/avx2.cpp").exists():
+        root_dir = candidate
+        break
+
+if root_dir is None:
+    # Fall back to repo_dir to avoid breaking the build; error will surface naturally if files are missing
+    root_dir = repo_dir
 
 include_dirs = [
     pybind11.get_include(),
@@ -134,7 +145,7 @@ long_desc = readme_path.read_text(encoding="utf-8") if readme_path.exists() else
 
 setup(
     name="labneura2",
-    version="0.2.1",
+    version="0.2.4",
     description="SIMD-accelerated tensor operations for neural networks",
     long_description=long_desc,
     long_description_content_type="text/markdown",

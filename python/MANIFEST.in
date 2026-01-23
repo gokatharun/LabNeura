@@ -1,8 +1,8 @@
 # Include top-level docs when building sdist
-include ../README.md
-include ../LICENSE
+include README.md
+include LICENSE
 include labneura_py.cpp
 
-# Ensure all C++ headers and sources (located outside python/) are packaged
-recursive-include ../include *.hpp *.h
-recursive-include ../src *.cpp *.hpp *.h
+# Ensure all C++ headers and sources (synced into python/ by scripts/sync_files.sh) are packaged
+recursive-include include *.hpp *.h
+recursive-include src *.cpp *.hpp *.h

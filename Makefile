@@ -88,8 +88,12 @@ clean:
 # --------------------------------------
 # Build & install
 # --------------------------------------
+.PHONY: sync-src
+sync-src:
+	./scripts/sync_files.sh
+
 .PHONY: install
-install:
+install: sync-src
 	$(PIP) uninstall -y $(PKG_NAME) || true
 	cd python && $(PIP) install . --no-cache-dir --no-build-isolation
 
@@ -160,7 +164,7 @@ ci: deps clean install smoke cpp-coverage
 # Build distribution (sdist + wheel)
 # --------------------------------------
 .PHONY: build-dist
-build-dist:
+build-dist: sync-src
 	# Ensure build tools are available in venv
 	$(VENV_PIP) install --upgrade build twine pybind11 || true
 	# Build inside python package directory (disable coverage for packaging)
@@ -174,7 +178,7 @@ build-dist:
 # Publish to PyPI (requires PYPI_TOKEN env variable)
 # --------------------------------------
 .PHONY: publish
-publish:
+publish: sync-src
 	@if [ -z "$(PYPI_TOKEN)" ]; then \
 		echo "PYPI_TOKEN not set. Export PYPI_TOKEN before running 'make publish'."; \
 		exit 1; \
@@ -190,7 +194,7 @@ publish:
 # Publish to TestPyPI (requires TEST_PYPI_TOKEN env variable)
 # --------------------------------------
 .PHONY: publish-testpypi
-publish-testpypi:
+publish-testpypi: sync-src
 	@if [ -z "$(TEST_PYPI_TOKEN)" ]; then \
 		echo "TEST_PYPI_TOKEN not set. Export TEST_PYPI_TOKEN before running 'make publish-testpypi'."; \
 		exit 1; \
