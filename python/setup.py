@@ -39,11 +39,11 @@ def detect_simd_flags():
 # Resolve paths robustly regardless of invocation cwd or layout (repo vs sdist)
 repo_dir = Path(__file__).resolve().parent
 
-# Prefer the directory that actually contains src/labneura/backends/avx2.cpp
+# Prefer the directory that actually contains src/labneura/backends/
 root_dir_candidates = [repo_dir, repo_dir.parent]
 root_dir = None
 for candidate in root_dir_candidates:
-    if (candidate / "src/labneura/backends/avx2.cpp").exists():
+    if (candidate / "src/labneura/backends/avx2").exists():
         root_dir = candidate
         break
 
@@ -122,12 +122,23 @@ ext_modules = [
             "labneura_py.cpp",
             str(root_dir / "src/labneura/tensor.cpp"),
             str(root_dir / "src/labneura/backends/base.cpp"),
-            str(root_dir / "src/labneura/backends/generic.cpp"),
-            str(root_dir / "src/labneura/backends/neon.cpp"),
-            str(root_dir / "src/labneura/backends/avx2.cpp"),
-
             str(root_dir / "src/labneura/backends/cpu_features.cpp"),
             str(root_dir / "src/labneura/backends/backend_factory.cpp"),
+            # Generic backend (modular)
+            str(root_dir / "src/labneura/backends/generic/generic_backend.cpp"),
+            str(root_dir / "src/labneura/backends/generic/generic_ops_fp32.cpp"),
+            str(root_dir / "src/labneura/backends/generic/generic_ops_int8.cpp"),
+            # NEON backend (modular)
+            str(root_dir / "src/labneura/backends/neon/neon_backend.cpp"),
+            str(root_dir / "src/labneura/backends/neon/neon_ops_fp32.cpp"),
+            str(root_dir / "src/labneura/backends/neon/neon_ops_int8.cpp"),
+            str(root_dir / "src/labneura/backends/neon/neon_ops_int16.cpp"),
+            # AVX2 backend (modular)
+            str(root_dir / "src/labneura/backends/avx2/avx2_backend.cpp"),
+            str(root_dir / "src/labneura/backends/avx2/avx2_ops_fp32.cpp"),
+            str(root_dir / "src/labneura/backends/avx2/avx2_ops_int8.cpp"),
+            str(root_dir / "src/labneura/backends/avx2/avx2_ops_fp16.cpp"),
+            str(root_dir / "src/labneura/backends/avx2/avx2_ops_int16.cpp"),
         ],
         include_dirs=include_dirs,
         language="c++",

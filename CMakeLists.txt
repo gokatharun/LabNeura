@@ -31,18 +31,38 @@ endif()
 add_library(labneura
   src/labneura/tensor.cpp
   src/labneura/backends/base.cpp
-  src/labneura/backends/generic.cpp
-  src/labneura/backends/neon.cpp
-  src/labneura/backends/avx2.cpp
   src/labneura/backends/cpu_features.cpp
   src/labneura/backends/backend_factory.cpp
+  # Generic backend (modular)
+  src/labneura/backends/generic/generic_backend.cpp
+  src/labneura/backends/generic/generic_ops_fp32.cpp
+  src/labneura/backends/generic/generic_ops_int8.cpp
+  # NEON backend (modular)
+  src/labneura/backends/neon/neon_backend.cpp
+  src/labneura/backends/neon/neon_ops_fp32.cpp
+  src/labneura/backends/neon/neon_ops_int8.cpp
+  src/labneura/backends/neon/neon_ops_int16.cpp
+  # AVX2 backend (modular)
+  src/labneura/backends/avx2/avx2_backend.cpp
+  src/labneura/backends/avx2/avx2_ops_fp32.cpp
+  src/labneura/backends/avx2/avx2_ops_int8.cpp
+  src/labneura/backends/avx2/avx2_ops_fp16.cpp
+  src/labneura/backends/avx2/avx2_ops_int16.cpp
 )
 
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
   # Check for AVX2 support
   check_cxx_compile_flag("-mavx2", LABNEURA_COMPILER_SUPPORTS_AVX2)
   if(LABNEURA_COMPILER_SUPPORTS_AVX2)
-    set_source_files_properties(src/labneura/backends/avx2.cpp PROPERTIES COMPILE_FLAGS "-mavx2")
+    # Apply AVX2 flags to all AVX2 backend files
+    set_source_files_properties(
+      src/labneura/backends/avx2/avx2_backend.cpp
+      src/labneura/backends/avx2/avx2_ops_fp32.cpp
+      src/labneura/backends/avx2/avx2_ops_int8.cpp
+      src/labneura/backends/avx2/avx2_ops_fp16.cpp
+      src/labneura/backends/avx2/avx2_ops_int16.cpp
+      PROPERTIES COMPILE_FLAGS "-mavx2"
+    )
     target_compile_definitions(labneura PRIVATE LABNEURA_ENABLE_AVX2=1)
     message(STATUS "LabNeura: AVX2 backend enabled (-mavx2)")
   else()
