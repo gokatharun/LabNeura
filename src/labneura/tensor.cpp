@@ -1,7 +1,7 @@
 #include "labneura/tensor.h"
-#include "labneura/backends/generic.h"
-#include "labneura/backends/neon.h"
-#include "labneura/backends/avx2.h"
+#include "labneura/backends/cpu/generic.h"
+#include "labneura/backends/cpu/neon.h"
+#include "labneura/backends/cpu/avx2.h"
 #include "labneura/backends/backend_factory.h"
 #include "labneura/types.hpp"
 #include <cstring>

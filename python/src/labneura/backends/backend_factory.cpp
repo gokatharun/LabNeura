@@ -1,14 +1,14 @@
 #include "labneura/backends/backend_factory.h"
 #include "labneura/backends/cpu_features.h"
-#include "labneura/backends/generic.h"
+#include "labneura/backends/cpu/generic.h"
 #include <iostream>
 #include <cstdlib>
 #if defined(__AVX2__)
-#include "labneura/backends/avx2.h"
+#include "labneura/backends/cpu/avx2.h"
 #endif
 
 #if defined(__ARM_NEON)
-#include "labneura/backends/neon.h"
+#include "labneura/backends/cpu/neon.h"
 #endif
 
 namespace labneura {

@@ -33,21 +33,21 @@ add_library(labneura
   src/labneura/backends/base.cpp
   src/labneura/backends/cpu_features.cpp
   src/labneura/backends/backend_factory.cpp
-  # Generic backend (modular)
-  src/labneura/backends/generic/generic_backend.cpp
-  src/labneura/backends/generic/generic_ops_fp32.cpp
-  src/labneura/backends/generic/generic_ops_int8.cpp
-  # NEON backend (modular)
-  src/labneura/backends/neon/neon_backend.cpp
-  src/labneura/backends/neon/neon_ops_fp32.cpp
-  src/labneura/backends/neon/neon_ops_int8.cpp
-  src/labneura/backends/neon/neon_ops_int16.cpp
-  # AVX2 backend (modular)
-  src/labneura/backends/avx2/avx2_backend.cpp
-  src/labneura/backends/avx2/avx2_ops_fp32.cpp
-  src/labneura/backends/avx2/avx2_ops_int8.cpp
-  src/labneura/backends/avx2/avx2_ops_fp16.cpp
-  src/labneura/backends/avx2/avx2_ops_int16.cpp
+  # CPU Generic backend (modular)
+  src/labneura/backends/cpu/generic/generic_backend.cpp
+  src/labneura/backends/cpu/generic/generic_ops_fp32.cpp
+  src/labneura/backends/cpu/generic/generic_ops_int8.cpp
+  # CPU NEON backend (modular)
+  src/labneura/backends/cpu/neon/neon_backend.cpp
+  src/labneura/backends/cpu/neon/neon_ops_fp32.cpp
+  src/labneura/backends/cpu/neon/neon_ops_int8.cpp
+  src/labneura/backends/cpu/neon/neon_ops_int16.cpp
+  # CPU AVX2 backend (modular)
+  src/labneura/backends/cpu/avx2/avx2_backend.cpp
+  src/labneura/backends/cpu/avx2/avx2_ops_fp32.cpp
+  src/labneura/backends/cpu/avx2/avx2_ops_int8.cpp
+  src/labneura/backends/cpu/avx2/avx2_ops_fp16.cpp
+  src/labneura/backends/cpu/avx2/avx2_ops_int16.cpp
 )
 
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
@@ -56,11 +56,11 @@ if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
   if(LABNEURA_COMPILER_SUPPORTS_AVX2)
     # Apply AVX2 flags to all AVX2 backend files
     set_source_files_properties(
-      src/labneura/backends/avx2/avx2_backend.cpp
-      src/labneura/backends/avx2/avx2_ops_fp32.cpp
-      src/labneura/backends/avx2/avx2_ops_int8.cpp
-      src/labneura/backends/avx2/avx2_ops_fp16.cpp
-      src/labneura/backends/avx2/avx2_ops_int16.cpp
+      src/labneura/backends/cpu/avx2/avx2_backend.cpp
+      src/labneura/backends/cpu/avx2/avx2_ops_fp32.cpp
+      src/labneura/backends/cpu/avx2/avx2_ops_int8.cpp
+      src/labneura/backends/cpu/avx2/avx2_ops_fp16.cpp
+      src/labneura/backends/cpu/avx2/avx2_ops_int16.cpp
       PROPERTIES COMPILE_FLAGS "-mavx2"
     )
     target_compile_definitions(labneura PRIVATE LABNEURA_ENABLE_AVX2=1)

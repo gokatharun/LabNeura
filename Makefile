@@ -138,6 +138,9 @@ else
 	$(LLVM_COV) show $$SO_PATH \
 	$(COV_ARCH) \
 	-instr-profile=labneura.profdata \
+	-path-equivalence=$(CURDIR)/src/labneura/backends/generic,$(CURDIR)/src/labneura/backends/cpu/generic \
+	-path-equivalence=$(CURDIR)/src/labneura/backends/neon,$(CURDIR)/src/labneura/backends/cpu/neon \
+	-path-equivalence=$(CURDIR)/src/labneura/backends/avx2,$(CURDIR)/src/labneura/backends/cpu/avx2 \
 	-format=html \
 	-output-dir=coverage_html \
 	-ignore-filename-regex='site-packages|python|omp|libc\+\+'; \
@@ -145,6 +148,9 @@ else
 	$(LLVM_COV) report $$SO_PATH \
     -instr-profile=labneura.profdata \
 	$(COV_ARCH) \
+	-path-equivalence=$(CURDIR)/src/labneura/backends/generic,$(CURDIR)/src/labneura/backends/cpu/generic \
+	-path-equivalence=$(CURDIR)/src/labneura/backends/neon,$(CURDIR)/src/labneura/backends/cpu/neon \
+	-path-equivalence=$(CURDIR)/src/labneura/backends/avx2,$(CURDIR)/src/labneura/backends/cpu/avx2 \
 	-ignore-filename-regex='site-packages|python3.9|omp|include' > coverage.txt; \
 	echo "✅ Coverage report generated at coverage.txt";
 
