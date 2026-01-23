@@ -31,6 +31,7 @@ public:
     void add_inplace(const TensorBackend& other);
     void sub_inplace(const TensorBackend& other);
     void mul_inplace(const TensorBackend& other);
+    void div_inplace(const TensorBackend& other);
     void operation(const TensorBackend& other, OperationType op);
 
 protected:

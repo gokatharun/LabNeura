@@ -46,7 +46,8 @@ enum class QuantizationMode {
 enum OperationType {
     ADD,
     SUB,
-    MUL
+    MUL,
+    DIV
 };
 
 // Forward declaration for backend implementation
@@ -94,6 +95,8 @@ public:
     Tensor mul(const Tensor& other) const;
     // Subtraction: result = this - other
     Tensor sub(const Tensor& other) const;
+    // Division: result = this / other
+    Tensor div(const Tensor& other) const;
     
     // In-place addition: this += other
     void add_inplace(const Tensor& other);
@@ -101,6 +104,8 @@ public:
     void mul_inplace(const Tensor& other);
     // In-place subtraction: this -= other
     void sub_inplace(const Tensor& other);
+    // In-place division: this /= other
+    void div_inplace(const Tensor& other);
 
 private:
     QuantizationMode quantization_mode_;

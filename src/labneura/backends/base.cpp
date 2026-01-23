@@ -15,6 +15,10 @@ void TensorBackend::mul_inplace(const TensorBackend& other) {
     operation(other, OperationType::MUL);
 }
 
+void TensorBackend::div_inplace(const TensorBackend& other) {
+    operation(other, OperationType::DIV);
+}
+
 void TensorBackend::operation(const TensorBackend& other, OperationType op) {
     if (size() != other.size()) {
         throw std::runtime_error("Tensor size mismatch");

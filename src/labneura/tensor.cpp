@@ -198,6 +198,12 @@ Tensor Tensor::sub(const Tensor& other) const {
     return result;
 }
 
+Tensor Tensor::div(const Tensor& other) const {
+    Tensor result(*this);
+    result.div_inplace(other);
+    return result;
+}
+
 void Tensor::add_inplace(const Tensor& other) {
     if (!backend_) {
         throw std::runtime_error("Tensor backend not initialized");
@@ -217,6 +223,13 @@ void Tensor::sub_inplace(const Tensor& other) {
         throw std::runtime_error("Tensor backend not initialized");
     }
     backend_->sub_inplace(*other.backend_);
+}
+
+void Tensor::div_inplace(const Tensor& other) {
+    if (!backend_) {
+        throw std::runtime_error("Tensor backend not initialized");
+    }
+    backend_->div_inplace(*other.backend_);
 }
 
 void Tensor::init_backend(std::size_t size) {
