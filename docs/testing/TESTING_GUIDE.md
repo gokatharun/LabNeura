@@ -186,11 +186,11 @@ pip install build twine
 python -m build
 
 # This creates:
-# - dist/labneura2-0.1.7-cp39-cp39-macosx_10_9_universal2.whl
-# - dist/labneura2-0.1.7.tar.gz
+# - dist/labneura-0.1.7-cp39-cp39-macosx_10_9_universal2.whl
+# - dist/labneura-0.1.7.tar.gz
 
 # Upload to PyPI (after testing)
-python -m twine upload dist/labneura2-*.whl
+python -m twine upload dist/labneura-*.whl
 ```
 
 ## Summary

@@ -8,8 +8,6 @@ python/dist/*
 python/dist/**
 python/labneura.egg-info
 python/labneura.egg-info/*
-python/labneura2.egg-info
-python/labneura2.egg-info/*
 .pytest_cache
 env
 env/*

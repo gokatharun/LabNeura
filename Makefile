@@ -13,7 +13,7 @@ UNAME_M := $(shell uname -m)
 # --------------------------------------
 PYTHON ?= python3
 PIP ?= pip3
-PKG_NAME := labneura2
+PKG_NAME := labneura
 MODULE_NAME := labneura
 
 # Prefer project virtualenv for publish steps

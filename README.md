@@ -1,6 +1,6 @@
 # LabNeura
 
-[![PyPI version](https://badge.fury.io/py/labneura2.svg)](https://badge.fury.io/py/labneura2)
+[![PyPI version](https://badge.fury.io/py/labneura.svg)](https://badge.fury.io/py/labneura)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 High-performance C++ tensor library with Python bindings, featuring **hardware-accelerated SIMD operations** optimized for modern CPUs. Supports AVX2 (x86_64), NEON (ARM64/Apple Silicon), and provides mixed-precision computation with optional INT8 quantization.
@@ -22,7 +22,7 @@ High-performance C++ tensor library with Python bindings, featuring **hardware-a
 - **Quantization**: Built-in INT8 quantization with 4x memory reduction
 
 ### Python Integration
-- **Easy Installation**: `pip install labneura2` (PyPI package name, import as `labneura`)
+- **Easy Installation**: `pip install labneura`
 - **pybind11 Bindings**: Zero-copy data access between C++ and Python
 - **NumPy Compatible**: Seamless integration with NumPy workflows
 
@@ -31,10 +31,9 @@ High-performance C++ tensor library with Python bindings, featuring **hardware-a
 ### Python Package (Recommended)
 
 ```bash
-pip install labneura2
+pip install labneura
 ```
 
-**Note**: The PyPI package is named `labneura2`, but you import it as `labneura`:
 ```python
 import labneura  # Import statement
 ```
@@ -313,7 +312,7 @@ CPU feature detection uses:
 ## 🌐 Publishing
 
 ### Package Names
-- **PyPI Name**: `labneura2` (install with `pip install labneura2`)
+- **PyPI Name**: `labneura` (install with `pip install labneura`)
 - **Python Module**: `labneura` (import with `import labneura`)
 - **GitHub**: https://github.com/gokatharun/LabNeura
 

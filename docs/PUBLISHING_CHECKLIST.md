@@ -17,14 +17,14 @@ All backend files have been successfully modularized and integrated into the Pyt
 
 ```bash
 # Source distribution includes all modular files
-✓ labneura2-0.2.5.tar.gz
+✓ labneura-0.2.5.tar.gz
   - 15 modular .cpp files (avx2/, generic/, neon/)
   - 3 internal .h files
   - All organized in proper subdirectories
   - twine check: PASSED
 
 # Binary wheel compiles successfully
-✓ labneura2-0.2.5-cp39-cp39-macosx_10_9_universal2.whl
+✓ labneura-0.2.5-cp39-cp39-macosx_10_9_universal2.whl
   - Contains labneura.cpython-39-darwin.so (979 KB)
   - twine check: PASSED
 
@@ -56,7 +56,7 @@ make publish-testpypi
 
 Then test installation:
 ```bash
-pip install --index-url https://test.pypi.org/simple/ labneura2
+pip install --index-url https://test.pypi.org/simple/ labneura
 ```
 
 ### 3. Publish to PyPI (Production)

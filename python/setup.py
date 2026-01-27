@@ -155,8 +155,8 @@ readme_path = Path(__file__).resolve().parent.parent / "README.md"
 long_desc = readme_path.read_text(encoding="utf-8") if readme_path.exists() else "LabNeura: Python bindings for a SIMD-accelerated tensor backend."
 
 setup(
-    name="labneura2",
-    version="0.2.6",
+    name="labneura",
+    version="0.0.12",
     description="SIMD-accelerated tensor operations for neural networks",
     long_description=long_desc,
     long_description_content_type="text/markdown",
