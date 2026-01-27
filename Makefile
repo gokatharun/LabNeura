@@ -182,10 +182,34 @@ build-dist: sync-src
 	cd python && $(TWINE) check dist/*
 
 # --------------------------------------
+# Update version in setup.py
+# --------------------------------------
+.PHONY: update-version
+update-version:
+	@echo "==================================="
+	@echo "LabNeura Version Update"
+	@echo "==================================="
+	@CURRENT_VERSION=$$(grep 'version=' python/setup.py | sed -E 's/.*version="([^"]+)".*/\1/'); \
+	echo "Current version: $$CURRENT_VERSION"; \
+	echo ""; \
+	read -p "Enter new version (or press Enter to keep current): " NEW_VERSION; \
+	if [ -z "$$NEW_VERSION" ]; then \
+		echo "Keeping current version: $$CURRENT_VERSION"; \
+	else \
+		echo "Updating version from $$CURRENT_VERSION to $$NEW_VERSION..."; \
+		sed -i '' "s/version=\"$$CURRENT_VERSION\"/version=\"$$NEW_VERSION\"/" python/setup.py; \
+		echo "✅ Version updated to $$NEW_VERSION in python/setup.py"; \
+		CURRENT_CPP_VERSION=$$(grep '__version__' python/labneura_py.cpp | sed -E 's/.*"([^"]+)".*/\1/'); \
+		sed -i '' "s/__version__\" = \"$$CURRENT_CPP_VERSION\"/__version__\" = \"$$NEW_VERSION\"/" python/labneura_py.cpp; \
+		echo "✅ Version updated to $$NEW_VERSION in python/labneura_py.cpp"; \
+	fi
+	@echo "==================================="
+
+# --------------------------------------
 # Publish to PyPI (requires PYPI_TOKEN env variable)
 # --------------------------------------
 .PHONY: publish
-publish: sync-src
+publish: sync-src update-version
 	@if [ -z "$(PYPI_TOKEN)" ]; then \
 		echo "PYPI_TOKEN not set. Export PYPI_TOKEN before running 'make publish'."; \
 		exit 1; \
@@ -201,7 +225,7 @@ publish: sync-src
 # Publish to TestPyPI (requires TEST_PYPI_TOKEN env variable)
 # --------------------------------------
 .PHONY: publish-testpypi
-publish-testpypi: sync-src
+publish-testpypi: sync-src update-version
 	@if [ -z "$(TEST_PYPI_TOKEN)" ]; then \
 		echo "TEST_PYPI_TOKEN not set. Export TEST_PYPI_TOKEN before running 'make publish-testpypi'."; \
 		exit 1; \
