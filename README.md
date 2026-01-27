@@ -16,10 +16,11 @@ High-performance C++ tensor library with Python bindings, featuring **hardware-a
 - **Compile-time Optimization**: CMake detects hardware and enables appropriate compiler flags
 
 ### Tensor Operations
-- **Mixed-Precision Support**: FP32 (32-bit float), INT8 (8-bit quantized), with future support for FP64, FP16, INT32, INT16
-- **In-place Operations**: `add_inplace()`, `mul_inplace()`, `sub_inplace()` for memory efficiency
-- **Immutable Operations**: `add()` returns new tensors without modifying originals
-- **Quantization**: Built-in INT8 quantization with 4x memory reduction
+- **Mixed-Precision Support**: FP64, FP32, FP16, INT32, INT16, INT8 (all fully supported)
+- **In-place Operations**: `add_inplace()`, `mul_inplace()`, `sub_inplace()`, `div_inplace()` for memory efficiency
+- **Immutable Operations**: `add()`, `mul()`, `sub()`, `div()` return new tensors without modifying originals
+- **Quantization**: Built-in INT8/INT16 quantization with up to 4x memory reduction
+- **Advanced Math**: Floor division, element-wise operations with SIMD acceleration
 
 ### Python Integration
 - **Easy Installation**: `pip install labneura`
@@ -89,10 +90,14 @@ t3 = t1.add(t2)
 # Other operations
 t1.mul_inplace(t2)  # Element-wise multiplication
 t1.sub_inplace(t2)  # Element-wise subtraction
+t1.div_inplace(t2)  # Element-wise division
 
-# INT8 quantization for memory efficiency
+# Multi-precision support
 t_int8 = labneura.Tensor([10, 20, 30, 40], labneura.QuantizationMode.INT8)
 print(t_int8.data_int8())  # [10, 20, 30, 40]
+
+t_int16 = labneura.Tensor([100, 200, 300], labneura.QuantizationMode.INT16)
+t_fp16 = labneura.Tensor([1.5, 2.5, 3.5], labneura.QuantizationMode.FP16)
 ```
 
 ### C++ Usage
@@ -148,12 +153,12 @@ LabNeura delivers **SIMD-accelerated performance** that significantly outperform
 
 ### Complete Benchmarks
 
-📊 **[View Full Benchmark Report](docs/benchmarks/INT16_FP16_BENCHMARK_REPORT.md)**
-- INT16 & FP16 operations vs NumPy and PyTorch
-- Multiple tensor sizes (1K to 1M elements)
-- Comprehensive analysis and optimization recommendations
-- [Quick Reference Table](docs/benchmarks/QUICK_REFERENCE.md)
-- [Executive Summary](docs/benchmarks/INT16_FP16_SUMMARY.md)
+📊 **[View Full Benchmark Reports](docs/benchmarks/)**
+- **[INT16 & FP16 Benchmark Report](docs/benchmarks/INT16_FP16_BENCHMARK_REPORT.md)**: Detailed comparison vs NumPy and PyTorch
+- **[INT8 Performance Results](docs/benchmarks/INT8_BENCHMARK_RESULTS.md)**: Optimized quantized operations
+- **[Quick Reference](docs/benchmarks/QUICK_REFERENCE.md)**: At-a-glance performance tables
+- **[Start Here](docs/benchmarks/START_HERE.md)**: Benchmark documentation index
+- Multiple tensor sizes (1K to 1M elements) with comprehensive analysis
 
 ### Run Benchmarks Locally
 
@@ -166,10 +171,11 @@ cat benchmarking/benchmark_int16_fp16_results.json
 ```
 
 ### Performance Characteristics
-- **NEON (ARM64)**: Processes 4 FP32 or 16 INT8 elements per instruction
-- **AVX2 (x86_64)**: Processes 8 FP32 or 32 INT8 elements per instruction
-- **Memory Efficiency**: INT8 mode uses 4x less memory, improving cache utilization
+- **NEON (ARM64)**: Processes 4 FP32, 8 FP16, 8 INT16, or 16 INT8 elements per instruction
+- **AVX2 (x86_64)**: Processes 8 FP32, 16 FP16, 16 INT16, or 32 INT8 elements per instruction
+- **Memory Efficiency**: INT8 uses 4x less memory, INT16/FP16 use 2x less memory than FP32
 - **Zero Threading Overhead**: Single-threaded SIMD maximizes per-core performance
+- **Competitive with PyTorch**: 6.1x faster than NumPy on INT16, competitive with PyTorch on CPU
 
 ## 🏗️ Architecture
 
@@ -327,6 +333,14 @@ GitHub Actions workflow automates:
 
 MIT License - see [LICENSE](LICENSE) file for details.
 
+## 📚 Documentation
+
+- **[Backend Architecture](docs/BACKEND_ARCHITECTURE.md)**: Detailed SIMD implementation guide
+- **[Publishing Checklist](docs/PUBLISHING_CHECKLIST.md)**: Package deployment workflow
+- **[Benchmarks](docs/benchmarks/)**: Comprehensive performance analysis
+- **[Testing Guide](docs/testing/TESTING_GUIDE.md)**: Test suite documentation
+- **[Operations Roadmap](OPERATIONS_ROADMAP.md)**: Planned features and API design
+
 ## 🤝 Contributing
 
 Contributions welcome! Please:
@@ -351,5 +365,5 @@ Built with:
 ---
 
 **Author**: LabNeura Contributors  
-**Version**: 0.1.2  
+**Version**: 0.0.13  
 **Python**: 3.9+ | **C++**: 17+ | **Platforms**: macOS (Apple Silicon & Intel), Linux (x86_64, ARM64)
