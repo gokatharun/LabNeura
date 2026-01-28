@@ -128,11 +128,14 @@ ext_modules = [
             str(root_dir / "src/labneura/backends/cpu/generic/generic_backend.cpp"),
             str(root_dir / "src/labneura/backends/cpu/generic/generic_ops_fp32.cpp"),
             str(root_dir / "src/labneura/backends/cpu/generic/generic_ops_int8.cpp"),
+            str(root_dir / "src/labneura/backends/cpu/generic/generic_ops_fp16.cpp"),
+            str(root_dir / "src/labneura/backends/cpu/generic/generic_ops_int16.cpp"),
             # CPU NEON backend (modular)
             str(root_dir / "src/labneura/backends/cpu/neon/neon_backend.cpp"),
             str(root_dir / "src/labneura/backends/cpu/neon/neon_ops_fp32.cpp"),
             str(root_dir / "src/labneura/backends/cpu/neon/neon_ops_int8.cpp"),
             str(root_dir / "src/labneura/backends/cpu/neon/neon_ops_int16.cpp"),
+            str(root_dir / "src/labneura/backends/cpu/neon/neon_ops_fp16.cpp"),
             # CPU AVX2 backend (modular)
             str(root_dir / "src/labneura/backends/cpu/avx2/avx2_backend.cpp"),
             str(root_dir / "src/labneura/backends/cpu/avx2/avx2_ops_fp32.cpp"),
@@ -156,7 +159,7 @@ long_desc = readme_path.read_text(encoding="utf-8") if readme_path.exists() else
 
 setup(
     name="labneura",
-    version="0.0.17",
+    version="0.0.18",
     description="SIMD-accelerated tensor operations for neural networks",
     long_description=long_desc,
     long_description_content_type="text/markdown",
