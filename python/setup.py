@@ -156,7 +156,7 @@ long_desc = readme_path.read_text(encoding="utf-8") if readme_path.exists() else
 
 setup(
     name="labneura",
-    version="0.0.15",
+    version="0.0.16",
     description="SIMD-accelerated tensor operations for neural networks",
     long_description=long_desc,
     long_description_content_type="text/markdown",
