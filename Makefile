@@ -181,8 +181,11 @@ build-dist: sync-src
 	cd python && LABNEURA_COVERAGE= $(VENV_PYTHON) -m build --no-isolation --sdist
 	cd python && $(TWINE) check dist/*
 
+# Store the new version for use in git operations
+NEW_VERSION_FILE := /tmp/labneura_new_version.txt
+
 # --------------------------------------
-# Update version in setup.py
+# Update version in setup.py and labneura_py.cpp
 # --------------------------------------
 .PHONY: update-version
 update-version:
@@ -195,13 +198,48 @@ update-version:
 	read -p "Enter new version (or press Enter to keep current): " NEW_VERSION; \
 	if [ -z "$$NEW_VERSION" ]; then \
 		echo "Keeping current version: $$CURRENT_VERSION"; \
+		echo "$$CURRENT_VERSION" > $(NEW_VERSION_FILE); \
 	else \
 		echo "Updating version from $$CURRENT_VERSION to $$NEW_VERSION..."; \
 		sed -i '' "s/version=\"$$CURRENT_VERSION\"/version=\"$$NEW_VERSION\"/" python/setup.py; \
 		echo "✅ Version updated to $$NEW_VERSION in python/setup.py"; \
 		CURRENT_CPP_VERSION=$$(grep '__version__' python/labneura_py.cpp | sed -E 's/.*"([^"]+)".*/\1/'); \
-		sed -i '' "s/__version__\" = \"$$CURRENT_CPP_VERSION\"/__version__\" = \"$$NEW_VERSION\"/" python/labneura_py.cpp; \
+		sed -i '' "s/m.attr(\"__version__\") = \"$$CURRENT_CPP_VERSION\"/m.attr(\"__version__\") = \"$$NEW_VERSION\"/" python/labneura_py.cpp; \
 		echo "✅ Version updated to $$NEW_VERSION in python/labneura_py.cpp"; \
+		echo "$$NEW_VERSION" > $(NEW_VERSION_FILE); \
+	fi
+	@echo "==================================="
+
+# --------------------------------------
+# Commit and push version changes to git
+# --------------------------------------
+.PHONY: git-commit-version
+git-commit-version:
+	@if [ ! -f $(NEW_VERSION_FILE) ]; then \
+		echo "❌ Version file not found. Run update-version first."; \
+		exit 1; \
+	fi
+	@NEW_VERSION=$$(cat $(NEW_VERSION_FILE)); \
+	CURRENT_BRANCH=$$(git rev-parse --abbrev-ref HEAD); \
+	echo ""; \
+	echo "==================================="
+	echo "Git Commit & Push"; \
+	echo "==================================="
+	echo "Branch: $$CURRENT_BRANCH"; \
+	echo "New version: $$NEW_VERSION"; \
+	echo ""; \
+	echo "Files to commit:"; \
+	git diff --name-only; \
+	echo ""; \
+	read -p "Continue with git commit and push? (y/n): " CONFIRM; \
+	if [ "$$CONFIRM" = "y" ] || [ "$$CONFIRM" = "Y" ]; then \
+		git add python/setup.py python/labneura_py.cpp; \
+		git commit -m "chore: bump version to $$NEW_VERSION"; \
+		echo "✅ Committed: chore: bump version to $$NEW_VERSION"; \
+		git push origin $$CURRENT_BRANCH; \
+		echo "✅ Pushed to $$CURRENT_BRANCH"; \
+	else \
+		echo "⏭️  Skipped git commit and push"; \
 	fi
 	@echo "==================================="
 
@@ -209,7 +247,7 @@ update-version:
 # Publish to PyPI (requires PYPI_TOKEN env variable)
 # --------------------------------------
 .PHONY: publish
-publish: sync-src update-version
+publish: sync-src update-version git-commit-version
 	@if [ -z "$(PYPI_TOKEN)" ]; then \
 		echo "PYPI_TOKEN not set. Export PYPI_TOKEN before running 'make publish'."; \
 		exit 1; \
@@ -220,12 +258,13 @@ publish: sync-src update-version
 	# Upload artifacts to PyPI
 	cd python && $(TWINE) upload --non-interactive dist/* --username __token__ --password $(PYPI_TOKEN)
 	@echo "✅ Published to PyPI"
+	@rm -f $(NEW_VERSION_FILE)
 
 # --------------------------------------
 # Publish to TestPyPI (requires TEST_PYPI_TOKEN env variable)
 # --------------------------------------
 .PHONY: publish-testpypi
-publish-testpypi: sync-src update-version
+publish-testpypi: sync-src update-version git-commit-version
 	@if [ -z "$(TEST_PYPI_TOKEN)" ]; then \
 		echo "TEST_PYPI_TOKEN not set. Export TEST_PYPI_TOKEN before running 'make publish-testpypi'."; \
 		exit 1; \
@@ -234,3 +273,4 @@ publish-testpypi: sync-src update-version
 	$(MAKE) build-dist
 	cd python && $(TWINE) upload --repository testpypi --non-interactive dist/* --username __token__ --password $(TEST_PYPI_TOKEN)
 	@echo "✅ Published to TestPyPI"
+	@rm -f $(NEW_VERSION_FILE)
