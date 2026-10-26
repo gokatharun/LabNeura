@@ -1,13 +1,44 @@
-cmake_minimum_required(VERSION 3.14)
+cmake_minimum_required(VERSION 3.20)
 project(LabNeura LANGUAGES CXX)
 
 include(CheckCXXCompilerFlag)
+include(FetchContent)
+
+# Embed the educational Liberty file so the default parser works in source
+# checkouts and installed wheels alike.
+file(READ "${CMAKE_SOURCE_DIR}/assets/cells.lib" LABNEURA_EDA_LIBERTY_SOURCE)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+  "${CMAKE_SOURCE_DIR}/assets/cells.lib"
+)
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/generated/labneura/eda")
+configure_file(
+  "${CMAKE_SOURCE_DIR}/src/labneura/eda/default_cell_library.h.in"
+  "${CMAKE_CURRENT_BINARY_DIR}/generated/labneura/eda/default_cell_library.h"
+  @ONLY
+)
+
 # ======================================
 # C++ Standard
 # ======================================
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+
+# ======================================
+# Verilog frontend
+# ======================================
+set(SLANG_INCLUDE_TESTS OFF CACHE BOOL "" FORCE)
+set(SLANG_INCLUDE_TOOLS OFF CACHE BOOL "" FORCE)
+set(SLANG_INCLUDE_INSTALL OFF CACHE BOOL "" FORCE)
+set(SLANG_USE_MIMALLOC OFF CACHE BOOL "" FORCE)
+
+FetchContent_Declare(
+  slang
+  GIT_REPOSITORY https://github.com/MikePopoloski/slang.git
+  GIT_TAG 7ddf4059f79eff508dd486eb42fd650cdf320d52
+  GIT_PROGRESS TRUE
+)
+FetchContent_MakeAvailable(slang)
 
 # ======================================
 # Architecture detection
@@ -29,6 +60,9 @@ endif()
 # Core library
 # ======================================
 add_library(labneura
+  src/labneura/eda/verilog_parser.cpp
+  src/labneura/eda/netlist_json.cpp
+  src/labneura/eda/cell_library.cpp
   src/labneura/tensor.cpp
   src/labneura/backends/common/base.cpp
   src/labneura/backends/common/cpu_features.cpp
@@ -49,8 +83,10 @@ add_library(labneura
   src/labneura/backends/cpu/avx2/avx2_ops_fp16.cpp
   src/labneura/backends/cpu/avx2/avx2_ops_int16.cpp
 )
+set_target_properties(labneura PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_link_libraries(labneura PRIVATE slang::slang)
 
-if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
   # Check for AVX2 support
   check_cxx_compile_flag("-mavx2", LABNEURA_COMPILER_SUPPORTS_AVX2)
   if(LABNEURA_COMPILER_SUPPORTS_AVX2)
@@ -82,6 +118,7 @@ target_include_directories(labneura
     $<INSTALL_INTERFACE:include>
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_BINARY_DIR}/generated
 )
 
 # ======================================
@@ -136,8 +173,51 @@ endif()
 # ======================================
 # Example executable
 # ======================================
-add_executable(labneura_example examples/main.cpp)
-target_link_libraries(labneura_example PRIVATE labneura)
+if(NOT SKBUILD)
+  add_executable(labneura_example examples/main.cpp)
+  target_link_libraries(labneura_example PRIVATE labneura)
+endif()
+
+if(SKBUILD)
+  set(Python_FIND_FRAMEWORK FIRST)
+  find_package(Python COMPONENTS Interpreter REQUIRED)
+  execute_process(
+    COMMAND "${Python_EXECUTABLE}" -c
+      "import pathlib, sysconfig; candidates = [sysconfig.get_path('include'), sysconfig.get_config_var('INCLUDEPY') or '', str(pathlib.Path(sysconfig.get_path('stdlib')).parents[1] / 'include' / ('python' + sysconfig.get_config_var('VERSION')))]; print(next((path for path in candidates if path and (pathlib.Path(path) / 'Python.h').is_file()), ''))"
+    OUTPUT_VARIABLE LABNEURA_PYTHON_INCLUDE_DIR
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    RESULT_VARIABLE LABNEURA_PYTHON_INCLUDE_RESULT
+  )
+  if(NOT LABNEURA_PYTHON_INCLUDE_RESULT EQUAL 0 OR
+     NOT EXISTS "${LABNEURA_PYTHON_INCLUDE_DIR}/Python.h")
+    message(FATAL_ERROR "Could not locate Python.h for ${Python_EXECUTABLE}")
+  endif()
+  add_library(Python::Module INTERFACE IMPORTED)
+  target_include_directories(Python::Module INTERFACE
+    "${LABNEURA_PYTHON_INCLUDE_DIR}"
+  )
+  find_package(pybind11 CONFIG REQUIRED)
+
+  add_library(labneura_python MODULE
+    python/labneura_py.cpp
+    python/eda_bindings.cpp
+  )
+  set_target_properties(labneura_python PROPERTIES
+    PREFIX ""
+    OUTPUT_NAME labneura
+    SUFFIX "${CMAKE_SHARED_MODULE_SUFFIX}"
+  )
+  target_link_libraries(labneura_python PRIVATE pybind11::module labneura)
+  if(APPLE)
+    target_link_options(labneura_python PRIVATE
+      "-undefined" "dynamic_lookup"
+    )
+  endif()
+  install(TARGETS labneura_python
+    LIBRARY DESTINATION .
+    RUNTIME DESTINATION .
+  )
+endif()
 
 # ======================================
 # Install rules

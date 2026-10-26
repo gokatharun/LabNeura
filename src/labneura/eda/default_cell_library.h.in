@@ -1,0 +1,14 @@
+#ifndef LABNEURA_EDA_DEFAULT_CELL_LIBRARY_H
+#define LABNEURA_EDA_DEFAULT_CELL_LIBRARY_H
+
+#include <string_view>
+
+namespace labneura::eda::detail {
+
+inline constexpr std::string_view bundled_liberty = R"LABNEURA_LIBERTY(
+@LABNEURA_EDA_LIBERTY_SOURCE@
+)LABNEURA_LIBERTY";
+
+}  // namespace labneura::eda::detail
+
+#endif

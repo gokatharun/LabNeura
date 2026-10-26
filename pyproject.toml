@@ -1,3 +1,28 @@
+[build-system]
+requires = ["scikit-build-core>=0.10", "pybind11>=2.11"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "labneura"
+version = "0.0.18"
+description = "SIMD-accelerated tensor operations for neural networks"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [{ name = "LabNeura Authors" }]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: C++",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: MacOS",
+  "Operating System :: POSIX :: Linux",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+[tool.scikit-build]
+cmake.version = ">=3.20"
+wheel.packages = []
+
 [tool.pytest.ini_options]
 minversion = "7.0"
 addopts = "-ra -q"

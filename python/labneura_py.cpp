@@ -1,5 +1,6 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include "eda_bindings.h"
 #include "labneura/types.hpp"
 #include "labneura/tensor.h"
 #include "labneura/backends/common/backend_factory.h"
@@ -140,5 +141,6 @@ PYBIND11_MODULE(labneura, m) {
 
     // Backend detection
     m.def("detect_backend", &labneura::detect_backend, "Detect the preferred backend based on CPU features");
-}
 
+    bind_eda(m);
+}

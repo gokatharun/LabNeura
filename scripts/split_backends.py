@@ -236,5 +236,5 @@ if __name__ == "__main__":
     print("\n✅ Modularization complete!")
     print("\nNext steps:")
     print("1. Update CMakeLists.txt")
-    print("2. Update python/setup.py")
+    print("2. Update CMakeLists.txt and pyproject.toml")
     print("3. Verify build and tests")

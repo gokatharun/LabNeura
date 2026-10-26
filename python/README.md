@@ -42,10 +42,10 @@ import labneura  # Import statement
 ### Build from Source
 
 #### Prerequisites
-- CMake >= 3.14
-- C++17 compatible compiler (Clang, GCC, MSVC)
-- Python 3.9+ (for Python bindings)
-- pybind11 >= 3.0.1
+- CMake >= 3.20
+- C++20 compatible compiler
+- Python >= 3.8 (for Python bindings)
+- Network access to fetch the pinned slang frontend
 
 #### C++ Library
 ```bash
@@ -57,14 +57,10 @@ cmake --install .
 
 #### Python Bindings
 ```bash
-cd python
 pip install .
 ```
 
-For development with coverage:
-```bash
-LABNEURA_COVERAGE=1 pip install -e .
-```
+The root `pyproject.toml` drives both wheel and source builds with CMake.
 
 ## 🎯 Quick Start
 
@@ -99,6 +95,69 @@ print(t_int8.data_int8())  # [10, 20, 30, 40]
 t_int16 = labneura.Tensor([100, 200, 300], labneura.QuantizationMode.INT16)
 t_fp16 = labneura.Tensor([1.5, 2.5, 3.5], labneura.QuantizationMode.FP16)
 ```
+
+### EDA Netlist Parsing
+
+LabNeura's EDA submodule parses individual structural examples into netlist
+objects and reads complete Verilog projects with slang's Verilog-2005 parser
+and elaborator:
+
+```python
+import labneura.eda as eda
+
+module = eda.parse_verilog("logic_example.v")
+print(module.name)
+for assignment in module.assignments:
+    print(assignment.lhs, "=", assignment.rhs)
+for instance in module.instances:
+    print(instance.name, instance.cell_type)
+    for connection in instance.connections:
+        print(connection.pin, "->", connection.net)
+
+eda.write_json(module, "logic_example.json")
+```
+
+`parse_verilog_project` recursively reads `.v` files, resolves module
+hierarchy, and exposes an elaborated AST as JSON. Project summary counts are
+available alongside module ports, wires, and instances:
+
+```python
+project = eda.parse_verilog_project("examples/verilog")
+print(project.module_count, project.total_port_count, project.total_wire_count)
+for module in project.modules:
+    print(module.name, module.port_count, module.wire_count)
+print(project.ast_json)
+```
+
+`parse_verilog` uses slang to parse a Verilog file containing one top-level
+module, including ANSI-style ports, vectors, and continuous assignments.
+Assignments are exposed as left-hand and right-hand expressions; for example,
+the mux's `assign Y = I[S];` is represented as `lhs == "Y"` and `rhs == "I[S]"`.
+Structured expression nodes are available as `lhs_expression` and
+`rhs_expression`; the mux RHS is a bit-select node with `I` and `S` operands.
+`parse_verilog_source` remains a lightweight parser for source strings and
+supports scalar ports/wires and `and`/`or` primitives. Verilog parsing requires
+CMake 3.20+, a C++20 compiler, and the pinned slang frontend, which is fetched
+during the build.
+
+Liberty standard-cell libraries can be read with `parse_liberty`. The reader
+exposes cell area, pin direction/function/capacitance, timing arcs, and
+lookup-table indices and values:
+
+```python
+library = eda.parse_liberty("cells.lib")
+print(library.name, library.time_unit, library.cell_count)
+cell = library.cells[0]
+for pin in cell.pins:
+    print(pin.name, pin.direction, pin.function)
+    for arc in pin.timing_arcs:
+        print(arc.related_pin, arc.timing_type)
+        if arc.cell_rise is not None:
+            print(arc.cell_rise.index_1, arc.cell_rise.values)
+```
+
+The reader extracts common cell, pin, and delay-table data; it is not a full
+Liberty semantic validator.
 
 ### C++ Usage
 
@@ -205,7 +264,7 @@ LabNeura/
 │   └── backends/*.cpp         # Backend implementations
 ├── python/                    # Python bindings
 │   ├── labneura_py.cpp        # pybind11 bindings
-│   └── setup.py               # Python package config
+│   └── eda_bindings.cpp       # EDA Python bindings
 ├── examples/                  # Usage examples
 │   ├── main.cpp               # C++ example
 │   ├── test_tensor.py         # Python example

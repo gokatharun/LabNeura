@@ -8,9 +8,8 @@ All backend files have been successfully modularized and integrated into the Pyt
 
 ### Files Updated for Modularization
 
-- ✅ **CMakeLists.txt** - All 15 modular backend `.cpp` files included
-- ✅ **python/setup.py** - All modular backend files in `sources` list
-- ✅ **MANIFEST.in** - Recursive include patterns cover all subdirectories
+- ✅ **CMakeLists.txt** - C++ library and Python extension build configuration
+- ✅ **pyproject.toml** - Root Python package metadata and scikit-build-core backend
 - ✅ **scripts/sync_files.sh** - Automatically syncs all files to `python/`
 
 ### Verification Completed
@@ -117,7 +116,7 @@ src/labneura/backends/
 Before running `make publish`, ensure:
 
 - [ ] All tests pass: `make test`
-- [ ] Version bumped in `python/setup.py` if needed
+- [ ] Version bumped in `pyproject.toml` and `python/labneura_py.cpp` if needed
 - [ ] CHANGELOG updated with new features
 - [ ] README updated if API changed
 - [ ] Clean build: `make clean install test`
@@ -131,7 +130,7 @@ Before running `make publish`, ensure:
 
 ### Issue: Compilation errors during wheel build
 
-**Solution:** Check that all files are listed in `python/setup.py` sources
+**Solution:** Check the CMake target sources and rebuild the root package.
 
 ### Issue: Import errors after installation
 

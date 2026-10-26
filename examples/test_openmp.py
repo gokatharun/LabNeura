@@ -145,7 +145,7 @@ try:
     
 except ImportError as e:
     print(f"✗ Could not import labneura: {e}")
-    print("  Make sure to rebuild: cd /Users/tharungoka/LabNeura/python && python3 setup.py build_ext --inplace")
+    print("  Rebuild from the repository root with: python3 -m pip install .")
 except Exception as e:
     print(f"✗ Error: {e}")
     import traceback
@@ -160,15 +160,14 @@ print("1. If OpenMP is NOT detected:")
 print("   brew install libomp")
 print()
 print("2. Rebuild LabNeura:")
-print("   cd /Users/tharungoka/LabNeura/build")
+print("   cd /path/to/LabNeura/build")
 print("   rm -rf *")
 print("   cmake ..")
 print("   make -j")
 print()
 print("3. Rebuild Python extension:")
-print("   cd /Users/tharungoka/LabNeura/python")
-print("   rm -rf build *.so *.pyc")
-print("   python3 setup.py build_ext --inplace")
+print("   cd /path/to/LabNeura")
+print("   python3 -m pip install .")
 print()
 print("4. Test with:")
 print("   python3 benchmark_numpy.py")

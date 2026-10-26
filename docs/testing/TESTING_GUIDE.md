@@ -3,23 +3,19 @@
 ## Quick Test on Current Machine
 
 ```bash
-# Navigate to project root
-cd /Users/tharungoka/LabNeura
+# Navigate to the repository root
+cd /path/to/LabNeura
 
-# 1. Clean previous builds
-rm -rf python/build python/*.egg-info
+# 1. Build and install the package from the repository root
+python -m pip install .
 
-# 2. Build the extension
-cd python
-python setup.py build_ext --inplace
-
-# 3. Test backend detection
+# 2. Test backend detection
 python -c "
 import labneura
 print('Detected Backend:', labneura.detect_backend())
 "
 
-# 4. Run basic operations
+# 3. Run basic operations
 python -c "
 import labneura
 import numpy as np
@@ -32,9 +28,8 @@ print('✓ NumPy operations work')
 ## Verification: No Machine-Specific Code in Binary
 
 ```bash
-# Check that -march=native is NOT in the binary
-cd /Users/tharungoka/LabNeura/python/build
-strings lib.macosx-10.9-universal2-cpython-39/labneura*.so | grep -i "march\|native" || echo "✓ No machine-specific flags found"
+# Locate the CMake-built extension
+find build -name 'labneura*.so' -print
 
 # Check for SIMD instruction patterns
 objdump -d lib.macosx-10.9-universal2-cpython-39/labneura*.so | grep -E "vmovapd|vpaddd|vpaddq" | head -5
@@ -82,8 +77,7 @@ with open('CMakeLists.txt', 'r') as f:
 checks = [
     ('-march=native', False, "Should NOT use -march=native"),
     ('-mtune=generic', True, "Should use -mtune=generic"),
-    ('AND APPLE', True, "Apple-specific flags should be guarded"),
-    ('LABNEURA_ENABLE_SSE41', True, "Should support SSE4.1"),
+    ('-mavx2', True, "Should enable AVX2 when supported"),
     ('LABNEURA_ENABLE_AVX2', True, "Should support AVX2"),
 ]
 
@@ -93,36 +87,15 @@ for pattern, should_exist, desc in checks:
     print(f"{status} {desc}: {pattern}")
 ```
 
-### Test 3: Verify setup.py Correctness
-
-```python
-# test_setup_config.py
-with open('python/setup.py', 'r') as f:
-    setup = f.read()
-    
-checks = [
-    ('-march=native', False, "Should NOT use -march=native"),
-    ('-msse4.1', True, "Should support SSE4.1"),
-    ('-mavx2', True, "Should support AVX2"),
-    ('march=native', False, "No march=native anywhere"),
-]
-
-for pattern, should_exist, desc in checks:
-    exists = pattern in setup
-    status = "✓" if exists == should_exist else "✗"
-    print(f"{status} {desc}: {pattern}")
-```
-
 ## Linux-Specific Testing
 
 ### If you have access to a Linux machine with Intel/AMD:
 
 ```bash
-# On Linux x86_64:
-cd /path/to/LabNeura/python
+# On Linux x86_64, from the repository root:
 
 # 1. Build
-python setup.py build_ext --inplace
+python -m pip install .
 
 # 2. Test basic import
 python -c "import labneura; print(labneura.detect_backend())"
@@ -145,9 +118,9 @@ RUN apt-get update && apt-get install -y \
     build-essential cmake git
 
 COPY . /app
-WORKDIR /app/python
+WORKDIR /app
 
-RUN python3 setup.py build_ext --inplace
+RUN python3 -m pip install .
 
 # Test on minimal system (no AVX-512, etc.)
 RUN python3 -c "import labneura; print(labneura.detect_backend())"
@@ -169,7 +142,7 @@ RUN python3 -c "import labneura; print(labneura.detect_backend())"
 1. ✅ Run all tests above
 2. ✅ Verify no "-march=native" in binary
 3. ✅ Test on Linux (if possible)
-4. ✅ Create wheel: `python setup.py bdist_wheel`
+4. ✅ Create wheel and source archive: `python -m build`
 5. ✅ Check wheel contents: `zipinfo dist/labneura*.whl`
 6. ✅ Upload test version to TestPyPI first
 7. ✅ Install and test from TestPyPI on different systems

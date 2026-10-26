@@ -21,7 +21,7 @@ MODULE_NAME := labneura
 WORKSPACE_ROOT := $(shell pwd)
 VENV_PYTHON := $(WORKSPACE_ROOT)/env/bin/python
 VENV_PIP := $(WORKSPACE_ROOT)/env/bin/pip
-TWINE := $(VENV_PYTHON) -m twine
+TWINE = $(PYTHON) -m twine
 PYPI_TOKEN ?=
 TEST_PYPI_TOKEN ?=
 
@@ -64,7 +64,7 @@ endif
 # Default target
 # --------------------------------------
 .PHONY: all
-all: clean install test
+all: clean sync-src install test
 
 # --------------------------------------
 # Dependencies
@@ -80,7 +80,6 @@ deps:
 .PHONY: clean
 clean:
 	rm -rf build dist *.egg-info coverage_html
-	rm -rf python/build python/dist python/*.egg-info
 	rm -f labneura*.so python/labneura*.so
 	find . -name "*.profraw" -delete || true
 	find . -name "*.profdata" -delete || true
@@ -95,8 +94,7 @@ sync-src:
 
 .PHONY: install
 install: sync-src
-	$(PIP) uninstall -y $(PKG_NAME) || true
-	cd python && $(PIP) install . --no-cache-dir --no-build-isolation
+	$(PIP) install . --no-cache-dir
 
 # --------------------------------------
 # Smoke test
@@ -172,27 +170,22 @@ ci: deps clean install smoke cpp-coverage
 # --------------------------------------
 .PHONY: build-dist
 build-dist: sync-src
-	# Ensure build tools are available in venv
-	$(VENV_PIP) install --upgrade build twine pybind11 || true
-	# Build inside python package directory (disable coverage for packaging)
-	# Build wheel directly (not from sdist) to avoid path issues
-	cd python && LABNEURA_COVERAGE= $(VENV_PYTHON) -m build --no-isolation --wheel
-	# Build sdist separately
-	cd python && LABNEURA_COVERAGE= $(VENV_PYTHON) -m build --no-isolation --sdist
-	cd python && $(TWINE) check dist/*
+	$(PIP) install --upgrade build twine
+	LABNEURA_COVERAGE= $(PYTHON) -m build
+	$(TWINE) check dist/*
 
 # Store the new version for use in git operations
 NEW_VERSION_FILE := /tmp/labneura_new_version.txt
 
 # --------------------------------------
-# Update version in setup.py and labneura_py.cpp
+# Update version in pyproject.toml and labneura_py.cpp
 # --------------------------------------
 .PHONY: update-version
 update-version:
 	@echo "==================================="
 	@echo "LabNeura Version Update"
 	@echo "==================================="
-	@CURRENT_VERSION=$$(grep 'version=' python/setup.py | sed -E 's/.*version="([^"]+)".*/\1/'); \
+	@CURRENT_VERSION=$$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml); \
 	echo "Current version: $$CURRENT_VERSION"; \
 	echo ""; \
 	read -p "Enter new version (or press Enter to keep current): " NEW_VERSION; \
@@ -201,8 +194,8 @@ update-version:
 		echo "$$CURRENT_VERSION" > $(NEW_VERSION_FILE); \
 	else \
 		echo "Updating version from $$CURRENT_VERSION to $$NEW_VERSION..."; \
-		sed -i '' "s/version=\"$$CURRENT_VERSION\"/version=\"$$NEW_VERSION\"/" python/setup.py; \
-		echo "✅ Version updated to $$NEW_VERSION in python/setup.py"; \
+		sed -i '' "s/^version = \"$$CURRENT_VERSION\"/version = \"$$NEW_VERSION\"/" pyproject.toml; \
+		echo "✅ Version updated to $$NEW_VERSION in pyproject.toml"; \
 		CURRENT_CPP_VERSION=$$(grep '__version__' python/labneura_py.cpp | sed -E 's/.*"([^"]+)".*/\1/'); \
 		sed -i '' "s/m.attr(\"__version__\") = \"$$CURRENT_CPP_VERSION\"/m.attr(\"__version__\") = \"$$NEW_VERSION\"/" python/labneura_py.cpp; \
 		echo "✅ Version updated to $$NEW_VERSION in python/labneura_py.cpp"; \
@@ -233,7 +226,7 @@ git-commit-version:
 	echo ""; \
 	read -p "Continue with git commit and push? (y/n): " CONFIRM; \
 	if [ "$$CONFIRM" = "y" ] || [ "$$CONFIRM" = "Y" ]; then \
-		git add python/setup.py python/labneura_py.cpp; \
+		git add pyproject.toml python/labneura_py.cpp; \
 		git commit -m "chore: bump version to $$NEW_VERSION"; \
 		echo "✅ Committed: chore: bump version to $$NEW_VERSION"; \
 		git push origin $$CURRENT_BRANCH; \
@@ -256,7 +249,7 @@ publish: sync-src update-version git-commit-version
 	$(MAKE) clean install smoke test PIP=$(VENV_PIP) PYTHON=$(VENV_PYTHON)
 	$(MAKE) build-dist
 	# Upload artifacts to PyPI
-	cd python && $(TWINE) upload --non-interactive dist/* --username __token__ --password $(PYPI_TOKEN)
+	$(TWINE) upload --non-interactive dist/* --username __token__ --password $(PYPI_TOKEN)
 	@echo "✅ Published to PyPI"
 	@rm -f $(NEW_VERSION_FILE)
 
@@ -271,6 +264,6 @@ publish-testpypi: sync-src update-version git-commit-version
 	fi
 	$(MAKE) clean install smoke test PIP=$(VENV_PIP) PYTHON=$(VENV_PYTHON)
 	$(MAKE) build-dist
-	cd python && $(TWINE) upload --repository testpypi --non-interactive dist/* --username __token__ --password $(TEST_PYPI_TOKEN)
+	$(TWINE) upload --repository testpypi --non-interactive dist/* --username __token__ --password $(TEST_PYPI_TOKEN)
 	@echo "✅ Published to TestPyPI"
 	@rm -f $(NEW_VERSION_FILE)
