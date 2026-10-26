@@ -48,6 +48,34 @@ library (labneura_educational_cells) {
         }
     }
 
+    cell (BUF_X1) {
+        area : 0.40;
+        pin (A) {
+            direction : input;
+            capacitance : 0.002;
+        }
+        pin (Y) {
+            direction : output;
+            function : "A";
+        }
+    }
+
+    cell (TIELO_X1) {
+        area : 0.10;
+        pin (Y) {
+            direction : output;
+            function : "0";
+        }
+    }
+
+    cell (TIEHI_X1) {
+        area : 0.10;
+        pin (Y) {
+            direction : output;
+            function : "1";
+        }
+    }
+
     cell (AND2_X1) {
         area : 0.90;
         pin (A) {
@@ -83,6 +111,22 @@ library (labneura_educational_cells) {
                     values ("0.044, 0.073", "0.068, 0.102");
                 }
             }
+        }
+    }
+
+    cell (XOR2_X1) {
+        area : 1.20;
+        pin (A) {
+            direction : input;
+            capacitance : 0.004;
+        }
+        pin (B) {
+            direction : input;
+            capacitance : 0.004;
+        }
+        pin (Y) {
+            direction : output;
+            function : "A ^ B";
         }
     }
 
@@ -174,6 +218,39 @@ library (labneura_educational_cells) {
                     values ("0.088, 0.136", "0.124, 0.182");
                 }
             }
+
+        }
+    }
+
+    cell (MUX4_X1) {
+        area : 2.80;
+        pin (A0) {
+            direction : input;
+            capacitance : 0.006;
+        }
+        pin (A1) {
+            direction : input;
+            capacitance : 0.006;
+        }
+        pin (A2) {
+            direction : input;
+            capacitance : 0.006;
+        }
+        pin (A3) {
+            direction : input;
+            capacitance : 0.006;
+        }
+        pin (S0) {
+            direction : input;
+            capacitance : 0.007;
+        }
+        pin (S1) {
+            direction : input;
+            capacitance : 0.007;
+        }
+        pin (Y) {
+            direction : output;
+            function : "(!S1 & !S0 & A0) | (!S1 & S0 & A1) | (S1 & !S0 & A2) | (S1 & S0 & A3)";
         }
     }
 }

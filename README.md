@@ -119,7 +119,8 @@ eda.write_json(module, "logic_example.json")
 
 `parse_verilog_project` recursively reads `.v` files, resolves module
 hierarchy, and exposes an elaborated AST as JSON. Project summary counts are
-available alongside module ports, wires, and instances:
+available alongside module ports, wires, instances, and each instance's
+formal-port-to-net connections:
 
 ```python
 project = eda.parse_verilog_project("examples/verilog")
@@ -131,16 +132,19 @@ print(project.ast_json)
 
 `parse_verilog` uses slang to parse a Verilog file containing one top-level
 module, including ANSI-style ports, vectors, and continuous assignments.
-Assignments are exposed as left-hand and right-hand expressions; for example,
-the mux's `assign Y = I[S];` is represented as `lhs == "Y"` and `rhs == "I[S]"`.
-Structured expression nodes are available as `lhs_expression` and
-`rhs_expression`; the mux RHS is a bit-select node with `I` and `S` operands.
-Instances are resolved against the bundled educational Liberty library and
-expose their definition through `instance.cell`; an unknown cell type reports
-an error. The library is synthetic and is not suitable for synthesis or timing
-signoff.
+`parse_verilog` and the lightweight source parser use the bundled
+SKY130 high-density typical-corner library by default and expose physical cell
+definitions through `instance.cell`. The 4:1 indexed assignment
+`assign Y = I[S];` is mapped to three SKY130 2:1 mux cells. Scalar Boolean
+operators (including nested scalar expressions), ternary assignments, wire
+copies, and 0/1 constants map to
+corresponding SKY130 gates, buffers, and tie-cell outputs. Unknown cell names
+and assignments without a supported mapping fail explicitly. Procedural
+blocks are not yet mapped. This default is technology-specific to SKY130; the
+bundled educational library remains available as `assets/cells.lib` for
+standalone Liberty-parser examples.
 `parse_verilog_source` remains a lightweight parser for source strings and
-supports scalar ports/wires and `and`/`or` primitives. Verilog parsing requires
+supports scalar ports/wires and `and`/`or`/`xor` primitives. Verilog parsing requires
 CMake 3.20+, a C++20 compiler, and the pinned slang frontend, which is fetched
 during the build.
 
@@ -159,6 +163,13 @@ for pin in cell.pins:
         if arc.cell_rise is not None:
             print(arc.cell_rise.index_1, arc.cell_rise.values)
 ```
+
+Liberty backslash-newline continuations are supported. The bundled default
+comes from `assets/sky130_fd_sc_hd__tt_025C_1v80.lib`. It can also be loaded
+directly for inspection with
+`eda.parse_liberty("assets/sky130_fd_sc_hd__tt_025C_1v80.lib")`.
+See [the included library notice](assets/SKY130-LIBRARY-NOTICE.md) for its
+source, license, and technology/corner details.
 
 The reader extracts common cell, pin, and delay-table data; it is not a full
 Liberty semantic validator.

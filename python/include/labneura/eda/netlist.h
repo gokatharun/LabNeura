@@ -1,9 +1,11 @@
 #ifndef LABNEURA_EDA_NETLIST_H
 #define LABNEURA_EDA_NETLIST_H
 
+#include "labneura/eda/cell_library.h"
 #include "labneura/eda/expression.h"
 
 #include <cstddef>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -65,21 +67,25 @@ private:
 class Instance {
 public:
     Instance(std::string name, std::string cell_type,
-             std::vector<PinConnection> connections)
+             std::vector<PinConnection> connections,
+             std::optional<StandardCell> cell = std::nullopt)
         : name_(std::move(name)),
           cell_type_(std::move(cell_type)),
-          connections_(std::move(connections)) {}
+          connections_(std::move(connections)),
+          cell_(std::move(cell)) {}
 
     const std::string& get_name() const noexcept { return name_; }
     const std::string& get_cell_type() const noexcept { return cell_type_; }
     const std::vector<PinConnection>& get_connections() const noexcept {
         return connections_;
     }
+    const std::optional<StandardCell>& get_cell() const noexcept { return cell_; }
 
 private:
     std::string name_;
     std::string cell_type_;
     std::vector<PinConnection> connections_;
+    std::optional<StandardCell> cell_;
 };
 
 class ContinuousAssignment {

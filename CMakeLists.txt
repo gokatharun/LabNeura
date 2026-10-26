@@ -4,12 +4,44 @@ project(LabNeura LANGUAGES CXX)
 include(CheckCXXCompilerFlag)
 include(FetchContent)
 
-# Embed the educational Liberty file so the default parser works in source
-# checkouts and installed wheels alike.
-file(READ "${CMAKE_SOURCE_DIR}/assets/cells.lib" LABNEURA_EDA_LIBERTY_SOURCE)
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-  "${CMAKE_SOURCE_DIR}/assets/cells.lib"
+# Embed the SKY130 Liberty file so the default parser works in source checkouts
+# and installed wheels alike.
+set(LABNEURA_EDA_DEFAULT_LIBERTY
+  "${CMAKE_SOURCE_DIR}/assets/sky130_fd_sc_hd__tt_025C_1v80.lib"
 )
+file(READ "${LABNEURA_EDA_DEFAULT_LIBERTY}" LABNEURA_EDA_LIBERTY_SOURCE)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+  "${LABNEURA_EDA_DEFAULT_LIBERTY}"
+)
+
+# Keep each C++ string literal below the minimum supported compiler limit.
+string(LENGTH "${LABNEURA_EDA_LIBERTY_SOURCE}" LABNEURA_EDA_LIBERTY_LENGTH)
+set(LABNEURA_EDA_LIBERTY_CHUNKS "")
+set(LABNEURA_EDA_LIBERTY_OFFSET 0)
+set(LABNEURA_EDA_LIBERTY_CHUNK_SIZE 60000)
+while(LABNEURA_EDA_LIBERTY_OFFSET LESS LABNEURA_EDA_LIBERTY_LENGTH)
+  math(EXPR LABNEURA_EDA_LIBERTY_REMAINING
+    "${LABNEURA_EDA_LIBERTY_LENGTH} - ${LABNEURA_EDA_LIBERTY_OFFSET}"
+  )
+  if(LABNEURA_EDA_LIBERTY_REMAINING LESS LABNEURA_EDA_LIBERTY_CHUNK_SIZE)
+    set(LABNEURA_EDA_LIBERTY_CHUNK_SIZE
+      "${LABNEURA_EDA_LIBERTY_REMAINING}"
+    )
+  endif()
+  string(SUBSTRING "${LABNEURA_EDA_LIBERTY_SOURCE}"
+    "${LABNEURA_EDA_LIBERTY_OFFSET}"
+    "${LABNEURA_EDA_LIBERTY_CHUNK_SIZE}"
+    LABNEURA_EDA_LIBERTY_CHUNK
+  )
+  string(APPEND LABNEURA_EDA_LIBERTY_CHUNKS
+    "    R\"LABNEURA_CHUNK(${LABNEURA_EDA_LIBERTY_CHUNK})LABNEURA_CHUNK\",\n"
+  )
+  math(EXPR LABNEURA_EDA_LIBERTY_OFFSET
+    "${LABNEURA_EDA_LIBERTY_OFFSET} + ${LABNEURA_EDA_LIBERTY_CHUNK_SIZE}"
+  )
+  set(LABNEURA_EDA_LIBERTY_CHUNK_SIZE 60000)
+endwhile()
+
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/generated/labneura/eda")
 configure_file(
   "${CMAKE_SOURCE_DIR}/src/labneura/eda/default_cell_library.h.in"

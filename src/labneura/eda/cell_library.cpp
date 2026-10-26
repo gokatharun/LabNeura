@@ -102,6 +102,25 @@ private:
     void tokenize() {
         std::size_t i = 0;
         while (i < source_.size()) {
+            if (source_[i] == '\\') {
+                std::size_t continuation_end = i + 1;
+                while (continuation_end < source_.size() &&
+                       (source_[continuation_end] == ' ' ||
+                        source_[continuation_end] == '\t')) {
+                    ++continuation_end;
+                }
+                if (continuation_end < source_.size() &&
+                    (source_[continuation_end] == '\n' ||
+                     source_[continuation_end] == '\r')) {
+                    i = continuation_end + 1;
+                    if (source_[continuation_end] == '\r' &&
+                        i < source_.size() && source_[i] == '\n') {
+                        ++i;
+                    }
+                    continue;
+                }
+            }
+
             const unsigned char character =
                 static_cast<unsigned char>(source_[i]);
             if (std::isspace(character)) {
@@ -525,7 +544,7 @@ StandardCellLibrary parse_liberty(const std::string& path) {
 
 const StandardCellLibrary& get_default_cell_library() {
     static const StandardCellLibrary library =
-        parse_liberty_source(std::string(detail::bundled_liberty));
+        parse_liberty_source(detail::get_bundled_liberty());
     return library;
 }
 

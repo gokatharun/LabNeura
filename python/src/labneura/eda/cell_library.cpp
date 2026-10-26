@@ -1,4 +1,5 @@
 #include "labneura/eda/cell_library.h"
+#include "labneura/eda/default_cell_library.h"
 
 #include <cctype>
 #include <cmath>
@@ -101,6 +102,25 @@ private:
     void tokenize() {
         std::size_t i = 0;
         while (i < source_.size()) {
+            if (source_[i] == '\\') {
+                std::size_t continuation_end = i + 1;
+                while (continuation_end < source_.size() &&
+                       (source_[continuation_end] == ' ' ||
+                        source_[continuation_end] == '\t')) {
+                    ++continuation_end;
+                }
+                if (continuation_end < source_.size() &&
+                    (source_[continuation_end] == '\n' ||
+                     source_[continuation_end] == '\r')) {
+                    i = continuation_end + 1;
+                    if (source_[continuation_end] == '\r' &&
+                        i < source_.size() && source_[i] == '\n') {
+                        ++i;
+                    }
+                    continue;
+                }
+            }
+
             const unsigned char character =
                 static_cast<unsigned char>(source_[i]);
             if (std::isspace(character)) {
@@ -520,6 +540,12 @@ StandardCellLibrary parse_liberty(const std::string& path) {
         throw std::runtime_error("failed reading Liberty file: " + path);
     }
     return parse_library(source.str());
+}
+
+const StandardCellLibrary& get_default_cell_library() {
+    static const StandardCellLibrary library =
+        parse_liberty_source(detail::get_bundled_liberty());
+    return library;
 }
 
 }  // namespace labneura::eda

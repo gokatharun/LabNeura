@@ -1,6 +1,7 @@
 #ifndef LABNEURA_EDA_CELL_LIBRARY_H
 #define LABNEURA_EDA_CELL_LIBRARY_H
 
+#include <cstddef>
 #include <optional>
 #include <string>
 #include <utility>
@@ -125,6 +126,12 @@ public:
     const std::string& get_name() const noexcept { return name_; }
     const std::optional<double>& get_area() const noexcept { return area_; }
     const std::vector<CellPin>& get_pins() const noexcept { return pins_; }
+    const CellPin* find_pin(const std::string& name) const noexcept {
+        for (const auto& pin : pins_) {
+            if (pin.get_name() == name) return &pin;
+        }
+        return nullptr;
+    }
 
 private:
     std::string name_;
@@ -149,6 +156,12 @@ public:
     }
     const std::vector<StandardCell>& get_cells() const noexcept { return cells_; }
     std::size_t get_cell_count() const noexcept { return cells_.size(); }
+    const StandardCell* find_cell(const std::string& name) const noexcept {
+        for (const auto& cell : cells_) {
+            if (cell.get_name() == name) return &cell;
+        }
+        return nullptr;
+    }
 
 private:
     std::string name_;
@@ -159,6 +172,7 @@ private:
 
 StandardCellLibrary parse_liberty(const std::string& path);
 StandardCellLibrary parse_liberty_source(const std::string& source);
+const StandardCellLibrary& get_default_cell_library();
 
 }  // namespace labneura::eda
 

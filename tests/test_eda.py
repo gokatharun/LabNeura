@@ -94,8 +94,8 @@ def test_parse_verilog_builds_module_netlist():
          {connection.pin: connection.net for connection in instance.connections})
         for instance in module.instances
     ] == [
-        ("AND1", "AND", {"Y": "w", "A": "a", "B": "b"}),
-        ("OR1", "OR", {"Y": "f", "A": "w", "B": "c"}),
+        ("AND1", "AND", {"X": "w", "A": "a", "B": "b"}),
+        ("OR1", "OR", {"X": "f", "A": "w", "B": "c"}),
     ]
     with pytest.raises(AttributeError):
         module.name = "changed"
@@ -123,14 +123,14 @@ def test_parse_verilog_resolves_instances_to_bundled_cells(tmp_path):
     module = eda.parse_verilog(str(verilog_path))
 
     assert [(instance.cell_type, instance.cell.name) for instance in module.instances] == [
-        ("and", "AND2_X1"),
-        ("or", "OR2_X1"),
+        ("and", "sky130_fd_sc_hd__and2_1"),
+        ("or", "sky130_fd_sc_hd__or2_1"),
     ]
-    assert module.instances[0].cell.area == pytest.approx(0.90)
+    assert module.instances[0].cell.area == pytest.approx(6.256)
     assert {
         connection.pin: connection.net
         for connection in module.instances[0].connections
-    } == {"Y": "w", "A": "a", "B": "b"}
+    } == {"X": "w", "A": "a", "B": "b"}
 
 
 def test_parse_verilog_resolves_explicit_liberty_cell_instances(tmp_path):
@@ -144,11 +144,58 @@ def test_parse_verilog_resolves_explicit_liberty_cell_instances(tmp_path):
     module = eda.parse_verilog(str(verilog_path))
 
     instance = module.instances[0]
-    assert instance.cell.name == "AND2_X1"
+    assert instance.cell.name == "sky130_fd_sc_hd__and2_1"
     assert instance.cell.pins[0].direction == "input"
     assert {
         connection.pin: connection.net for connection in instance.connections
-    } == {"A": "a", "B": "b", "Y": "y"}
+    } == {"A": "a", "B": "b", "X": "y"}
+
+
+def test_parse_verilog_resolves_legacy_mux2_cell_alias(tmp_path):
+    verilog_path = tmp_path / "mux2_cell.v"
+    verilog_path.write_text(
+        "module top (a, b, s, y); input a, b, s; output y; "
+        "MUX2_X1 mux (.A0(a), .A1(b), .S(s), .Y(y)); endmodule",
+        encoding="utf-8",
+    )
+
+    instance = eda.parse_verilog(str(verilog_path)).instances[0]
+
+    assert instance.cell.name == "sky130_fd_sc_hd__mux2_1"
+    assert {
+        connection.pin: connection.net for connection in instance.connections
+    } == {
+        "A0": "a",
+        "A1": "b",
+        "S": "s",
+        "X": "y",
+    }
+
+
+def test_parse_half_adder_verilog_resolves_cells():
+    verilog_path = Path(__file__).resolve().parents[1] / "examples/verilog/half_adder.v"
+
+    module = eda.parse_verilog(str(verilog_path))
+    source_module = eda.parse_verilog_source(
+        verilog_path.read_text(encoding="utf-8")
+    )
+
+    assert module.name == "half_adder"
+    assert [(instance.name, instance.cell.name) for instance in module.instances] == [
+        ("sum", "sky130_fd_sc_hd__xor2_1"),
+        ("carry", "sky130_fd_sc_hd__and2_1"),
+    ]
+    assert [
+        {connection.pin: connection.net for connection in instance.connections}
+        for instance in module.instances
+    ] == [
+        {"X": "s", "A": "a", "B": "b"},
+        {"X": "c", "A": "a", "B": "b"},
+    ]
+    assert [instance.cell.name for instance in source_module.instances] == [
+        "sky130_fd_sc_hd__xor2_1",
+        "sky130_fd_sc_hd__and2_1",
+    ]
 
 
 def test_parse_verilog_reports_cells_missing_from_bundled_library(tmp_path):
@@ -174,27 +221,19 @@ def test_parse_verilog_reads_ansi_ports_and_assignments():
         ("S", eda.PortDirection.INPUT),
         ("Y", eda.PortDirection.OUTPUT),
     ]
-    assert [(assignment.lhs, assignment.rhs) for assignment in module.assignments] == [
-        ("Y", "I[S]")
-    ]
-    assert module.get_assignments()[0].get_lhs() == "Y"
-    assert module.get_assignments()[0].get_rhs() == "I[S]"
-    rhs = module.assignments[0].rhs_expression
-    assert rhs.kind == eda.ExpressionKind.BIT_SELECT
-    assert rhs.source == "I[S]"
-    assert [(operand.kind, operand.value) for operand in rhs.operands] == [
-        (eda.ExpressionKind.IDENTIFIER, "I"),
-        (eda.ExpressionKind.IDENTIFIER, "S"),
+    assert module.assignments == []
+    assert len(module.instances) == 3
+    assert {instance.cell.name for instance in module.instances} == {
+        "sky130_fd_sc_hd__mux2_1"
+    }
+    assert [net.name for net in module.nets if net.kind == eda.NetType.INTERNAL] == [
+        "__labneura_muxnet0",
+        "__labneura_muxnet1",
     ]
     serialized = json.loads(eda.to_json(module))
-    serialized_assignment = serialized["modules"][0]["assignments"][0]
-    assert serialized_assignment["lhs"] == "Y"
-    assert serialized_assignment["rhs"] == "I[S]"
-    assert serialized_assignment["rhs_expression"]["kind"] == "bit_select"
-    assert [
-        operand["value"]
-        for operand in serialized_assignment["rhs_expression"]["operands"]
-    ] == ["I", "S"]
+    serialized_module = serialized["modules"][0]
+    assert serialized_module["assignments"] == []
+    assert len(serialized_module["instances"]) == 3
 
 
 def test_parse_verilog_lowers_binary_assignment_expression(tmp_path):
@@ -206,11 +245,179 @@ def test_parse_verilog_lowers_binary_assignment_expression(tmp_path):
     )
 
     module = eda.parse_verilog(str(verilog_path))
-    rhs = module.assignments[0].rhs_expression
 
-    assert rhs.kind == eda.ExpressionKind.BINARY
-    assert rhs.value == "&"
-    assert [operand.value for operand in rhs.operands] == ["a", "b"]
+    assert module.assignments == []
+    assert len(module.instances) == 1
+    instance = module.instances[0]
+    assert instance.cell.name == "sky130_fd_sc_hd__and2_1"
+    assert {
+        connection.pin: connection.net for connection in instance.connections
+    } == {"A": "a", "B": "b", "X": "y"}
+
+
+def test_parse_verilog_lowers_scalar_not_and_conditional_cells(tmp_path):
+    verilog_path = tmp_path / "logic_cells.v"
+    verilog_path.write_text(
+        "module logic_cells(input wire a, b, s, output wire y, z); "
+        "assign y = ~a; assign z = s ? a : b; endmodule",
+        encoding="utf-8",
+    )
+
+    module = eda.parse_verilog(str(verilog_path))
+
+    assert module.assignments == []
+    assert [(instance.cell.name, {
+        connection.pin: connection.net for connection in instance.connections
+    }) for instance in module.instances] == [
+        ("sky130_fd_sc_hd__inv_1", {"A": "a", "Y": "y"}),
+        (
+            "sky130_fd_sc_hd__mux2_1",
+            {"A0": "b", "A1": "a", "S": "s", "X": "z"},
+        ),
+    ]
+
+
+def test_parse_verilog_lowers_direct_scalar_assignment_to_buffer(tmp_path):
+    verilog_path = tmp_path / "buffer.v"
+    verilog_path.write_text(
+        "module buffer_example(input wire a, output wire y); "
+        "assign y = a; endmodule",
+        encoding="utf-8",
+    )
+
+    module = eda.parse_verilog(str(verilog_path))
+
+    assert module.assignments == []
+    assert module.instances[0].cell.name == "sky130_fd_sc_hd__buf_1"
+    assert {
+        connection.pin: connection.net
+        for connection in module.instances[0].connections
+    } == {"A": "a", "X": "y"}
+
+
+@pytest.mark.parametrize(
+    ("literal", "expected_cell"),
+    [
+        ("1'b0", "LO"),
+        ("1'b1", "HI"),
+        ("0", "LO"),
+        ("1", "HI"),
+        ("2", "LO"),
+    ],
+)
+def test_parse_verilog_lowers_scalar_constants_to_tie_cells(
+    tmp_path, literal, expected_cell
+):
+    verilog_path = tmp_path / "tie.v"
+    verilog_path.write_text(
+        f"module tie_example(output wire y); assign y = {literal}; endmodule",
+        encoding="utf-8",
+    )
+
+    module = eda.parse_verilog(str(verilog_path))
+
+    assert module.assignments == []
+    assert len(module.instances) == 1
+    instance = module.instances[0]
+    assert instance.cell.name == "sky130_fd_sc_hd__conb_1"
+    assert {
+        connection.pin: connection.net for connection in instance.connections
+    } == {expected_cell: "y"}
+
+
+def test_parse_verilog_rejects_unknown_scalar_constants(tmp_path):
+    verilog_path = tmp_path / "unknown_tie.v"
+    verilog_path.write_text(
+        "module tie_example(output wire y); assign y = 1'bx; endmodule",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RuntimeError, match="X/Z constants cannot be mapped"):
+        eda.parse_verilog(str(verilog_path))
+
+
+def test_parse_verilog_errors_when_assignment_has_no_cell_mapping(tmp_path):
+    verilog_path = tmp_path / "unsupported_operator.v"
+    verilog_path.write_text(
+        "module top(input wire a, b, output wire y); "
+        "assign y = a + b; endmodule",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RuntimeError, match="no supported standard-cell mapping"):
+        eda.parse_verilog(str(verilog_path))
+
+
+def test_parse_full_adder_lowers_nested_boolean_expressions():
+    verilog_path = (
+        Path(__file__).resolve().parents[1] / "examples/verilog/full_adder.v"
+    )
+
+    module = eda.parse_verilog(str(verilog_path))
+
+    assert module.assignments == []
+    assert len(module.instances) == 7
+    assert len(module.nets) == 10
+    cell_names = [instance.cell.name for instance in module.instances]
+    assert cell_names.count("sky130_fd_sc_hd__xor2_1") == 2
+    assert cell_names.count("sky130_fd_sc_hd__and2_1") == 3
+    assert cell_names.count("sky130_fd_sc_hd__or2_1") == 2
+    driven_nets = {
+        connection.net
+        for instance in module.instances
+        for connection in instance.connections
+        if connection.pin
+        in {"X", "Y"}
+    }
+    assert {"Sum", "Cout"} <= driven_nets
+
+
+def test_generated_logic_instance_names_do_not_collide_with_nets(tmp_path):
+    verilog_path = tmp_path / "generated_name_collision.v"
+    verilog_path.write_text(
+        "module top(input wire a, b, output wire y); "
+        "wire __labneura_logic0; assign y = a ^ b; endmodule",
+        encoding="utf-8",
+    )
+
+    module = eda.parse_verilog(str(verilog_path))
+
+    assert {net.name for net in module.nets}.isdisjoint(
+        instance.name for instance in module.instances
+    )
+
+
+@pytest.mark.parametrize(
+    "relative_path",
+    [
+        "and_gate.v",
+        "or_gate.v",
+        "mux.v",
+        "alarm_logic.v",
+        "majority3.v",
+        "at_least_two_of_four.v",
+        "half_adder.v",
+    ],
+)
+def test_parse_combinational_examples_resolves_every_instance(relative_path):
+    verilog_path = Path(__file__).resolve().parents[1] / "examples/verilog" / relative_path
+
+    module = eda.parse_verilog(str(verilog_path))
+
+    assert module.instances
+    assert module.assignments == []
+    assert all(instance.cell is not None for instance in module.instances)
+
+
+def test_parse_verilog_rejects_unmapped_procedural_blocks(tmp_path):
+    verilog_path = tmp_path / "testbench.v"
+    verilog_path.write_text(
+        'module testbench; initial begin $display("simulation only"); end endmodule',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RuntimeError, match="procedural block 'initial'.*not yet supported"):
+        eda.parse_verilog(str(verilog_path))
 
 
 def test_parse_liberty_exposes_cells_pins_and_timing_tables(tmp_path):
@@ -256,6 +463,32 @@ def test_parse_liberty_exposes_cells_pins_and_timing_tables(tmp_path):
     ]
 
 
+def test_parse_liberty_accepts_backslash_line_continuations():
+    source = """
+    library (continued_values) {
+      cell (BUF_X1) {
+        pin (Y) {
+          direction : output;
+          timing () {
+            cell_rise (delay_template) {
+              values ("0.11, 0.12", \\
+                      "0.21, 0.22");
+            }
+          }
+        }
+      }
+    }
+    """
+
+    library = eda.parse_liberty_source(source)
+    table = library.cells[0].pins[0].timing_arcs[0].cell_rise
+
+    assert table.values == [
+        pytest.approx([0.11, 0.12]),
+        pytest.approx([0.21, 0.22]),
+    ]
+
+
 def test_parse_educational_liberty_asset():
     liberty_path = Path(__file__).resolve().parents[1] / "assets/cells.lib"
 
@@ -264,15 +497,32 @@ def test_parse_educational_liberty_asset():
     assert library.name == "labneura_educational_cells"
     assert {cell.name for cell in library.cells} == {
         "INV_X1",
+        "BUF_X1",
+        "TIELO_X1",
+        "TIEHI_X1",
         "AND2_X1",
+        "XOR2_X1",
         "OR2_X1",
         "MUX2_X1",
+        "MUX4_X1",
     }
     mux = next(cell for cell in library.cells if cell.name == "MUX2_X1")
     output = next(pin for pin in mux.pins if pin.name == "Y")
     assert output.function == "(!S & A0) | (S & A1)"
     assert {arc.related_pin for arc in output.timing_arcs} == {"A0", "A1", "S"}
     assert output.timing_arcs[0].cell_rise.values
+
+
+def test_parse_sky130_typical_liberty_asset():
+    liberty_path = (
+        Path(__file__).resolve().parents[1]
+        / "assets/sky130_fd_sc_hd__tt_025C_1v80.lib"
+    )
+
+    library = eda.parse_liberty(str(liberty_path))
+
+    assert library.name == "sky130_fd_sc_hd__tt_025C_1v80"
+    assert library.cell_count == 428
 
 
 def test_parse_liberty_source_rejects_missing_cells():
@@ -380,6 +630,34 @@ def test_parse_full_8080_core_project():
         "tb_i8080",
     }
     assert project.source_files
+    testbench = next(module for module in project.modules if module.name == "tb_i8080")
+    cpu = next(module for module in project.modules if module.name == "i8080")
+    assert [
+        (instance.name, instance.cell_type) for instance in testbench.instances
+    ] == [("cpu", "i8080")]
+    assert {
+        connection.pin: connection.net
+        for connection in testbench.instances[0].connections
+    } == {
+        "i_rst": "reset",
+        "i_clk": "clk",
+        "i_ready": "ready",
+        "o_io": "io",
+        "o_addr": "address",
+        "i_dat_r": "data_to_cpu",
+        "o_read": "read",
+        "o_dat_w": "data_from_cpu",
+        "o_write": "write",
+        "i_int": "1'b0",
+        "o_inta": "interrupt_ack",
+    }
+    alu_connections = {
+        connection.pin: connection.net for connection in cpu.instances[0].connections
+    }
+    assert alu_connections["in_a"] == "r_a"
+    assert alu_connections["in_c"] == "r_f_c"
+    assert alu_connections["out"] == "alu_out"
+    assert alu_connections["out_p"] == "alu_out_p"
 
 
 def test_parse_modular_traffic_signal_project():

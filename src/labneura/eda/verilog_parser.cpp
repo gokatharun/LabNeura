@@ -9,10 +9,13 @@
 #include "slang/ast/expressions/SelectExpressions.h"
 #include "slang/ast/symbols/CompilationUnitSymbols.h"
 #include "slang/ast/symbols/InstanceSymbols.h"
+#include "slang/ast/symbols/BlockSymbols.h"
 #include "slang/ast/symbols/MemberSymbols.h"
 #include "slang/ast/symbols/PortSymbols.h"
+#include "slang/ast/types/Type.h"
 #include "slang/diagnostics/TextDiagnosticClient.h"
 #include "slang/driver/Driver.h"
+#include "slang/ast/SemanticFacts.h"
 #include "slang/syntax/SyntaxTree.h"
 #include "slang/text/Json.h"
 #include "slang/text/SourceManager.h"
@@ -127,17 +130,75 @@ std::string expression_source(const slang::ast::Expression& expression,
 }
 
 std::string liberty_cell_name(const std::string& verilog_type) {
-    if (verilog_type == "and") return "AND2_X1";
-    if (verilog_type == "or") return "OR2_X1";
-    if (verilog_type == "AND") return "AND2_X1";
-    if (verilog_type == "OR") return "OR2_X1";
+    if (verilog_type == "and" || verilog_type == "AND" ||
+        verilog_type == "AND2_X1") {
+        return "sky130_fd_sc_hd__and2_1";
+    }
+    if (verilog_type == "or" || verilog_type == "OR" ||
+        verilog_type == "OR2_X1") {
+        return "sky130_fd_sc_hd__or2_1";
+    }
+    if (verilog_type == "xor" || verilog_type == "XOR" ||
+        verilog_type == "XOR2_X1") {
+        return "sky130_fd_sc_hd__xor2_1";
+    }
+    if (verilog_type == "INV_X1") return "sky130_fd_sc_hd__inv_1";
+    if (verilog_type == "BUF_X1") return "sky130_fd_sc_hd__buf_1";
+    if (verilog_type == "TIELO_X1" || verilog_type == "TIEHI_X1") {
+        return "sky130_fd_sc_hd__conb_1";
+    }
+    if (verilog_type == "MUX2_X1") return "sky130_fd_sc_hd__mux2_1";
     return verilog_type;
+}
+
+std::string physical_pin_name(const StandardCell& cell,
+                              const std::string& logical_cell_type,
+                              const std::string& pin_name) {
+    for (const auto& pin : cell.get_pins()) {
+        if (pin.get_name() == pin_name) return pin_name;
+    }
+
+    if (pin_name == "Y") {
+        const std::string expected_function =
+            logical_cell_type == "TIELO_X1"
+                ? "0"
+                : logical_cell_type == "TIEHI_X1" ? "1" : "";
+        for (const auto& pin : cell.get_pins()) {
+            if (pin.get_direction() == "output" &&
+                (expected_function.empty() ||
+                 pin.get_function() == expected_function)) {
+                return pin.get_name();
+            }
+        }
+    }
+
+    throw std::runtime_error("standard cell '" + cell.get_name() +
+                             "' has no pin corresponding to '" + pin_name +
+                             "'");
+}
+
+std::vector<PinConnection> physical_connections(
+    const StandardCell& cell, const std::string& logical_cell_type,
+    std::vector<PinConnection> connections) {
+    for (auto& connection : connections) {
+        connection = PinConnection(
+            physical_pin_name(cell, logical_cell_type, connection.get_pin()),
+            connection.get_net());
+    }
+    return connections;
+}
+
+bool is_cell_type(const StandardCellLibrary& library,
+                  const std::string& verilog_type) {
+    return library.find_cell(verilog_type) ||
+           library.find_cell(liberty_cell_name(verilog_type));
 }
 
 const StandardCell& resolve_cell(const StandardCellLibrary& library,
                                  const std::string& verilog_type) {
     const auto liberty_name = liberty_cell_name(verilog_type);
     const auto* cell = library.find_cell(liberty_name);
+    if (!cell) cell = library.find_cell(verilog_type);
     if (!cell) {
         throw std::runtime_error("standard cell '" + verilog_type +
                                  "' was not found in Liberty library '" +
@@ -154,27 +215,43 @@ std::string make_cell_stub_source(const StandardCellLibrary& library) {
         for (const auto& pin : cell.get_pins()) {
             if (pin.get_direction() != "input" &&
                 pin.get_direction() != "output" &&
-                pin.get_direction() != "inout") {
-                throw std::runtime_error("cell '" + cell.get_name() +
-                                         "' has unsupported direction for pin '" +
-                                         pin.get_name() + "'");
-            }
+                pin.get_direction() != "inout")
+                continue;
             if (!first) source << ", ";
             source << pin.get_direction() << ' ' << pin.get_name();
             first = false;
         }
         source << "); endmodule\n";
     }
+
+    const std::vector<std::pair<std::string, std::string>> aliases = {
+        {"AND2_X1", "input A, input B, output Y"},
+        {"OR2_X1", "input A, input B, output Y"},
+        {"XOR2_X1", "input A, input B, output Y"},
+        {"INV_X1", "input A, output Y"},
+        {"BUF_X1", "input A, output Y"},
+        {"TIELO_X1", "output Y"},
+        {"TIEHI_X1", "output Y"},
+        {"MUX2_X1", "input A0, input A1, input S, output Y"},
+    };
+    for (const auto& [alias, pins] : aliases) {
+        if (!library.find_cell(alias) &&
+            library.find_cell(liberty_cell_name(alias))) {
+            source << "module " << alias << " (" << pins << "); endmodule\n";
+        }
+    }
     return source.str();
 }
 
 std::vector<PinConnection> module_pin_connections(
     const slang::ast::InstanceSymbol& instance,
-    const slang::SourceManager& source_manager, const StandardCell& cell) {
+    const slang::SourceManager& source_manager, const StandardCell& cell,
+    const std::string& logical_cell_type) {
     std::vector<PinConnection> connections;
     for (const auto* connection : instance.getPortConnections()) {
         if (!connection->getExpression()) continue;
-        const std::string pin_name(connection->port.name);
+        const std::string pin_name = physical_pin_name(
+            cell, logical_cell_type, std::string(connection->port.name));
         if (!cell.find_pin(pin_name)) {
             throw std::runtime_error("cell '" + cell.get_name() +
                                      "' has no pin named '" + pin_name + "'");
@@ -182,6 +259,19 @@ std::vector<PinConnection> module_pin_connections(
         connections.emplace_back(
             pin_name, expression_source(*connection->getExpression(),
                                         source_manager));
+    }
+    return connections;
+}
+
+std::vector<PinConnection> module_port_connections(
+    const slang::ast::InstanceSymbol& instance,
+    const slang::SourceManager& source_manager) {
+    std::vector<PinConnection> connections;
+    for (const auto* connection : instance.getPortConnections()) {
+        if (!connection->getExpression()) continue;
+        connections.emplace_back(
+            std::string(connection->port.name),
+            expression_source(*connection->getExpression(), source_manager));
     }
     return connections;
 }
@@ -220,6 +310,244 @@ std::vector<PinConnection> primitive_pin_connections(
                                                    source_manager));
     }
     return connections;
+}
+
+struct LoweredAssignment {
+    std::vector<Instance> instances;
+    std::vector<Net> nets;
+};
+
+std::optional<LoweredAssignment> lower_mux4_assignment(
+    const slang::ast::AssignmentExpression& assignment,
+    const slang::SourceManager& source_manager,
+    const StandardCellLibrary& library, std::size_t generated_index) {
+    using slang::ast::ExpressionKind;
+    if (assignment.left().kind != ExpressionKind::NamedValue ||
+        assignment.left().type->getBitWidth() != 1 ||
+        assignment.right().kind != ExpressionKind::ElementSelect) {
+        return std::nullopt;
+    }
+
+    const auto& select =
+        assignment.right().as<slang::ast::ElementSelectExpression>();
+    if (select.value().kind != ExpressionKind::NamedValue ||
+        !select.value().type->hasFixedRange() ||
+        select.value().type->getFixedRange().lower() != 0 ||
+        select.value().type->getFixedRange().upper() != 3 ||
+        select.selector().type->getBitWidth() != 2 ||
+        !select.selector().type->hasFixedRange() ||
+        select.selector().type->getFixedRange().lower() != 0 ||
+        select.selector().type->getFixedRange().upper() != 1 ||
+        select.selector().type->getFixedRange().width() != 2) {
+        return std::nullopt;
+    }
+
+    const std::string data_name =
+        std::string(select.value().as<slang::ast::NamedValueExpression>()
+                        .symbol.name);
+    const std::string select_name =
+        expression_source(select.selector(), source_manager);
+    const std::string output =
+        expression_source(assignment.left(), source_manager);
+
+    if (const auto* mux4 = library.find_cell("MUX4_X1")) {
+        std::vector<PinConnection> connections;
+        for (int bit = 0; bit < 4; ++bit) {
+            connections.emplace_back(
+                "A" + std::to_string(bit),
+                data_name + "[" + std::to_string(bit) + "]");
+        }
+        for (int bit = 0; bit < 2; ++bit) {
+            connections.emplace_back(
+                "S" + std::to_string(bit),
+                select_name + "[" + std::to_string(bit) + "]");
+        }
+        connections.emplace_back("Y", output);
+        return LoweredAssignment{
+            {Instance("__labneura_mux" + std::to_string(generated_index),
+                      mux4->get_name(), std::move(connections), *mux4)},
+            {}};
+    }
+
+    const auto& mux2 = resolve_cell(library, "MUX2_X1");
+    const std::string low_net =
+        "__labneura_muxnet" + std::to_string(generated_index);
+    const std::string high_net =
+        "__labneura_muxnet" + std::to_string(generated_index + 1);
+    const auto make_mux = [&](std::size_t index, const std::string& a0,
+                              const std::string& a1, const std::string& sel,
+                              const std::string& y) {
+        std::vector<PinConnection> connections = {
+            {"A0", a0}, {"A1", a1}, {"S", sel}, {"Y", y}};
+        connections =
+            physical_connections(mux2, "MUX2_X1", std::move(connections));
+        return Instance("__labneura_mux" + std::to_string(index),
+                        mux2.get_name(), std::move(connections), mux2);
+    };
+
+    std::vector<Instance> instances;
+    instances.reserve(3);
+    instances.push_back(make_mux(generated_index, data_name + "[0]",
+                                 data_name + "[1]", select_name + "[0]",
+                                 low_net));
+    instances.push_back(make_mux(generated_index + 1, data_name + "[2]",
+                                 data_name + "[3]", select_name + "[0]",
+                                 high_net));
+    instances.push_back(make_mux(generated_index + 2, low_net, high_net,
+                                 select_name + "[1]", output));
+    return LoweredAssignment{
+        std::move(instances),
+        {Net(low_net, NetType::Internal), Net(high_net, NetType::Internal)}};
+}
+
+std::optional<std::string> scalar_signal(
+    const slang::ast::Expression& expression,
+    const slang::SourceManager& source_manager) {
+    using slang::ast::ExpressionKind;
+    if (expression.type->getBitWidth() != 1) return std::nullopt;
+    if (expression.kind == ExpressionKind::NamedValue) {
+        return std::string(
+            expression.as<slang::ast::NamedValueExpression>().symbol.name);
+    }
+    if (expression.kind == ExpressionKind::ElementSelect) {
+        return expression_source(expression, source_manager);
+    }
+    return std::nullopt;
+}
+
+std::optional<bool> scalar_constant(const slang::ast::Expression& expression) {
+    using slang::ast::ExpressionKind;
+    if (expression.kind == ExpressionKind::IntegerLiteral) {
+        const auto bit =
+            expression.as<slang::ast::IntegerLiteral>().getValue()[0];
+        if (bit.isUnknown()) {
+            throw std::runtime_error(
+                "scalar X/Z constants cannot be mapped to tie cells");
+        }
+        return static_cast<bool>(bit);
+    }
+    if (expression.kind == ExpressionKind::UnbasedUnsizedIntegerLiteral) {
+        const auto bit = expression.as<
+            slang::ast::UnbasedUnsizedIntegerLiteral>().getLiteralValue();
+        if (bit.isUnknown()) {
+            throw std::runtime_error(
+                "scalar X/Z constants cannot be mapped to tie cells");
+        }
+        return static_cast<bool>(bit);
+    }
+
+    const auto* constant = expression.getConstant();
+    if (!constant || !constant->isInteger()) return std::nullopt;
+
+    const auto bit = constant->integer()[0];
+    if (bit.isUnknown()) {
+        throw std::runtime_error(
+            "scalar X/Z constants cannot be mapped to tie cells");
+    }
+    return static_cast<bool>(bit);
+}
+
+std::optional<LoweredAssignment> lower_scalar_boolean_assignment(
+    const slang::ast::AssignmentExpression& assignment,
+    const slang::SourceManager& source_manager,
+    const StandardCellLibrary& library, std::size_t generated_index) {
+    using slang::ast::ExpressionKind;
+    const auto output = scalar_signal(assignment.left(), source_manager);
+    if (!output) return std::nullopt;
+
+    LoweredAssignment lowered;
+    std::size_t next_index = generated_index;
+    const auto make_net = [&]() {
+        const auto name = "__labneura_logicnet" + std::to_string(next_index++);
+        lowered.nets.emplace_back(name, NetType::Internal);
+        return name;
+    };
+    const auto add_cell = [&](const std::string& cell_name,
+                              std::vector<PinConnection> connections,
+                              const std::string& destination) {
+        const auto& cell = resolve_cell(library, cell_name);
+        connections.emplace_back("Y", destination);
+        connections =
+            physical_connections(cell, cell_name, std::move(connections));
+        lowered.instances.emplace_back(
+            "__labneura_logic" + std::to_string(next_index++),
+            cell.get_name(), std::move(connections), cell);
+    };
+
+    const auto lower_into = [&](auto&& self, const slang::ast::Expression& expr,
+                                const std::string& destination) -> bool {
+        if (expr.type->getBitWidth() != 1) return false;
+        const auto lower_value = [&](const slang::ast::Expression& child)
+            -> std::optional<std::string> {
+            if (const auto signal = scalar_signal(child, source_manager)) {
+                return signal;
+            }
+            const auto net = make_net();
+            if (!self(self, child, net)) return std::nullopt;
+            return net;
+        };
+
+        if (expr.kind == ExpressionKind::BinaryOp) {
+            const auto& binary = expr.as<slang::ast::BinaryExpression>();
+            const std::string op =
+                source_range_text(binary.opRange, source_manager);
+            std::string cell_name;
+            if (op == "&" || op == "&&") {
+                cell_name = "AND2_X1";
+            } else if (op == "|" || op == "||") {
+                cell_name = "OR2_X1";
+            } else if (op == "^") {
+                cell_name = "XOR2_X1";
+            } else {
+                return false;
+            }
+            const auto left = lower_value(binary.left());
+            const auto right = lower_value(binary.right());
+            if (!left || !right) return false;
+            add_cell(cell_name, {{"A", *left}, {"B", *right}}, destination);
+            return true;
+        }
+
+        if (expr.kind == ExpressionKind::UnaryOp) {
+            const auto& unary = expr.as<slang::ast::UnaryExpression>();
+            const auto op = source_range_text(unary.opRange, source_manager);
+            if (op != "~" && op != "!") return false;
+            const auto operand = lower_value(unary.operand());
+            if (!operand) return false;
+            add_cell("INV_X1", {{"A", *operand}}, destination);
+            return true;
+        }
+
+        if (expr.kind == ExpressionKind::ConditionalOp) {
+            const auto& conditional =
+                expr.as<slang::ast::ConditionalExpression>();
+            if (conditional.conditions.size() != 1) return false;
+            const auto select =
+                lower_value(*conditional.conditions.front().expr);
+            const auto when_true = lower_value(conditional.left());
+            const auto when_false = lower_value(conditional.right());
+            if (!select || !when_true || !when_false) return false;
+            add_cell("MUX2_X1",
+                     {{"A0", *when_false}, {"A1", *when_true}, {"S", *select}},
+                     destination);
+            return true;
+        }
+
+        if (const auto constant = scalar_constant(expr)) {
+            add_cell(*constant ? "TIEHI_X1" : "TIELO_X1", {}, destination);
+            return true;
+        }
+        if (const auto signal = scalar_signal(expr, source_manager)) {
+            add_cell("BUF_X1", {{"A", *signal}}, destination);
+            return true;
+        }
+        return false;
+    };
+
+    if (!lower_into(lower_into, assignment.right(), *output)) {
+        return std::nullopt;
+    }
+    return lowered;
 }
 
 Expression lower_expression(const slang::ast::Expression& expression,
@@ -306,12 +634,16 @@ Module summarize_module(const slang::ast::InstanceSymbol& instance,
     std::vector<Instance> instances;
     std::vector<ContinuousAssignment> assignments;
     std::unordered_set<std::string> port_names;
+    std::unordered_set<std::string> instance_names;
+    std::unordered_set<std::string> net_names;
+    std::size_t generated_mux_index = 0;
 
     for (const auto* port_symbol : instance.body.getPortList()) {
         if (port_symbol->kind != slang::ast::SymbolKind::Port) continue;
         const auto& port = port_symbol->as<slang::ast::PortSymbol>();
         const std::string port_name(port.name);
         port_names.insert(port_name);
+        net_names.insert(port_name);
         PortDirection direction = PortDirection::InOut;
         if (port.direction == slang::ast::ArgumentDirection::In) {
             direction = PortDirection::Input;
@@ -332,8 +664,10 @@ Module summarize_module(const slang::ast::InstanceSymbol& instance,
              member.kind == slang::ast::SymbolKind::Variable) &&
             port_names.count(std::string(member.name)) == 0) {
             nets.emplace_back(std::string(member.name), NetType::Internal);
+            net_names.insert(std::string(member.name));
         } else if (member.kind == slang::ast::SymbolKind::Instance) {
             const auto& child = member.as<slang::ast::InstanceSymbol>();
+            instance_names.insert(std::string(child.name));
             const std::string cell_type(child.getDefinition().name);
             std::optional<StandardCell> cell;
             std::vector<PinConnection> connections;
@@ -341,7 +675,9 @@ Module summarize_module(const slang::ast::InstanceSymbol& instance,
                 const auto& definition = resolve_cell(*cell_library, cell_type);
                 cell = definition;
                 connections = module_pin_connections(child, source_manager,
-                                                     definition);
+                                                     definition, cell_type);
+            } else {
+                connections = module_port_connections(child, source_manager);
             }
             instances.emplace_back(
                 std::string(child.name), cell_type, std::move(connections),
@@ -349,6 +685,7 @@ Module summarize_module(const slang::ast::InstanceSymbol& instance,
         } else if (member.kind == slang::ast::SymbolKind::PrimitiveInstance) {
             const auto& child =
                 member.as<slang::ast::PrimitiveInstanceSymbol>();
+            instance_names.insert(std::string(child.name));
             const std::string cell_type(child.primitiveType.name);
             std::optional<StandardCell> cell;
             std::vector<PinConnection> connections;
@@ -365,9 +702,112 @@ Module summarize_module(const slang::ast::InstanceSymbol& instance,
             const auto& assignment =
                 member.as<slang::ast::ContinuousAssignSymbol>().getAssignment()
                     .as<slang::ast::AssignmentExpression>();
+            if (cell_library) {
+                auto mux = lower_mux4_assignment(assignment, source_manager,
+                                                 *cell_library,
+                                                 generated_mux_index);
+                if (mux) {
+                    const auto has_name_collision = [&]() {
+                        for (const auto& generated : mux->instances) {
+                            if (instance_names.count(generated.get_name()) !=
+                                    0 ||
+                                net_names.count(generated.get_name()) != 0) {
+                                return true;
+                            }
+                        }
+                        for (const auto& generated : mux->nets) {
+                            if (net_names.count(generated.get_name()) != 0 ||
+                                instance_names.count(generated.get_name()) !=
+                                    0) {
+                                return true;
+                            }
+                        }
+                        return false;
+                    };
+                    while (has_name_collision()) {
+                        ++generated_mux_index;
+                        mux = lower_mux4_assignment(
+                            assignment, source_manager, *cell_library,
+                            generated_mux_index);
+                        if (!mux) {
+                            throw std::runtime_error(
+                                "failed to generate unique mux instance and net names");
+                        }
+                    }
+                    for (auto& generated_net : mux->nets) {
+                        net_names.insert(generated_net.get_name());
+                        nets.push_back(std::move(generated_net));
+                    }
+                    for (auto& generated_instance : mux->instances) {
+                        instance_names.insert(generated_instance.get_name());
+                        instances.push_back(std::move(generated_instance));
+                    }
+                    generated_mux_index += mux->instances.size();
+                    continue;
+                }
+                auto logic = lower_scalar_boolean_assignment(
+                    assignment, source_manager, *cell_library,
+                    generated_mux_index);
+                if (logic) {
+                    const auto has_name_collision = [&]() {
+                        for (const auto& generated : logic->instances) {
+                            if (instance_names.count(generated.get_name()) !=
+                                    0 ||
+                                net_names.count(generated.get_name()) != 0) {
+                                return true;
+                            }
+                        }
+                        for (const auto& generated : logic->nets) {
+                            if (net_names.count(generated.get_name()) != 0 ||
+                                instance_names.count(generated.get_name()) !=
+                                    0) {
+                                return true;
+                            }
+                        }
+                        return false;
+                    };
+                    while (has_name_collision()) {
+                        logic = lower_scalar_boolean_assignment(
+                            assignment, source_manager, *cell_library,
+                            ++generated_mux_index);
+                        if (!logic) {
+                            throw std::runtime_error(
+                                "failed to generate unique logic-cell names");
+                        }
+                    }
+                    const auto generated_count =
+                        logic->instances.size() + logic->nets.size();
+                    for (auto& generated_net : logic->nets) {
+                        net_names.insert(generated_net.get_name());
+                        nets.push_back(std::move(generated_net));
+                    }
+                    for (auto& generated_instance : logic->instances) {
+                        instance_names.insert(generated_instance.get_name());
+                        instances.push_back(std::move(generated_instance));
+                    }
+                    generated_mux_index += generated_count;
+                    continue;
+                }
+                throw std::runtime_error(
+                    "continuous assignment '" +
+                    expression_source(assignment.left(), source_manager) +
+                    " = " +
+                    expression_source(assignment.right(), source_manager) +
+                    "' has no supported standard-cell mapping in library '" +
+                    cell_library->get_name() + "'");
+            }
             assignments.emplace_back(
                 lower_expression(assignment.left(), source_manager),
                 lower_expression(assignment.right(), source_manager));
+        } else if (member.kind == slang::ast::SymbolKind::ProceduralBlock &&
+                   cell_library) {
+            const auto& block =
+                member.as<slang::ast::ProceduralBlockSymbol>();
+            throw std::runtime_error(
+                "procedural block '" +
+                std::string(slang::ast::SemanticFacts::getProcedureKindStr(
+                    block.procedureKind)) +
+                "' is not yet supported by the in-house cell mapper");
         }
     }
 
@@ -397,7 +837,7 @@ Module parse_verilog_source(const std::string& source) {
     static const std::regex declaration(
         R"(^(input|output|wire)\s+(?:wire\s+)?(.+)$)");
     static const std::regex gate(
-        R"(^(and|or)\s+([A-Za-z_][A-Za-z0-9_$]*)\s*\((.*?)\)$)");
+        R"(^(and|or|xor)\s+([A-Za-z_][A-Za-z0-9_$]*)\s*\((.*?)\)$)");
 
     Module module;
     std::vector<std::string> header_ports;
@@ -453,11 +893,14 @@ Module parse_verilog_source(const std::string& source) {
                 throw std::runtime_error(gate_type + " instance " + instance_name +
                                          " must have output and two inputs");
             }
-            const std::string cell_type = gate_type == "and" ? "AND" : "OR";
+            const std::string cell_type =
+                gate_type == "and" ? "AND" : gate_type == "or" ? "OR" : "XOR";
             const auto& cell = resolve_cell(get_default_cell_library(), cell_type);
+            auto connections = physical_connections(
+                cell, cell_type,
+                {{"Y", pins[0]}, {"A", pins[1]}, {"B", pins[2]}});
             ParsedInstance instance{Instance{
-                instance_name, cell_type,
-                {{"Y", pins[0]}, {"A", pins[1]}, {"B", pins[2]}}, cell}};
+                instance_name, cell_type, std::move(connections), cell}};
             parsed_instances.push_back(std::move(instance));
             continue;
         }
@@ -573,7 +1016,9 @@ Module parse_verilog(const std::string& path) {
     }
     const slang::ast::InstanceSymbol* top_module = nullptr;
     for (const auto* candidate : root_symbol.topInstances) {
-        if (cell_library.find_cell(std::string(candidate->getDefinition().name))) {
+        if (is_cell_type(
+                cell_library,
+                std::string(candidate->getDefinition().name))) {
             continue;
         }
         if (top_module) {

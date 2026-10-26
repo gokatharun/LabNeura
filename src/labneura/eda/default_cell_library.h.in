@@ -1,13 +1,21 @@
 #ifndef LABNEURA_EDA_DEFAULT_CELL_LIBRARY_H
 #define LABNEURA_EDA_DEFAULT_CELL_LIBRARY_H
 
+#include <string>
 #include <string_view>
 
 namespace labneura::eda::detail {
 
-inline constexpr std::string_view bundled_liberty = R"LABNEURA_LIBERTY(
-@LABNEURA_EDA_LIBERTY_SOURCE@
-)LABNEURA_LIBERTY";
+inline constexpr std::string_view bundled_liberty_chunks[] = {
+@LABNEURA_EDA_LIBERTY_CHUNKS@};
+
+inline std::string get_bundled_liberty() {
+    std::string source;
+    for (const auto chunk : bundled_liberty_chunks) {
+        source.append(chunk);
+    }
+    return source;
+}
 
 }  // namespace labneura::eda::detail
 
