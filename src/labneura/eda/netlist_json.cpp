@@ -55,6 +55,7 @@ void append_expression(std::ostream& output, const Expression& expression) {
     append_json_string(output, expression.get_value());
     output << ", \"source\": ";
     append_json_string(output, expression.get_source());
+    output << ", \"width\": " << expression.get_width();
     output << ", \"operands\": [";
     for (std::size_t i = 0; i < expression.get_operands().size(); ++i) {
         if (i != 0) output << ", ";

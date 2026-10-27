@@ -182,6 +182,9 @@ private:
 Module parse_verilog_source(const std::string& source);
 Module parse_verilog(const std::string& path);
 Module parse_verilog_file(const std::string& path);
+Module generic_map(const Module& rtl_module);
+Module tech_map(const Module& generic_module,
+                const StandardCellLibrary& cell_library);
 Project parse_verilog_project(const std::string& directory);
 std::string to_json(const Module& module);
 void write_json(const Module& module, const std::string& path);

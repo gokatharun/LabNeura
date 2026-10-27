@@ -41,10 +41,12 @@ void bind_eda(pybind11::module_& labneura_module) {
         .def_property_readonly("value", &eda::Expression::get_value)
         .def_property_readonly("source", &eda::Expression::get_source)
         .def_property_readonly("operands", &eda::Expression::get_operands)
+        .def_property_readonly("width", &eda::Expression::get_width)
         .def("get_kind", &eda::Expression::get_kind)
         .def("get_value", &eda::Expression::get_value)
         .def("get_source", &eda::Expression::get_source)
-        .def("get_operands", &eda::Expression::get_operands);
+        .def("get_operands", &eda::Expression::get_operands)
+        .def("get_width", &eda::Expression::get_width);
 
     py::class_<eda::Port>(module, "Port", "A module input or output port.")
         .def_property_readonly("name", &eda::Port::get_name, "Port identifier.")
@@ -226,11 +228,16 @@ void bind_eda(pybind11::module_& labneura_module) {
                py::arg("source"),
                "Parse cells, pins, Boolean functions, and timing tables from Liberty source.");
     module.def("parse_verilog", &eda::parse_verilog, py::arg("path"),
-               "Parse one Verilog module and resolve instances against the bundled Liberty library.");
+               "Parse one Verilog module into an unmapped RTL representation.");
     module.def("parse_verilog_source", &eda::parse_verilog_source, py::arg("source"),
                "Parse Verilog source text into a netlist Module.");
     module.def("parse_verilog_file", &eda::parse_verilog_file, py::arg("path"),
-               "Parse one Verilog module using slang into a netlist Module.");
+               "Parse one Verilog module using slang into an RTL Module.");
+    module.def("generic_map", &eda::generic_map, py::arg("rtl_module"),
+               "Lower continuous Boolean assignments into technology-independent generic logic cells.");
+    module.def("tech_map", &eda::tech_map, py::arg("generic_module"),
+               py::arg("cell_library"),
+               "Map generic logic cells to cells in the supplied Liberty library.");
     module.def("parse_verilog_project", &eda::parse_verilog_project,
                py::arg("directory"),
                "Parse and elaborate .v files recursively using slang (Verilog-2005).");

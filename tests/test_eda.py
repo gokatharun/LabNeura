@@ -1,4 +1,5 @@
 import json
+from functools import lru_cache
 from pathlib import Path
 
 import pytest
@@ -62,6 +63,22 @@ library (demo_cells) {
 }
 """
 
+DEFAULT_LIBERTY = (
+    Path(__file__).resolve().parents[1]
+    / "assets/sky130_fd_sc_hd__tt_025C_1v80.lib"
+)
+
+
+@lru_cache(maxsize=1)
+def default_cell_library():
+    return eda.parse_liberty(str(DEFAULT_LIBERTY))
+
+
+def map_verilog(path):
+    rtl_module = eda.parse_verilog(str(path))
+    generic_module = eda.generic_map(rtl_module)
+    return eda.tech_map(generic_module, default_cell_library())
+
 
 def test_parse_verilog_builds_module_netlist():
     module = eda.parse_verilog_source(VERILOG)
@@ -94,8 +111,8 @@ def test_parse_verilog_builds_module_netlist():
          {connection.pin: connection.net for connection in instance.connections})
         for instance in module.instances
     ] == [
-        ("AND1", "AND", {"X": "w", "A": "a", "B": "b"}),
-        ("OR1", "OR", {"X": "f", "A": "w", "B": "c"}),
+        ("AND1", "and", {"Y": "w", "A": "a", "B": "b"}),
+        ("OR1", "or", {"Y": "f", "A": "w", "B": "c"}),
     ]
     with pytest.raises(AttributeError):
         module.name = "changed"
@@ -106,7 +123,7 @@ def test_parse_file_and_write_json(tmp_path):
     json_path = tmp_path / "design.json"
     verilog_path.write_text(VERILOG, encoding="utf-8")
 
-    module = eda.parse_verilog(str(verilog_path))
+    module = map_verilog(verilog_path)
     eda.write_json(module, str(json_path))
     serialized = json.loads(json_path.read_text(encoding="utf-8"))
 
@@ -120,11 +137,12 @@ def test_parse_verilog_resolves_instances_to_bundled_cells(tmp_path):
     verilog_path = tmp_path / "cells.v"
     verilog_path.write_text(VERILOG, encoding="utf-8")
 
-    module = eda.parse_verilog(str(verilog_path))
+    rtl_module = eda.parse_verilog(str(verilog_path))
+    module = eda.tech_map(eda.generic_map(rtl_module), default_cell_library())
 
     assert [(instance.cell_type, instance.cell.name) for instance in module.instances] == [
-        ("and", "sky130_fd_sc_hd__and2_1"),
-        ("or", "sky130_fd_sc_hd__or2_1"),
+        ("sky130_fd_sc_hd__and2_1", "sky130_fd_sc_hd__and2_1"),
+        ("sky130_fd_sc_hd__or2_1", "sky130_fd_sc_hd__or2_1"),
     ]
     assert module.instances[0].cell.area == pytest.approx(6.256)
     assert {
@@ -141,7 +159,11 @@ def test_parse_verilog_resolves_explicit_liberty_cell_instances(tmp_path):
         encoding="utf-8",
     )
 
-    module = eda.parse_verilog(str(verilog_path))
+    rtl_module = eda.parse_verilog(str(verilog_path))
+    assert rtl_module.instances[0].cell is None
+    module = eda.tech_map(
+        eda.generic_map(rtl_module), default_cell_library()
+    )
 
     instance = module.instances[0]
     assert instance.cell.name == "sky130_fd_sc_hd__and2_1"
@@ -159,7 +181,7 @@ def test_parse_verilog_resolves_legacy_mux2_cell_alias(tmp_path):
         encoding="utf-8",
     )
 
-    instance = eda.parse_verilog(str(verilog_path)).instances[0]
+    instance = map_verilog(verilog_path).instances[0]
 
     assert instance.cell.name == "sky130_fd_sc_hd__mux2_1"
     assert {
@@ -175,7 +197,7 @@ def test_parse_verilog_resolves_legacy_mux2_cell_alias(tmp_path):
 def test_parse_half_adder_verilog_resolves_cells():
     verilog_path = Path(__file__).resolve().parents[1] / "examples/verilog/half_adder.v"
 
-    module = eda.parse_verilog(str(verilog_path))
+    module = map_verilog(verilog_path)
     source_module = eda.parse_verilog_source(
         verilog_path.read_text(encoding="utf-8")
     )
@@ -192,10 +214,14 @@ def test_parse_half_adder_verilog_resolves_cells():
         {"X": "s", "A": "a", "B": "b"},
         {"X": "c", "A": "a", "B": "b"},
     ]
-    assert [instance.cell.name for instance in source_module.instances] == [
-        "sky130_fd_sc_hd__xor2_1",
-        "sky130_fd_sc_hd__and2_1",
+    assert [(instance.cell_type, instance.cell) for instance in source_module.instances] == [
+        ("xor", None),
+        ("and", None),
     ]
+    assert [
+        instance.cell_type
+        for instance in eda.generic_map(source_module).instances
+    ] == ["XOR2", "AND2"]
 
 
 def test_parse_verilog_reports_cells_missing_from_bundled_library(tmp_path):
@@ -205,7 +231,7 @@ def test_parse_verilog_reports_cells_missing_from_bundled_library(tmp_path):
         encoding="utf-8",
     )
 
-    with pytest.raises(RuntimeError, match="bundled standard-cell library") as error:
+    with pytest.raises(RuntimeError) as error:
         eda.parse_verilog(str(verilog_path))
     assert "MISSING_X1" in str(error.value)
 
@@ -221,19 +247,55 @@ def test_parse_verilog_reads_ansi_ports_and_assignments():
         ("S", eda.PortDirection.INPUT),
         ("Y", eda.PortDirection.OUTPUT),
     ]
-    assert module.assignments == []
-    assert len(module.instances) == 3
-    assert {instance.cell.name for instance in module.instances} == {
-        "sky130_fd_sc_hd__mux2_1"
-    }
-    assert [net.name for net in module.nets if net.kind == eda.NetType.INTERNAL] == [
-        "__labneura_muxnet0",
-        "__labneura_muxnet1",
-    ]
+    assert len(module.assignments) == 1
+    assert module.assignments[0].lhs == "Y"
+    assert module.assignments[0].rhs == "I[S]"
+    assert module.instances == []
     serialized = json.loads(eda.to_json(module))
     serialized_module = serialized["modules"][0]
-    assert serialized_module["assignments"] == []
-    assert len(serialized_module["instances"]) == 3
+    assert len(serialized_module["assignments"]) == 1
+    assert serialized_module["instances"] == []
+
+
+def test_staged_mapping_accepts_an_explicit_liberty_library(tmp_path):
+    verilog_path = tmp_path / "custom_library.v"
+    liberty_path = tmp_path / "custom_library.lib"
+    verilog_path.write_text(
+        "module top(input wire a, b, output wire y); "
+        "assign y = a & b; endmodule",
+        encoding="utf-8",
+    )
+    liberty_path.write_text(LIBERTY, encoding="utf-8")
+
+    rtl_module = eda.parse_verilog(str(verilog_path))
+    generic_module = eda.generic_map(rtl_module)
+    mapped_module = eda.tech_map(
+        generic_module, eda.parse_liberty(str(liberty_path))
+    )
+
+    assert len(rtl_module.assignments) == 1
+    assert [(instance.cell_type, instance.cell) for instance in generic_module.instances] == [
+        ("AND2", None)
+    ]
+    assert mapped_module.instances[0].cell.name == "AND2_X1"
+    assert mapped_module.instances[0].cell.area == pytest.approx(1.25)
+
+
+def test_tech_map_errors_when_library_lacks_a_generic_cell(tmp_path):
+    verilog_path = tmp_path / "missing_generic_cell.v"
+    liberty_path = tmp_path / "and_only.lib"
+    verilog_path.write_text(
+        "module top(input wire a, b, output wire y); "
+        "assign y = a ^ b; endmodule",
+        encoding="utf-8",
+    )
+    liberty_path.write_text(LIBERTY, encoding="utf-8")
+
+    generic_module = eda.generic_map(
+        eda.parse_verilog(str(verilog_path))
+    )
+    with pytest.raises(RuntimeError, match="no standard cell matching generic cell 'XOR2'"):
+        eda.tech_map(generic_module, eda.parse_liberty(str(liberty_path)))
 
 
 def test_parse_verilog_lowers_binary_assignment_expression(tmp_path):
@@ -244,7 +306,7 @@ def test_parse_verilog_lowers_binary_assignment_expression(tmp_path):
         encoding="utf-8",
     )
 
-    module = eda.parse_verilog(str(verilog_path))
+    module = map_verilog(verilog_path)
 
     assert module.assignments == []
     assert len(module.instances) == 1
@@ -263,7 +325,7 @@ def test_parse_verilog_lowers_scalar_not_and_conditional_cells(tmp_path):
         encoding="utf-8",
     )
 
-    module = eda.parse_verilog(str(verilog_path))
+    module = map_verilog(verilog_path)
 
     assert module.assignments == []
     assert [(instance.cell.name, {
@@ -285,7 +347,7 @@ def test_parse_verilog_lowers_direct_scalar_assignment_to_buffer(tmp_path):
         encoding="utf-8",
     )
 
-    module = eda.parse_verilog(str(verilog_path))
+    module = map_verilog(verilog_path)
 
     assert module.assignments == []
     assert module.instances[0].cell.name == "sky130_fd_sc_hd__buf_1"
@@ -314,7 +376,7 @@ def test_parse_verilog_lowers_scalar_constants_to_tie_cells(
         encoding="utf-8",
     )
 
-    module = eda.parse_verilog(str(verilog_path))
+    module = map_verilog(verilog_path)
 
     assert module.assignments == []
     assert len(module.instances) == 1
@@ -333,7 +395,7 @@ def test_parse_verilog_rejects_unknown_scalar_constants(tmp_path):
     )
 
     with pytest.raises(RuntimeError, match="X/Z constants cannot be mapped"):
-        eda.parse_verilog(str(verilog_path))
+        eda.generic_map(eda.parse_verilog(str(verilog_path)))
 
 
 def test_parse_verilog_errors_when_assignment_has_no_cell_mapping(tmp_path):
@@ -344,8 +406,8 @@ def test_parse_verilog_errors_when_assignment_has_no_cell_mapping(tmp_path):
         encoding="utf-8",
     )
 
-    with pytest.raises(RuntimeError, match="no supported standard-cell mapping"):
-        eda.parse_verilog(str(verilog_path))
+    with pytest.raises(RuntimeError, match="no supported generic mapping"):
+        eda.generic_map(eda.parse_verilog(str(verilog_path)))
 
 
 def test_parse_full_adder_lowers_nested_boolean_expressions():
@@ -353,15 +415,15 @@ def test_parse_full_adder_lowers_nested_boolean_expressions():
         Path(__file__).resolve().parents[1] / "examples/verilog/full_adder.v"
     )
 
-    module = eda.parse_verilog(str(verilog_path))
+    module = map_verilog(verilog_path)
 
     assert module.assignments == []
-    assert len(module.instances) == 7
-    assert len(module.nets) == 10
+    assert len(module.instances) == 5
+    assert len(module.nets) == 8
     cell_names = [instance.cell.name for instance in module.instances]
-    assert cell_names.count("sky130_fd_sc_hd__xor2_1") == 2
+    assert cell_names.count("sky130_fd_sc_hd__xor3_1") == 1
     assert cell_names.count("sky130_fd_sc_hd__and2_1") == 3
-    assert cell_names.count("sky130_fd_sc_hd__or2_1") == 2
+    assert cell_names.count("sky130_fd_sc_hd__or3_1") == 1
     driven_nets = {
         connection.net
         for instance in module.instances
@@ -372,15 +434,29 @@ def test_parse_full_adder_lowers_nested_boolean_expressions():
     assert {"Sum", "Cout"} <= driven_nets
 
 
+def test_generic_map_uses_library_independent_multi_input_cells():
+    verilog_path = (
+        Path(__file__).resolve().parents[1] / "examples/verilog/full_adder.v"
+    )
+
+    module = eda.generic_map(eda.parse_verilog(str(verilog_path)))
+
+    assert module.assignments == []
+    assert all(instance.cell is None for instance in module.instances)
+    assert [instance.cell_type for instance in module.instances].count("XOR3") == 1
+    assert [instance.cell_type for instance in module.instances].count("AND2") == 3
+    assert [instance.cell_type for instance in module.instances].count("OR3") == 1
+
+
 def test_generated_logic_instance_names_do_not_collide_with_nets(tmp_path):
     verilog_path = tmp_path / "generated_name_collision.v"
     verilog_path.write_text(
         "module top(input wire a, b, output wire y); "
-        "wire __labneura_logic0; assign y = a ^ b; endmodule",
+        "wire __generic_inst0; assign y = a ^ b; endmodule",
         encoding="utf-8",
     )
 
-    module = eda.parse_verilog(str(verilog_path))
+    module = eda.generic_map(eda.parse_verilog(str(verilog_path)))
 
     assert {net.name for net in module.nets}.isdisjoint(
         instance.name for instance in module.instances
@@ -402,7 +478,7 @@ def test_generated_logic_instance_names_do_not_collide_with_nets(tmp_path):
 def test_parse_combinational_examples_resolves_every_instance(relative_path):
     verilog_path = Path(__file__).resolve().parents[1] / "examples/verilog" / relative_path
 
-    module = eda.parse_verilog(str(verilog_path))
+    module = map_verilog(verilog_path)
 
     assert module.instances
     assert module.assignments == []
@@ -416,7 +492,7 @@ def test_parse_verilog_rejects_unmapped_procedural_blocks(tmp_path):
         encoding="utf-8",
     )
 
-    with pytest.raises(RuntimeError, match="procedural block 'initial'.*not yet supported"):
+    with pytest.raises(RuntimeError, match="procedural block 'initial'.*not yet representable"):
         eda.parse_verilog(str(verilog_path))
 
 

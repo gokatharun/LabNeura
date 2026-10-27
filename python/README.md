@@ -130,23 +130,30 @@ for module in project.modules:
 print(project.ast_json)
 ```
 
-`parse_verilog` uses slang to parse a Verilog file containing one top-level
-module, including ANSI-style ports, vectors, and continuous assignments.
-`parse_verilog` and the lightweight source parser use the bundled
-SKY130 high-density typical-corner library by default and expose physical cell
-definitions through `instance.cell`. The 4:1 indexed assignment
-`assign Y = I[S];` is mapped to three SKY130 2:1 mux cells. Scalar Boolean
-operators (including nested scalar expressions), ternary assignments, wire
-copies, and 0/1 constants map to
-corresponding SKY130 gates, buffers, and tie-cell outputs. Unknown cell names
-and assignments without a supported mapping fail explicitly. Procedural
-blocks are not yet mapped. This default is technology-specific to SKY130; the
-bundled educational library remains available as `assets/cells.lib` for
-standalone Liberty-parser examples.
-`parse_verilog_source` remains a lightweight parser for source strings and
-supports scalar ports/wires and `and`/`or`/`xor` primitives. Verilog parsing requires
-CMake 3.20+, a C++20 compiler, and the pinned slang frontend, which is fetched
-during the build.
+Verilog handling is split into three explicit stages:
+
+```python
+rtl = eda.parse_verilog("logic_example.v")
+generic = eda.generic_map(rtl)
+library = eda.parse_liberty("assets/sky130_fd_sc_hd__tt_025C_1v80.lib")
+mapped = eda.tech_map(generic, library)
+```
+
+`parse_verilog` returns the parsed module, including its continuous
+assignments; it does not lower those assignments into cells.
+`generic_map` lowers the supported scalar Boolean assignments into
+technology-independent cells. It preserves associative multi-input operators,
+such as an XOR3, in the generic netlist. `tech_map` takes both that generic
+netlist and an explicit `StandardCellLibrary`, resolves generic cells to
+available library cells, and attaches their Liberty definitions to instances.
+Unsupported procedural blocks or expressions fail explicitly rather than
+being silently dropped. The bundled SKY130 file is available as a convenient
+library input; the educational library remains at `assets/cells.lib`.
+
+`parse_verilog_source` remains a separate lightweight parser for source strings
+and supports scalar ports/wires and `and`/`or`/`xor` primitives. Verilog parsing
+requires CMake 3.20+, a C++20 compiler, and the pinned slang frontend, which is
+fetched during the build.
 
 Liberty standard-cell libraries can be read with `parse_liberty`. The reader
 exposes cell area, pin direction/function/capacitance, timing arcs, and

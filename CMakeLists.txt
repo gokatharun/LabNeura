@@ -93,6 +93,7 @@ endif()
 # ======================================
 add_library(labneura
   src/labneura/eda/verilog_parser.cpp
+  src/labneura/eda/netlist_mapping.cpp
   src/labneura/eda/netlist_json.cpp
   src/labneura/eda/cell_library.cpp
   src/labneura/tensor.cpp
