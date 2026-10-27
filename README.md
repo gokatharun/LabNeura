@@ -155,6 +155,12 @@ and supports scalar ports/wires and `and`/`or`/`xor` primitives. Verilog parsing
 requires CMake 3.20+, a C++20 compiler, and the pinned slang frontend, which is
 fetched during the build.
 
+EDA implementation sources are grouped by pipeline stage: Verilog and Liberty
+parsers live under `src/labneura/eda/parser/`, the shared netlist code under
+`netlist/`, and generic and technology mapping under `mapping/`. The
+optimization, placement, routing, and FPGA-mapping directories are reserved
+for future stage implementations.
+
 Liberty standard-cell libraries can be read with `parse_liberty`. The reader
 exposes cell area, pin direction/function/capacitance, timing arcs, and
 lookup-table indices and values:

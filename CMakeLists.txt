@@ -44,7 +44,7 @@ endwhile()
 
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/generated/labneura/eda")
 configure_file(
-  "${CMAKE_SOURCE_DIR}/src/labneura/eda/default_cell_library.h.in"
+  "${CMAKE_SOURCE_DIR}/src/labneura/eda/parser/liberty/default_cell_library.h.in"
   "${CMAKE_CURRENT_BINARY_DIR}/generated/labneura/eda/default_cell_library.h"
   @ONLY
 )
@@ -92,10 +92,11 @@ endif()
 # Core library
 # ======================================
 add_library(labneura
-  src/labneura/eda/verilog_parser.cpp
-  src/labneura/eda/netlist_mapping.cpp
-  src/labneura/eda/netlist_json.cpp
-  src/labneura/eda/cell_library.cpp
+  src/labneura/eda/parser/verilog_parser.cpp
+  src/labneura/eda/parser/liberty_parser.cpp
+  src/labneura/eda/netlist/netlist_json.cpp
+  src/labneura/eda/mapping/generic/generic_mapping.cpp
+  src/labneura/eda/mapping/technology/technology_mapping.cpp
   src/labneura/tensor.cpp
   src/labneura/backends/common/base.cpp
   src/labneura/backends/common/cpu_features.cpp
