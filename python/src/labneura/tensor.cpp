@@ -38,6 +38,12 @@ Tensor::Tensor(const std::vector<float>& data, QuantizationMode mode)
                 int v = static_cast<int>(std::lrintf(data[i]));
                 int8_data[i] = static_cast<int8_t>(std::max(-128, std::min(127, v)));
             }
+        } else if (mode == QuantizationMode::INT16) {
+            int16_t* int16_data = data_int16();
+            for (std::size_t i = 0; i < data.size(); ++i) {
+                int v = static_cast<int>(std::lrintf(data[i]));
+                int16_data[i] = static_cast<int16_t>(std::max(-32768, std::min(32767, v)));
+            }
         } else {
             // Other modes: default to FP32
             float* fp32_data = data_fp32();

@@ -19,8 +19,8 @@ MODULE_NAME := labneura
 # Prefer project virtualenv for publish steps
 # Get absolute path to workspace root
 WORKSPACE_ROOT := $(shell pwd)
-VENV_PYTHON := $(WORKSPACE_ROOT)/env/bin/python
-VENV_PIP := $(WORKSPACE_ROOT)/env/bin/pip
+VENV_PYTHON := $(WORKSPACE_ROOT)/.venv/bin/python
+VENV_PIP := $(WORKSPACE_ROOT)/.venv/bin/pip
 TWINE = $(PYTHON) -m twine
 PYPI_TOKEN ?=
 TEST_PYPI_TOKEN ?=
@@ -171,7 +171,7 @@ ci: deps clean install smoke cpp-coverage
 .PHONY: build-dist
 build-dist: sync-src
 	$(PIP) install --upgrade build twine
-	LABNEURA_COVERAGE= $(PYTHON) -m build
+	LABNEURA_COVERAGE= MACOSX_DEPLOYMENT_TARGET=11.0 $(PYTHON) -m build
 	$(TWINE) check dist/*
 
 # Store the new version for use in git operations
