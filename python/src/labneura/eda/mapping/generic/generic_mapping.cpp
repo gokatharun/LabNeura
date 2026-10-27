@@ -1,13 +1,17 @@
 #include "labneura/eda/netlist.h"
 
+#include "behavioral_synthesis.h"
+
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
 #include <iterator>
 #include <optional>
 #include <regex>
+#include <map>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -225,6 +229,10 @@ struct GenericMapper {
 }  // namespace
 
 Module generic_map(const Module& rtl_module) {
+    if (rtl_module.is_behavioral()) {
+        return detail::lower_behavioral_rtl(rtl_module.get_source_files(),
+                                            rtl_module.get_name(), {});
+    }
     GenericMapper mapper(rtl_module);
     std::vector<ContinuousAssignment> remaining_assignments;
 
@@ -280,6 +288,57 @@ Module generic_map(const Module& rtl_module) {
                      std::make_move_iterator(mapper.instances.end()));
     return Module(rtl_module.get_name(), rtl_module.get_ports(), std::move(nets),
                   std::move(instances), std::move(remaining_assignments));
+}
+
+Module generic_map(const Project& project, const std::string& top,
+                   const std::map<std::string, std::string>& parameters) {
+    std::unordered_map<std::string, const Module*> by_name;
+    std::unordered_set<std::string> instantiated;
+    for (const auto& module : project.get_modules()) by_name[module.get_name()] = &module;
+    for (const auto& module : project.get_modules()) {
+        for (const auto& instance : module.get_instances()) {
+            if (by_name.count(instance.get_cell_type())) {
+                instantiated.insert(instance.get_cell_type());
+            }
+        }
+    }
+
+    std::string top_name = top;
+    if (top_name.empty()) {
+        for (const auto& module : project.get_modules()) {
+            if (instantiated.count(module.get_name())) continue;
+            if (!top_name.empty()) {
+                throw std::runtime_error(
+                    "project has several top-level modules; pass top=<module>");
+            }
+            top_name = module.get_name();
+        }
+        if (top_name.empty()) throw std::runtime_error("project has no top-level module");
+    }
+    const auto top_module = by_name.find(top_name);
+    if (top_module == by_name.end()) {
+        throw std::runtime_error("top module '" + top_name + "' not found in project");
+    }
+
+    // Everything reachable from the top is lowered together; purely structural
+    // flat modules keep the lightweight assignment-based mapping.
+    bool needs_lowering = !parameters.empty();
+    std::vector<const Module*> pending{top_module->second};
+    std::unordered_set<std::string> visited;
+    while (!pending.empty()) {
+        const Module* module = pending.back();
+        pending.pop_back();
+        if (!visited.insert(module->get_name()).second) continue;
+        if (module->is_behavioral()) needs_lowering = true;
+        for (const auto& instance : module->get_instances()) {
+            const auto child = by_name.find(instance.get_cell_type());
+            if (child == by_name.end()) continue;
+            needs_lowering = true;
+            pending.push_back(child->second);
+        }
+    }
+    if (!needs_lowering) return generic_map(*top_module->second);
+    return detail::lower_behavioral_rtl(project.get_source_files(), top_name, parameters);
 }
 
 }  // namespace labneura::eda

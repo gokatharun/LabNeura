@@ -110,6 +110,8 @@ void bind_eda(pybind11::module_& labneura_module) {
         .def_property_readonly("ports", &eda::Module::get_ports,
                                "Module input and output ports.")
         .def_property_readonly("nets", &eda::Module::get_nets, "Module nets.")
+        .def_property_readonly("is_behavioral", &eda::Module::is_behavioral,
+                               "True when the module has always blocks that generic_map lowers.")
         .def_property_readonly("instances", &eda::Module::get_instances,
                                "Gate instances in the module.")
         .def_property_readonly("assignments", &eda::Module::get_assignments,
@@ -235,11 +237,32 @@ void bind_eda(pybind11::module_& labneura_module) {
                "Parse Verilog source text into a netlist Module.");
     module.def("parse_verilog_file", &eda::parse_verilog_file, py::arg("path"),
                "Parse one Verilog module using slang into an RTL Module.");
-    module.def("generic_map", &eda::generic_map, py::arg("rtl_module"),
-               "Lower continuous Boolean assignments into technology-independent generic logic cells.");
-    module.def("tech_map", &eda::tech_map, py::arg("generic_module"),
-               py::arg("cell_library"),
+    module.def("generic_map",
+               py::overload_cast<const eda::Module&>(&eda::generic_map),
+               py::arg("rtl_module"),
+               "Lower a parsed RTL module (assignments and always blocks) into "
+               "technology-independent generic logic cells.");
+    module.def("generic_map",
+               py::overload_cast<const eda::Project&, const std::string&,
+                                 const std::map<std::string, std::string>&>(
+                   &eda::generic_map),
+               py::arg("project"), py::arg("top") = "",
+               py::arg("parameters") = std::map<std::string, std::string>{},
+               "Lower the hierarchy below `top` of a parsed project into one flat "
+               "generic netlist; `parameters` overrides top-level parameters.");
+    module.def("tech_map",
+               py::overload_cast<const eda::Module&, const eda::StandardCellLibrary&>(
+                   &eda::tech_map),
+               py::arg("generic_module"), py::arg("cell_library"),
                "Map generic logic cells to cells in the supplied Liberty library.");
+    module.def("tech_map",
+               py::overload_cast<const eda::Project&, const eda::StandardCellLibrary&,
+                                 const std::string&,
+                                 const std::map<std::string, std::string>&>(
+                   &eda::tech_map),
+               py::arg("project"), py::arg("cell_library"), py::arg("top") = "",
+               py::arg("parameters") = std::map<std::string, std::string>{},
+               "Generic-map and technology-map the hierarchy below `top` of a project.");
     module.def("parse_verilog_project", &eda::parse_verilog_project,
                py::arg("directory"),
                "Parse and elaborate .v files recursively using slang (Verilog-2005).");

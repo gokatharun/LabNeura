@@ -146,7 +146,18 @@ technology-independent cells. It preserves associative multi-input operators,
 such as an XOR3, in the generic netlist. `tech_map` takes both that generic
 netlist and an explicit `StandardCellLibrary`, resolves generic cells to
 available library cells, and attaches their Liberty definitions to instances.
-Unsupported procedural blocks or expressions fail explicitly rather than
+Modules with `always` blocks are flagged by `parse_verilog` (`is_behavioral`)
+and lowered by `generic_map` (flops, latches, muxes, arithmetic, function/task
+inlining). Both `generic_map` and `tech_map` also accept a whole project and a
+top module, flattening the hierarchy below it:
+
+```python
+project = eda.parse_verilog_project("examples/verilog/picorv32")
+mapped = eda.tech_map(project, library, top="picorv32",
+                      parameters={"ENABLE_MUL": "1"})
+```
+
+Unsupported constructs (e.g. `initial` blocks, inout ports) fail explicitly rather than
 being silently dropped. The bundled SKY130 file is available as a convenient
 library input; the educational library remains at `assets/cells.lib`.
 

@@ -333,6 +333,7 @@ Expression lower_expression(const slang::ast::Expression& expression,
 Module summarize_module(const slang::ast::InstanceSymbol& instance,
                        const slang::SourceManager& source_manager,
                        bool project_summary = false) {
+    bool behavioral = false;
     std::vector<Port> ports;
     std::vector<Net> nets;
     std::vector<Instance> instances;
@@ -385,20 +386,24 @@ Module summarize_module(const slang::ast::InstanceSymbol& instance,
                 lower_expression(assignment.left(), source_manager),
                 lower_expression(assignment.right(), source_manager));
         } else if (member.kind == slang::ast::SymbolKind::ProceduralBlock) {
-            if (project_summary) continue;
             const auto& block =
                 member.as<slang::ast::ProceduralBlockSymbol>();
-            throw std::runtime_error(
-                "procedural block '" +
-                std::string(slang::ast::SemanticFacts::getProcedureKindStr(
-                    block.procedureKind)) +
-                "' is not yet representable in the RTL netlist model");
+            if (block.procedureKind == slang::ast::ProceduralBlockKind::Initial ||
+                block.procedureKind == slang::ast::ProceduralBlockKind::Final) {
+                if (project_summary) continue;
+                throw std::runtime_error(
+                    "procedural block '" +
+                    std::string(slang::ast::SemanticFacts::getProcedureKindStr(
+                        block.procedureKind)) +
+                    "' is simulation-only and has no netlist form");
+            }
+            behavioral = true;
         }
     }
 
     return Module(std::string(instance.getDefinition().name), std::move(ports),
                   std::move(nets), std::move(instances),
-                  std::move(assignments));
+                  std::move(assignments), behavioral);
 }
 
 }  // namespace
@@ -616,7 +621,9 @@ Module parse_verilog(const std::string& path) {
         throw std::runtime_error(
             "parse_verilog found no top-level Verilog module in the file");
     }
-    return summarize_module(*top_module, driver.sourceManager);
+    auto module = summarize_module(*top_module, driver.sourceManager);
+    if (module.is_behavioral()) module.source_files_ = {absolute_path};
+    return module;
 }
 
 Module parse_verilog_file(const std::string& path) {

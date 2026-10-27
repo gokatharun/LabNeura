@@ -492,7 +492,7 @@ def test_parse_verilog_rejects_unmapped_procedural_blocks(tmp_path):
         encoding="utf-8",
     )
 
-    with pytest.raises(RuntimeError, match="procedural block 'initial'.*not yet representable"):
+    with pytest.raises(RuntimeError, match="procedural block 'initial'.*simulation-only"):
         eda.parse_verilog(str(verilog_path))
 
 
@@ -800,3 +800,209 @@ def test_tensor_supports_two_dimensions():
         labneura.Tensor([[1.0], [2.0, 3.0]])
     with pytest.raises(Exception):
         matrix.add(labneura.Tensor([1.0, 2.0, 3.0, 4.0]))
+
+
+BEHAVIORAL = """
+module beh (input clk, input rst, input [1:0] op, input [3:0] a, b,
+            output reg [3:0] y, output reg [3:0] cnt);
+    reg [3:0] mem [0:1];
+    always @* begin
+        y = 4'd0;
+        case (op)
+            2'd0: y = a + b;
+            2'd1: y = a & b;
+            2'd2: y = mem[a[0]];
+            default: y = a ^ b;
+        endcase
+    end
+    always @(posedge clk) begin
+        if (rst) cnt <= 0; else cnt <= cnt + 1;
+        mem[b[0]] <= a;
+    end
+endmodule
+"""
+
+
+def _simulate(module, inputs, state):
+    """Evaluate a generic-gate module for one cycle; returns (outputs, next_state)."""
+    values = {"__tie0": 0, "__tie1": 1, **inputs}
+    flops = [i for i in module.instances if i.cell_type == "DFF"]
+    for flop in flops:
+        values[{c.pin: c.net for c in flop.connections}["Y"]] = state.get(flop.name, 0)
+    pending = [i for i in module.instances if i.cell_type != "DFF"]
+    while pending:
+        remaining = []
+        for gate in pending:
+            pins = {c.pin: c.net for c in gate.connections}
+            ins = [n for p, n in pins.items() if p != "Y"]
+            if any(n not in values for n in ins):
+                remaining.append(gate)
+                continue
+            v = {p: values[n] for p, n in pins.items() if p != "Y"}
+            kind = gate.cell_type
+            out = {
+                "INV": lambda: 1 - v["A"], "BUF": lambda: v["A"],
+                "AND2": lambda: v["A"] & v["B"], "OR2": lambda: v["A"] | v["B"],
+                "XOR2": lambda: v["A"] ^ v["B"],
+                "MUX2": lambda: v["A1"] if v["S"] else v["A0"],
+                "TIEHI": lambda: 1, "TIELO": lambda: 0,
+            }[kind]()
+            values[pins["Y"]] = out
+        assert len(remaining) < len(pending), "combinational loop"
+        pending = remaining
+    nxt = {f.name: values[{c.pin: c.net for c in f.connections}["D"]] for f in flops}
+    return values, nxt
+
+
+def _bits(name, value, width):
+    return {f"{name}[{i}]": (value >> i) & 1 for i in range(width)}
+
+
+def _word(values, name, width):
+    return sum(values[f"{name}[{i}]"] << i for i in range(width))
+
+
+def test_generic_map_behavioral_matches_reference_model(tmp_path):
+    source = tmp_path / "beh.v"
+    source.write_text(BEHAVIORAL)
+    module = eda.generic_map(eda.parse_verilog(str(source)))
+    assert {i.cell_type for i in module.instances} <= {
+        "AND2", "OR2", "XOR2", "INV", "MUX2", "DFF", "BUF", "TIEHI", "TIELO"}
+    assert sum(i.cell_type == "DFF" for i in module.instances) == 4 + 8
+
+    import random
+    rng = random.Random(3)
+    state, cnt, mem = {}, 0, [0, 0]
+    flop_by_net = {}
+    for flop in (i for i in module.instances if i.cell_type == "DFF"):
+        flop_by_net[{c.pin: c.net for c in flop.connections}["Y"]] = flop.name
+    for _ in range(60):
+        rst, op = int(rng.random() < 0.1), rng.randrange(4)
+        a, b = rng.randrange(16), rng.randrange(16)
+        inputs = {"clk": 0, "rst": rst, **_bits("op", op, 2),
+                  **_bits("a", a, 4), **_bits("b", b, 4)}
+        values, state_next = _simulate(module, inputs, state)
+        expected = [(a + b) & 15, a & b, mem[a & 1], a ^ b][op]
+        assert _word(values, "y", 4) == expected
+        assert _word(values, "cnt", 4) == cnt
+        cnt = 0 if rst else (cnt + 1) & 15
+        mem[b & 1] = a
+        state = state_next
+
+
+def test_generic_map_behavioral_infers_latch(tmp_path):
+    source = tmp_path / "latch.v"
+    source.write_text("module latch(input a, input d, output reg y);"
+                      " always @* if (a) y = d; endmodule")
+    module = eda.generic_map(eda.parse_verilog(str(source)))
+    assert [i.cell_type for i in module.instances].count("LATCH") == 1
+
+
+def test_generic_map_behavioral_async_reset_and_set_flops(tmp_path):
+    source = tmp_path / "async.v"
+    source.write_text("""
+module asy(input clk, input rn, input s, input d, output reg q, output reg p);
+  always @(posedge clk or negedge rn) if (!rn) q <= 1'b0; else q <= d;
+  always @(posedge clk or posedge s) if (s) p <= 1'b1; else p <= d;
+endmodule
+""")
+    module = eda.generic_map(eda.parse_verilog(str(source)))
+    kinds = [i.cell_type for i in module.instances]
+    assert kinds.count("DFFR") == 1 and kinds.count("DFFS") == 1
+    library = eda.parse_liberty(str(Path(__file__).parent.parent / "assets" /
+                                    "sky130_fd_sc_hd__tt_025C_1v80.lib"))
+    mapped = [i.cell_type for i in eda.tech_map(module, library).instances]
+    assert "sky130_fd_sc_hd__dfrtp_1" in mapped and "sky130_fd_sc_hd__dfstp_1" in mapped
+    assert "sky130_fd_sc_hd__dlxtp_1" not in mapped
+
+
+def test_generic_map_behavioral_functions_tasks_and_division(tmp_path):
+    source = tmp_path / "arith.v"
+    source.write_text("""
+module arith(input [7:0] a, input [7:0] b, output [7:0] q, output [7:0] r,
+             output [7:0] f, output [7:0] t, output [7:0] p);
+  function [7:0] twice; input [7:0] x; begin twice = x + x; end endfunction
+  task bump; input [7:0] x; output [7:0] y; begin y = x + 1; end endtask
+  reg [7:0] tmp;
+  always @* bump(a, tmp);
+  assign q = a / b;
+  assign r = a % b;
+  assign f = twice(a);
+  assign t = tmp;
+  assign p = b ** 2;
+endmodule
+""")
+    module = eda.generic_map(eda.parse_verilog(str(source)))
+    import random
+    rng = random.Random(5)
+    for _ in range(40):
+        a, b = rng.randrange(256), rng.randrange(1, 256)
+        values, _ = _simulate(module, {**_bits("a", a, 8), **_bits("b", b, 8)}, {})
+        assert _word(values, "q", 8) == a // b
+        assert _word(values, "r", 8) == a % b
+        assert _word(values, "f", 8) == (2 * a) & 255
+        assert _word(values, "t", 8) == (a + 1) & 255
+        assert _word(values, "p", 8) == (b * b) & 255
+
+
+def test_synthesized_behavioral_design_maps_to_liberty_flops(tmp_path):
+    source = tmp_path / "beh.v"
+    source.write_text(BEHAVIORAL)
+    library = eda.parse_liberty(str(Path(__file__).parent.parent / "assets" /
+                                    "sky130_fd_sc_hd__tt_025C_1v80.lib"))
+    mapped = eda.tech_map(eda.generic_map(eda.parse_verilog(str(source))), library)
+    names = [i.cell_type for i in mapped.instances]
+    assert names.count("sky130_fd_sc_hd__dfxtp_1") == 12
+    assert all(n.startswith("sky130_fd_sc_hd__") for n in names)
+
+
+def test_generic_map_behavioral_dual_edge_set_reset_and_tristate(tmp_path):
+    source = tmp_path / "misc.v"
+    source.write_text("""
+module misc(input clk, input rn, input s, input d, input en, input a,
+            output reg q, output reg both, output y);
+  always @(posedge clk or negedge rn or posedge s)
+    if (!rn) q <= 1'b0; else if (s) q <= 1'b1; else q <= d;
+  always @(posedge clk or negedge clk) both <= d;
+  assign y = en ? a : 1'bz;
+endmodule
+""")
+    module = eda.generic_map(eda.parse_verilog(str(source)))
+    kinds = [i.cell_type for i in module.instances]
+    assert kinds.count("DFFSR") == 1
+    assert kinds.count("TRIBUF") == 1
+    assert kinds.count("DFF") == 2  # one rising + one falling flop for the dual-edge bit
+    library = eda.parse_liberty(str(Path(__file__).parent.parent / "assets" /
+                                    "sky130_fd_sc_hd__tt_025C_1v80.lib"))
+    mapped = [i.cell_type for i in eda.tech_map(module, library).instances]
+    assert "sky130_fd_sc_hd__dfbbp_1" in mapped
+    assert "sky130_fd_sc_hd__ebufn_1" in mapped
+
+
+def test_parse_verilog_flags_behavioral_modules_and_generic_map_lowers_them(tmp_path):
+    source = tmp_path / "cnt.v"
+    source.write_text("module cnt(input clk, input rst, output reg [3:0] q);"
+                      " always @(posedge clk) if (rst) q <= 0; else q <= q + 1; endmodule")
+    module = eda.parse_verilog(str(source))
+    assert module.is_behavioral and not module.instances
+    generic = eda.generic_map(module)
+    assert sum(i.cell_type == "DFF" for i in generic.instances) == 4
+
+
+def test_generic_and_tech_map_accept_a_project_with_top_and_parameters(tmp_path):
+    (tmp_path / "leaf.v").write_text(
+        "module leaf #(parameter W = 2)(input clk, input [W-1:0] d, output reg [W-1:0] q);"
+        " always @(posedge clk) q <= d; endmodule")
+    (tmp_path / "top.v").write_text(
+        "module top #(parameter W = 2)(input clk, input [W-1:0] d, output [W-1:0] q);"
+        " leaf #(.W(W)) u(.clk(clk), .d(d), .q(q)); endmodule")
+    project = eda.parse_verilog_project(str(tmp_path))
+    library = eda.parse_liberty(str(Path(__file__).parent.parent / "assets" /
+                                    "sky130_fd_sc_hd__tt_025C_1v80.lib"))
+    assert sum(i.cell_type == "DFF" for i in eda.generic_map(project, "top").instances) == 2
+    generic = eda.generic_map(project, "top", {"W": "5"})
+    assert sum(i.cell_type == "DFF" for i in generic.instances) == 5
+    mapped = eda.tech_map(project, library, "top", {"W": "5"})
+    assert [i.cell_type for i in mapped.instances].count("sky130_fd_sc_hd__dfxtp_1") == 5
+    with pytest.raises(RuntimeError, match="not found"):
+        eda.generic_map(project, "missing")

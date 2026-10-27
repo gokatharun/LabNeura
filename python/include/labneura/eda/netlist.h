@@ -5,6 +5,7 @@
 #include "labneura/eda/expression.h"
 
 #include <cstddef>
+#include <map>
 #include <optional>
 #include <string>
 #include <utility>
@@ -108,12 +109,14 @@ public:
     Module() = default;
     Module(std::string name, std::vector<Port> ports, std::vector<Net> nets,
            std::vector<Instance> instances,
-           std::vector<ContinuousAssignment> assignments = {})
+           std::vector<ContinuousAssignment> assignments = {},
+           bool behavioral = false)
         : name_(std::move(name)),
           ports_(std::move(ports)),
           nets_(std::move(nets)),
           instances_(std::move(instances)),
-          assignments_(std::move(assignments)) {}
+          assignments_(std::move(assignments)),
+          behavioral_(behavioral) {}
 
     const std::string& get_name() const noexcept { return name_; }
     const std::vector<Port>& get_ports() const noexcept { return ports_; }
@@ -133,6 +136,12 @@ public:
         return count;
     }
     std::size_t get_instance_count() const noexcept { return instances_.size(); }
+    // True when the RTL contains always blocks that generic_map must lower.
+    bool is_behavioral() const noexcept { return behavioral_; }
+    // Source files a behavioral module was parsed from (set by parse_verilog).
+    const std::vector<std::string>& get_source_files() const noexcept {
+        return source_files_;
+    }
 
 private:
     std::string name_;
@@ -140,6 +149,8 @@ private:
     std::vector<Net> nets_;
     std::vector<Instance> instances_;
     std::vector<ContinuousAssignment> assignments_;
+    bool behavioral_ = false;
+    std::vector<std::string> source_files_;
 
     friend Module parse_verilog_source(const std::string& source);
     friend Module parse_verilog(const std::string& path);
@@ -182,10 +193,18 @@ private:
 Module parse_verilog_source(const std::string& source);
 Module parse_verilog(const std::string& path);
 Module parse_verilog_file(const std::string& path);
+Project parse_verilog_project(const std::string& directory);
+// Lowers a parsed module, or the hierarchy below `top` in a parsed project,
+// into technology-independent generic cells. `parameters` overrides top-level
+// module parameters (for example {"ENABLE_MUL": "1"}).
 Module generic_map(const Module& rtl_module);
+Module generic_map(const Project& project, const std::string& top = "",
+                   const std::map<std::string, std::string>& parameters = {});
 Module tech_map(const Module& generic_module,
                 const StandardCellLibrary& cell_library);
-Project parse_verilog_project(const std::string& directory);
+Module tech_map(const Project& project, const StandardCellLibrary& cell_library,
+                const std::string& top = "",
+                const std::map<std::string, std::string>& parameters = {});
 std::string to_json(const Module& module);
 void write_json(const Module& module, const std::string& path);
 

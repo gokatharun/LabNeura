@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <optional>
+#include <map>
 #include <regex>
 #include <stdexcept>
 #include <string>
@@ -25,6 +26,12 @@ std::string cell_family(const std::string& type) {
     if (lower_type == "inv") return "inv";
     if (lower_type == "buf") return "buf";
     if (lower_type == "mux2") return "mux2";
+    if (lower_type == "dff") return "dfxtp";
+    if (lower_type == "dffr") return "dfrtp";
+    if (lower_type == "dffs") return "dfstp";
+    if (lower_type == "dffsr") return "dfbbp";
+    if (lower_type == "tribuf") return "ebufn";
+    if (lower_type == "latch") return "dlxtp";
     if (lower_type == "tiehi" || lower_type == "tielo") return "conb";
     for (const auto* family : {"and", "or", "xor", "xnor", "maj"}) {
         if (lower_type.rfind(family, 0) == 0) return family;
@@ -37,7 +44,7 @@ std::optional<StandardCell> find_cell_for_generic_type(
     if (const auto* exact = library.find_cell(type)) return *exact;
     static const std::regex generic_gate(
         R"(^(AND|OR|XOR|XNOR|MAJ)([2-9][0-9]*)$)");
-    static const std::regex generic_unary(R"(^(INV|BUF|MUX2|TIEHI|TIELO)$)");
+    static const std::regex generic_unary(R"(^(INV|BUF|MUX2|DFF|DFFR|DFFS|DFFSR|LATCH|TRIBUF|TIEHI|TIELO)$)");
     std::smatch generic_match;
     if (!std::regex_match(type, generic_match, generic_gate) &&
         !std::regex_match(type, generic_unary)) {
@@ -53,7 +60,10 @@ std::optional<StandardCell> find_cell_for_generic_type(
         }
     }
     const auto name_fragment =
-        type == "MUX2" ? family : family + digit_count;
+        type == "MUX2" || type.rfind("DFF", 0) == 0 || type == "LATCH" ||
+            type == "TRIBUF"
+            ? family
+            : family + digit_count;
     const StandardCell* best = nullptr;
     bool best_is_unit_drive = false;
     for (const auto& cell : library.get_cells()) {
@@ -83,6 +93,12 @@ std::optional<StandardCell> find_cell_for_generic_type(
             expected_inputs = static_cast<std::size_t>(std::stoul(digit_count));
         } else if (type == "MUX2") {
             expected_inputs = 3;
+        } else if (type == "DFF" || type == "LATCH" || type == "TRIBUF") {
+            expected_inputs = 2;
+        } else if (type == "DFFR" || type == "DFFS") {
+            expected_inputs = 3;
+        } else if (type == "DFFSR") {
+            expected_inputs = 4;
         } else if (type == "INV" || type == "BUF") {
             expected_inputs = 1;
         }
@@ -117,7 +133,7 @@ std::string generic_alias(const std::string& type) {
 bool is_generic_type(const std::string& type) {
     static const std::regex generic_gate(
         R"(^(AND|OR|XOR|XNOR|MAJ)([2-9][0-9]*)$)");
-    static const std::regex generic_unary(R"(^(INV|BUF|MUX2|TIEHI|TIELO)$)");
+    static const std::regex generic_unary(R"(^(INV|BUF|MUX2|DFF|DFFR|DFFS|DFFSR|LATCH|TRIBUF|TIEHI|TIELO)$)");
     return std::regex_match(type, generic_gate) ||
            std::regex_match(type, generic_unary);
 }
@@ -142,6 +158,7 @@ Module tech_map(const Module& generic_module,
                 const StandardCellLibrary& cell_library) {
     std::vector<Instance> instances;
     instances.reserve(generic_module.get_instances().size());
+    std::map<std::string, std::optional<StandardCell>> cell_cache;
 
     for (const auto& instance : generic_module.get_instances()) {
         const auto generic_type = instance.get_cell_type();
@@ -166,7 +183,14 @@ Module tech_map(const Module& generic_module,
                                    instance.get_connections(), instance.get_cell());
             continue;
         }
-        const auto cell = find_cell_for_generic_type(cell_library, mapped_type);
+        auto cached = cell_cache.find(mapped_type);
+        if (cached == cell_cache.end()) {
+            cached = cell_cache
+                         .emplace(mapped_type,
+                                  find_cell_for_generic_type(cell_library, mapped_type))
+                         .first;
+        }
+        const auto& cell = cached->second;
         if (!cell) {
             throw std::runtime_error(
                 "no standard cell matching generic cell '" + generic_type +
@@ -196,6 +220,12 @@ Module tech_map(const Module& generic_module,
     return Module(generic_module.get_name(), generic_module.get_ports(),
                   generic_module.get_nets(), std::move(instances),
                   generic_module.get_assignments());
+}
+
+Module tech_map(const Project& project, const StandardCellLibrary& cell_library,
+                const std::string& top,
+                const std::map<std::string, std::string>& parameters) {
+    return tech_map(generic_map(project, top, parameters), cell_library);
 }
 
 }  // namespace labneura::eda
