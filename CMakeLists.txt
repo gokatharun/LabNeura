@@ -4,6 +4,23 @@ project(LabNeura LANGUAGES CXX)
 include(CheckCXXCompilerFlag)
 include(FetchContent)
 
+# Optimized by default: slang is very slow in unoptimized builds.
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+  set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
+
+# Reuse compiled objects across rebuilds when ccache is installed.
+find_program(LABNEURA_CCACHE ccache)
+if(LABNEURA_CCACHE)
+  set(CMAKE_CXX_COMPILER_LAUNCHER "${LABNEURA_CCACHE}")
+  message(STATUS "ccache enabled: ${LABNEURA_CCACHE}")
+endif()
+
+# Optional persistent dependency cache (skips re-cloning/rebuilding slang).
+if(DEFINED ENV{LABNEURA_DEPS_DIR})
+  set(FETCHCONTENT_BASE_DIR "$ENV{LABNEURA_DEPS_DIR}/${CMAKE_BUILD_TYPE}")
+endif()
+
 # Embed the SKY130 Liberty file so the default parser works in source checkouts
 # and installed wheels alike.
 set(LABNEURA_EDA_DEFAULT_LIBERTY
@@ -63,6 +80,10 @@ set(SLANG_INCLUDE_TESTS OFF CACHE BOOL "" FORCE)
 set(SLANG_INCLUDE_TOOLS OFF CACHE BOOL "" FORCE)
 set(SLANG_INCLUDE_INSTALL OFF CACHE BOOL "" FORCE)
 set(SLANG_USE_MIMALLOC OFF CACHE BOOL "" FORCE)
+# Always use slang's pinned fmt; newer system fmt versions break its build.
+set(FETCHCONTENT_TRY_FIND_PACKAGE_MODE NEVER)
+set(SLANG_INCLUDE_PYLIB OFF CACHE BOOL "" FORCE)
+set(SLANG_INCLUDE_DOCS OFF CACHE BOOL "" FORCE)
 
 FetchContent_Declare(
   slang

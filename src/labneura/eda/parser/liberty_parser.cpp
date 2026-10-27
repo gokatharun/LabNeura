@@ -2,6 +2,8 @@
 #include "labneura/eda/cell_library.h"
 
 #include <cctype>
+#include <cstdlib>
+#include <cstring>
 #include <cmath>
 #include <fstream>
 #include <map>
@@ -14,7 +16,7 @@ namespace labneura::eda {
 namespace {
 
 struct Token {
-    std::string text;
+    std::string_view text;
     std::size_t start;
     std::size_t end;
 };
@@ -53,6 +55,7 @@ std::string decode_value(std::string value) {
 class LibertyParser {
 public:
     explicit LibertyParser(const std::string& source) : source_(source) {
+        tokens_.reserve(source_.size() / 5 + 16);
         tokenize();
     }
 
@@ -185,7 +188,7 @@ private:
                 if (i == start) ++i;
             }
             tokens_.push_back(
-                {source_.substr(start, i - start), start, i});
+                {std::string_view(source_).substr(start, i - start), start, i});
         }
     }
 
@@ -253,7 +256,7 @@ private:
     Group parse_statement() {
         if (peek().text == "}") fail("unexpected closing brace");
         Group result;
-        result.name = take().text;
+        result.name = std::string(take().text);
 
         if (accept(":")) {
             result.attributes.emplace(result.name, parse_scalar());
@@ -321,30 +324,44 @@ std::optional<double> numeric_attribute(const Group& group,
     }
 }
 
+// Appends every comma-separated number in `text`, rejecting any item that is
+// not entirely a finite number.
+void append_numbers(const std::string& text, std::string_view key,
+                    std::vector<double>& out) {
+    const char* cursor = text.c_str();
+    const char* const end = cursor + text.size();
+    const auto is_blank = [](char c) {
+        return c == ' ' || c == '\t' || c == '\r' || c == '\n';
+    };
+    while (cursor < end) {
+        const char* item_end = static_cast<const char*>(
+            std::memchr(cursor, ',', static_cast<std::size_t>(end - cursor)));
+        if (!item_end) item_end = end;
+        const char* first = cursor;
+        const char* last = item_end;
+        while (first < last && is_blank(*first)) ++first;
+        while (last > first && is_blank(last[-1])) --last;
+        if (first != last) {
+            char* parsed_end = nullptr;
+            const double value = std::strtod(first, &parsed_end);
+            if (parsed_end != last || !std::isfinite(value)) {
+                throw std::runtime_error("invalid numeric value in Liberty '" +
+                                         std::string(key) + "': " +
+                                         std::string(first, last));
+            }
+            out.push_back(value);
+        }
+        cursor = item_end + 1;
+    }
+}
+
 std::vector<double> numeric_values(const Group& group,
                                    std::string_view key) {
     std::vector<double> result;
     const auto found = group.list_attributes.find(std::string(key));
     if (found == group.list_attributes.end()) return result;
-
     for (const auto& argument : found->second) {
-        std::stringstream stream(decode_value(argument));
-        std::string item;
-        while (std::getline(stream, item, ',')) {
-            item = trim(item);
-            if (item.empty()) continue;
-            try {
-                std::size_t consumed = 0;
-                const auto parsed = std::stod(item, &consumed);
-                if (consumed != item.size() || !std::isfinite(parsed)) {
-                    throw std::invalid_argument("not a finite number");
-                }
-                result.push_back(parsed);
-            } catch (const std::exception&) {
-                throw std::runtime_error("invalid numeric value in Liberty '" +
-                                         std::string(key) + "': " + item);
-            }
-        }
+        append_numbers(decode_value(argument), key, result);
     }
     return result;
 }
@@ -365,31 +382,19 @@ std::map<std::string, std::vector<double>> collect_templates(
 std::optional<LookupTable> parse_table(
     const Group& group,
     const std::map<std::string, std::vector<double>>& templates) {
-    const auto rows = numeric_values(group, "values");
-    if (rows.empty()) return std::nullopt;
+    const auto found = group.list_attributes.find("values");
+    if (found == group.list_attributes.end()) return std::nullopt;
 
     std::vector<std::vector<double>> values;
-    const auto& raw_rows = group.list_attributes.at("values");
-    for (const auto& raw_row : raw_rows) {
+    values.reserve(found->second.size());
+    bool has_values = false;
+    for (const auto& raw_row : found->second) {
         std::vector<double> row;
-        std::stringstream stream(decode_value(raw_row));
-        std::string item;
-        while (std::getline(stream, item, ',')) {
-            item = trim(item);
-            if (item.empty()) continue;
-            try {
-                std::size_t consumed = 0;
-                const auto parsed = std::stod(item, &consumed);
-                if (consumed != item.size() || !std::isfinite(parsed)) {
-                    throw std::invalid_argument("not a finite number");
-                }
-                row.push_back(parsed);
-            } catch (const std::exception&) {
-                throw std::runtime_error("invalid Liberty table value: " + item);
-            }
-        }
+        append_numbers(decode_value(raw_row), "values", row);
+        has_values = has_values || !row.empty();
         values.push_back(std::move(row));
     }
+    if (!has_values) return std::nullopt;
 
     std::vector<double> index_1 = numeric_values(group, "index_1");
     std::vector<double> index_2 = numeric_values(group, "index_2");
@@ -530,16 +535,21 @@ StandardCellLibrary parse_liberty_source(const std::string& source) {
 }
 
 StandardCellLibrary parse_liberty(const std::string& path) {
-    std::ifstream input(path);
+    std::ifstream input(path, std::ios::binary | std::ios::ate);
     if (!input) {
         throw std::runtime_error("could not open Liberty file: " + path);
     }
-    std::ostringstream source;
-    source << input.rdbuf();
-    if (input.bad()) {
+    const auto size = input.tellg();
+    std::string source;
+    if (size > 0) {
+        source.resize(static_cast<std::size_t>(size));
+        input.seekg(0);
+        input.read(source.data(), size);
+    }
+    if (input.bad() || (size > 0 && input.gcount() != size)) {
         throw std::runtime_error("failed reading Liberty file: " + path);
     }
-    return parse_library(source.str());
+    return parse_library(source);
 }
 
 const StandardCellLibrary& get_default_cell_library() {

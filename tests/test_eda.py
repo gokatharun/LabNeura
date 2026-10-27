@@ -529,6 +529,10 @@ def test_parse_liberty_exposes_cells_pins_and_timing_tables(tmp_path):
         pytest.approx([0.11, 0.12]),
         pytest.approx([0.21, 0.22]),
     ]
+    tensor = arc.cell_rise.to_tensor()
+    assert tensor.shape == (2, 2)
+    assert tensor.size() == 4
+    assert list(tensor.data_fp32()) == pytest.approx([0.11, 0.12, 0.21, 0.22])
     assert arc.cell_fall.values == [
         pytest.approx([0.31, 0.32]),
         pytest.approx([0.41, 0.42]),
@@ -782,3 +786,17 @@ def test_parse_verilog_project_reports_syntax_errors(tmp_path):
 
     with pytest.raises(RuntimeError, match="slang failed to parse|compile"):
         eda.parse_verilog_project(str(project_dir))
+
+
+def test_tensor_supports_two_dimensions():
+    import labneura
+
+    matrix = labneura.Tensor([[1.0, 2.0], [3.0, 4.0]])
+    assert matrix.shape == (2, 2)
+    assert (matrix.rows(), matrix.cols(), matrix.ndim()) == (2, 2, 2)
+    assert list(matrix.add(matrix).data_fp32()) == [2.0, 4.0, 6.0, 8.0]
+    assert labneura.Tensor([1.0, 2.0, 3.0]).shape == (3,)
+    with pytest.raises(Exception):
+        labneura.Tensor([[1.0], [2.0, 3.0]])
+    with pytest.raises(Exception):
+        matrix.add(labneura.Tensor([1.0, 2.0, 3.0, 4.0]))

@@ -1,6 +1,8 @@
 #ifndef LABNEURA_EDA_CELL_LIBRARY_H
 #define LABNEURA_EDA_CELL_LIBRARY_H
 
+#include "labneura/tensor.h"
+
 #include <cstddef>
 #include <optional>
 #include <string>
@@ -26,6 +28,16 @@ public:
     const std::vector<double>& get_index_2() const noexcept { return index_2_; }
     const std::vector<std::vector<double>>& get_values() const noexcept {
         return values_;
+    }
+
+    // 2-D FP32 tensor (rows x columns) of the table values.
+    Tensor to_tensor() const {
+        std::vector<std::vector<float>> rows;
+        rows.reserve(values_.size());
+        for (const auto& row : values_) {
+            rows.emplace_back(row.begin(), row.end());
+        }
+        return Tensor(rows);
     }
 
 private:

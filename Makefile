@@ -9,6 +9,12 @@ UNAME_S := $(shell uname -s)
 UNAME_M := $(shell uname -m)
 
 # --------------------------------------
+# Hardware-aware build parallelism (used by CMake/scikit-build-core)
+# --------------------------------------
+NPROC := $(shell sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)
+export CMAKE_BUILD_PARALLEL_LEVEL ?= $(NPROC)
+
+# --------------------------------------
 # Python
 # --------------------------------------
 PYTHON ?= python3

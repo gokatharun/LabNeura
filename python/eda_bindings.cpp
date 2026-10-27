@@ -158,7 +158,9 @@ void bind_eda(pybind11::module_& labneura_module) {
         .def("get_template_name", &eda::LookupTable::get_template_name)
         .def("get_index_1", &eda::LookupTable::get_index_1)
         .def("get_index_2", &eda::LookupTable::get_index_2)
-        .def("get_values", &eda::LookupTable::get_values);
+        .def("get_values", &eda::LookupTable::get_values)
+        .def("to_tensor", &eda::LookupTable::to_tensor,
+             "Values as a flat row-major FP32 Tensor");
 
     py::class_<eda::TimingArc>(module, "TimingArc", "A Liberty timing arc.")
         .def_property_readonly("related_pin", &eda::TimingArc::get_related_pin)

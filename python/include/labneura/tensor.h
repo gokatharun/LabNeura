@@ -61,6 +61,8 @@ public:
     Tensor();
     explicit Tensor(const std::vector<float>& data, QuantizationMode mode = QuantizationMode::FP32);
     explicit Tensor(const std::vector<int>& data, QuantizationMode mode = QuantizationMode::FP32);
+    // 2-D tensor from equal-length rows (stored flat, row-major)
+    explicit Tensor(const std::vector<std::vector<float>>& rows, QuantizationMode mode = QuantizationMode::FP32);
     explicit Tensor(float scalar, QuantizationMode mode = QuantizationMode::FP32);
     explicit Tensor(int scalar, QuantizationMode mode = QuantizationMode::FP32);
 
@@ -77,6 +79,10 @@ public:
     std::size_t size() const;
     std::size_t numel() const { return size(); }
     QuantizationMode quantization_mode() const { return quantization_mode_; }
+    const std::vector<std::size_t>& shape() const { return shape_; }
+    std::size_t ndim() const { return shape_.size(); }
+    std::size_t rows() const { return shape_.size() == 2 ? shape_[0] : 1; }
+    std::size_t cols() const { return shape_.size() == 2 ? shape_[1] : size(); }
 
     // Get raw data pointer (for internal use and operations)
     float* data_fp32();
@@ -110,6 +116,9 @@ public:
 private:
     QuantizationMode quantization_mode_;
     std::unique_ptr<TensorBackend> backend_;
+    std::vector<std::size_t> shape_;
+
+    void check_same_shape(const Tensor& other) const;
 
     // Helper to initialize backend based on hardware
     void init_backend(std::size_t size);

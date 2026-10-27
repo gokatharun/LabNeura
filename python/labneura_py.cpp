@@ -48,6 +48,8 @@ PYBIND11_MODULE(labneura, m) {
              "Constructor from float vector", py::arg("data"), py::arg("mode") = labneura::QuantizationMode::FP32)
         .def(py::init<const std::vector<int>&, labneura::QuantizationMode>(),
              "Constructor from int vector", py::arg("data"), py::arg("mode") = labneura::QuantizationMode::FP32)
+        .def(py::init<const std::vector<std::vector<float>>&, labneura::QuantizationMode>(),
+             "Constructor from a 2-D list of float rows", py::arg("rows"), py::arg("mode") = labneura::QuantizationMode::FP32)
         .def(py::init<float, labneura::QuantizationMode>(),
              "Constructor from float scalar", py::arg("scalar"), py::arg("mode") = labneura::QuantizationMode::FP32)
         .def(py::init<int, labneura::QuantizationMode>(),
@@ -55,6 +57,12 @@ PYBIND11_MODULE(labneura, m) {
         
         // Methods
         .def("size", &labneura::Tensor::size, "Get tensor size")
+        .def_property_readonly("shape", [](const labneura::Tensor& self) {
+            return py::tuple(py::cast(self.shape()));
+        }, "Tensor shape as a tuple")
+        .def("ndim", &labneura::Tensor::ndim, "Number of dimensions")
+        .def("rows", &labneura::Tensor::rows, "Number of rows (1 for 1-D)")
+        .def("cols", &labneura::Tensor::cols, "Number of columns")
         .def("numel", &labneura::Tensor::numel, "Get number of elements (alias for size)")
         .def("quantization_mode", &labneura::Tensor::quantization_mode, "Get quantization mode")
         

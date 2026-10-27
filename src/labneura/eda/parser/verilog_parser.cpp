@@ -17,6 +17,7 @@
 #include "slang/driver/Driver.h"
 #include "slang/ast/SemanticFacts.h"
 #include "slang/syntax/SyntaxTree.h"
+#include "slang/syntax/SyntaxVisitor.h"
 #include "slang/text/Json.h"
 #include "slang/text/SourceManager.h"
 
@@ -157,9 +158,29 @@ bool is_cell_type(const StandardCellLibrary& library,
            library.find_cell(liberty_cell_name(verilog_type));
 }
 
-std::string make_cell_stub_source(const StandardCellLibrary& library) {
+struct InstantiatedTypeCollector
+    : slang::syntax::SyntaxVisitor<InstantiatedTypeCollector> {
+    std::unordered_set<std::string> names;
+
+    void handle(const slang::syntax::HierarchyInstantiationSyntax& node) {
+        names.emplace(node.type.valueText());
+        visitDefault(node);
+    }
+};
+
+// Only cells the design actually instantiates need a stub definition, which
+// keeps the stub compilation tiny instead of one module per library cell.
+std::string make_cell_stub_source(
+    const StandardCellLibrary& library,
+    const std::unordered_set<std::string>& instantiated) {
+    std::unordered_set<std::string> needed = instantiated;
+    for (const auto& name : instantiated) {
+        needed.insert(liberty_cell_name(name));
+    }
+
     std::ostringstream source;
     for (const auto& cell : library.get_cells()) {
+        if (!needed.count(cell.get_name())) continue;
         source << "module " << cell.get_name() << " (";
         bool first = true;
         for (const auto& pin : cell.get_pins()) {
@@ -185,7 +206,7 @@ std::string make_cell_stub_source(const StandardCellLibrary& library) {
         {"MUX2_X1", "input A0, input A1, input S, output Y"},
     };
     for (const auto& [alias, pins] : aliases) {
-        if (!library.find_cell(alias) &&
+        if (instantiated.count(alias) && !library.find_cell(alias) &&
             library.find_cell(liberty_cell_name(alias))) {
             source << "module " << alias << " (" << pins << "); endmodule\n";
         }
@@ -561,8 +582,13 @@ Module parse_verilog(const std::string& path) {
     }
 
     const auto& cell_library = get_default_cell_library();
+    InstantiatedTypeCollector collector;
+    for (const auto& tree : driver.syntaxTrees) {
+        tree->root().visit(collector);
+    }
     driver.syntaxTrees.push_back(slang::syntax::SyntaxTree::fromText(
-        make_cell_stub_source(cell_library), driver.sourceManager,
+        make_cell_stub_source(cell_library, collector.names),
+        driver.sourceManager,
         "labneura_cells.v", "labneura_cells.v"));
     auto compilation = driver.createCompilation();
     const auto& root_symbol = compilation->getRoot();

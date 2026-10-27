@@ -11,13 +11,35 @@
 
 namespace labneura {
 
+namespace {
+std::vector<float> flatten_rows(const std::vector<std::vector<float>>& rows) {
+    std::vector<float> flat;
+    if (rows.empty()) return flat;
+    const std::size_t cols = rows.front().size();
+    flat.reserve(rows.size() * cols);
+    for (const auto& row : rows) {
+        if (row.size() != cols) {
+            throw std::invalid_argument(
+                "2-D Tensor rows must all have the same length");
+        }
+        flat.insert(flat.end(), row.begin(), row.end());
+    }
+    return flat;
+}
+}  // namespace
+
 // Tensor implementation
-Tensor::Tensor() : quantization_mode_(QuantizationMode::FP32) {
+Tensor::Tensor() : quantization_mode_(QuantizationMode::FP32), shape_{0} {
     init_backend(0);
 }
 
+Tensor::Tensor(const std::vector<std::vector<float>>& rows, QuantizationMode mode)
+    : Tensor(flatten_rows(rows), mode) {
+    shape_ = {rows.size(), rows.empty() ? std::size_t{0} : rows.front().size()};
+}
+
 Tensor::Tensor(const std::vector<float>& data, QuantizationMode mode)
-    : quantization_mode_(mode) {
+    : quantization_mode_(mode), shape_{data.size()} {
     init_backend(data.size());
     if (!data.empty()) {
         if (mode == QuantizationMode::FP32) {
@@ -55,7 +77,7 @@ Tensor::Tensor(const std::vector<float>& data, QuantizationMode mode)
 }
 
 Tensor::Tensor(const std::vector<int>& data, QuantizationMode mode)
-    : quantization_mode_(mode) {
+    : quantization_mode_(mode), shape_{data.size()} {
     init_backend(data.size());
     if (mode == QuantizationMode::FP32) {
         float* fp32_data = data_fp32();
@@ -87,7 +109,7 @@ Tensor::Tensor(const std::vector<int>& data, QuantizationMode mode)
 }
 
 Tensor::Tensor(float scalar, QuantizationMode mode)
-    : quantization_mode_(mode) {
+    : quantization_mode_(mode), shape_{1} {
     init_backend(1);
     if (mode == QuantizationMode::FP32) {
         data_fp32()[0] = scalar;
@@ -106,7 +128,7 @@ Tensor::Tensor(float scalar, QuantizationMode mode)
 }
 
 Tensor::Tensor(int scalar, QuantizationMode mode)
-    : quantization_mode_(mode) {
+    : quantization_mode_(mode), shape_{1} {
     init_backend(1);
     if (mode == QuantizationMode::FP32) {
         data_fp32()[0] = static_cast<float>(scalar);
@@ -128,24 +150,28 @@ Tensor::~Tensor() = default;
 
 Tensor::Tensor(const Tensor& other)
     : quantization_mode_(other.quantization_mode_),
-      backend_(other.backend_ ? other.backend_->clone() : nullptr) {}
+      backend_(other.backend_ ? other.backend_->clone() : nullptr),
+      shape_(other.shape_) {}
 
 Tensor& Tensor::operator=(const Tensor& other) {
     if (this != &other) {
         quantization_mode_ = other.quantization_mode_;
         backend_ = other.backend_ ? other.backend_->clone() : nullptr;
+        shape_ = other.shape_;
     }
     return *this;
 }
 
 Tensor::Tensor(Tensor&& other) noexcept
     : quantization_mode_(other.quantization_mode_),
-      backend_(std::move(other.backend_)) {}
+      backend_(std::move(other.backend_)),
+      shape_(std::move(other.shape_)) {}
 
 Tensor& Tensor::operator=(Tensor&& other) noexcept {
     if (this != &other) {
         quantization_mode_ = other.quantization_mode_;
         backend_ = std::move(other.backend_);
+        shape_ = std::move(other.shape_);
     }
     return *this;
 }
@@ -214,6 +240,7 @@ void Tensor::add_inplace(const Tensor& other) {
     if (!backend_) {
         throw std::runtime_error("Tensor backend not initialized");
     }
+    check_same_shape(other);
     backend_->add_inplace(*other.backend_);
 }
 
@@ -221,6 +248,7 @@ void Tensor::mul_inplace(const Tensor& other) {
     if (!backend_) {
         throw std::runtime_error("Tensor backend not initialized");
     }
+    check_same_shape(other);
     backend_->mul_inplace(*other.backend_);
 }   
 
@@ -228,6 +256,7 @@ void Tensor::sub_inplace(const Tensor& other) {
     if (!backend_) {
         throw std::runtime_error("Tensor backend not initialized");
     }
+    check_same_shape(other);
     backend_->sub_inplace(*other.backend_);
 }
 
@@ -235,7 +264,15 @@ void Tensor::div_inplace(const Tensor& other) {
     if (!backend_) {
         throw std::runtime_error("Tensor backend not initialized");
     }
+    check_same_shape(other);
     backend_->div_inplace(*other.backend_);
+}
+
+void Tensor::check_same_shape(const Tensor& other) const {
+    // Differing sizes are reported by the backend ("size mismatch").
+    if (size() == other.size() && shape_ != other.shape_) {
+        throw std::runtime_error("Tensor shape mismatch");
+    }
 }
 
 void Tensor::init_backend(std::size_t size) {
