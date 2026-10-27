@@ -71,7 +71,11 @@ std::string to_dot(const Module& module) {
     for (const auto& instance : module.get_instances()) {
         for (const auto& connection : instance.get_connections()) {
             auto& side = is_output_pin(instance, connection.get_pin()) ? drivers : sinks;
-            side[connection.get_net()].push_back({instance.get_name(), connection.get_pin()});
+            // Bit selects of a port ("count[2]") belong to that port's node.
+            const auto base = base_net(connection.get_net());
+            const bool is_port = input_ports.count(base) || output_ports.count(base);
+            side[is_port ? base : connection.get_net()].push_back(
+                {instance.get_name(), connection.get_pin()});
         }
     }
     for (const auto& [net, from] : drivers) {

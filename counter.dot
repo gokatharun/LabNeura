@@ -1,0 +1,6 @@
+digraph "counter_4bit" {
+  rankdir=LR;
+  "port:clk" [shape=invhouse, label="clk"];
+  "port:rst" [shape=invhouse, label="rst"];
+  "port:count" [shape=house, label="count"];
+}
