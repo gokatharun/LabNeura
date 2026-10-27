@@ -66,16 +66,19 @@ std::string to_dot(const Module& module) {
     };
     std::map<std::string, std::vector<Endpoint>> drivers;
     std::map<std::string, std::vector<Endpoint>> sinks;
-    for (const auto& name : input_ports) drivers[name].push_back({"port:" + name, ""});
-    for (const auto& name : output_ports) sinks[name].push_back({"port:" + name, ""});
+    // Nets are matched per bit ("count[2]"), so bits never cross-connect; a port
+    // node stands in for every bit of its port.
+    std::set<std::string> port_nets_seen;
     for (const auto& instance : module.get_instances()) {
         for (const auto& connection : instance.get_connections()) {
+            const auto& net = connection.get_net();
             auto& side = is_output_pin(instance, connection.get_pin()) ? drivers : sinks;
-            // Bit selects of a port ("count[2]") belong to that port's node.
-            const auto base = base_net(connection.get_net());
-            const bool is_port = input_ports.count(base) || output_ports.count(base);
-            side[is_port ? base : connection.get_net()].push_back(
-                {instance.get_name(), connection.get_pin()});
+            side[net].push_back({instance.get_name(), connection.get_pin()});
+            if (port_nets_seen.insert(net).second) {
+                const auto base = base_net(net);
+                if (input_ports.count(base)) drivers[net].push_back({"port:" + base, ""});
+                if (output_ports.count(base)) sinks[net].push_back({"port:" + base, ""});
+            }
         }
     }
     for (const auto& [net, from] : drivers) {

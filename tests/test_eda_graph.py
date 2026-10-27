@@ -129,20 +129,21 @@ def test_dot_is_well_formed_and_complete(tmp_path, library, mode, source):
 def test_dot_edges_match_netlist_connectivity(tmp_path, library, mode, source):
     module = build(tmp_path, source, mode, library)
     _, edges = parse_dot(module.dump_graph())
-    port_names = {p.name: p for p in module.ports}
+    inputs = {p.name for p in module.ports if p.direction == eda.PortDirection.INPUT}
+    outputs = {p.name for p in module.ports if p.direction != eda.PortDirection.INPUT}
 
-    drivers, sinks = {}, {}
-    for port in module.ports:
-        if port.direction == eda.PortDirection.INPUT:
-            drivers.setdefault(port.name, []).append((f"port:{port.name}", ""))
-        else:
-            sinks.setdefault(port.name, []).append((f"port:{port.name}", ""))
+    drivers, sinks, seen = {}, {}, set()
     for instance in module.instances:
         for connection in instance.connections:
             net = connection.net
-            key = base(net) if base(net) in port_names else net
             side = drivers if pin_is_output(instance, connection.pin) else sinks
-            side.setdefault(key, []).append((instance.name, connection.pin))
+            side.setdefault(net, []).append((instance.name, connection.pin))
+            if net not in seen:
+                seen.add(net)
+                if base(net) in inputs:
+                    drivers.setdefault(net, []).append((f"port:{base(net)}", ""))
+                if base(net) in outputs:
+                    sinks.setdefault(net, []).append((f"port:{base(net)}", ""))
 
     expected = sorted(
         (src, dst, net, pin)
@@ -174,13 +175,24 @@ def test_every_input_pin_and_output_port_is_connected(tmp_path, library, mode, s
             assert incoming.get(f"port:{port.name}"), f"{port.name} has no driver"
 
 
-def test_multibit_output_port_receives_one_edge_per_driving_bit(tmp_path, mode, library):
+def test_multibit_output_port_receives_one_edge_per_bit(tmp_path, mode, library):
     module = build(tmp_path, COUNTER, mode, library)
     _, edges = parse_dot(module.dump_graph())
     into_count = [e for e in edges if e[1] == "port:count"]
-    assert len(into_count) == 4
+    assert sorted(e[2] for e in into_count) == [f"count[{i}]" for i in range(4)]
     assert len({e[0] for e in into_count}) == 4
-    assert all(e[2] == "count" for e in into_count)
+
+
+def test_bits_never_cross_connect(tmp_path, mode, library):
+    module = build(tmp_path, COUNTER, mode, library)
+    nodes, edges = parse_dot(module.dump_graph())
+    instances = {i.name: i for i in module.instances}
+    for src, dst, net, pin in edges:
+        if src in instances:
+            assert net in {c.net for c in instances[src].connections
+                           if pin_is_output(instances[src], c.pin)}, (src, net)
+        if dst in instances:
+            assert (pin, net) in {(c.pin, c.net) for c in instances[dst].connections}
 
 
 def test_flops_in_the_counter_graph_are_clocked_and_feed_back(tmp_path, mode, library):
@@ -193,7 +205,7 @@ def test_flops_in_the_counter_graph_are_clocked_and_feed_back(tmp_path, mode, li
     assert set(flops) <= clocked
     # The incrementer reads the registered value, so flops also have fan-out to logic.
     for flop in flops:
-        assert any(src == flop and dst != "port:count" for src, dst, _, _ in edges)
+        assert any(src == flop and dst != "port:count" for src, dst, _, _ in edges), flop
 
 
 def test_graph_has_no_combinational_loops(tmp_path, mode, library):
@@ -354,38 +366,48 @@ def test_graph_logic_agrees_with_iverilog(tmp_path, mode, library):
     assert checked == 16
 
 
-def test_counter_graph_next_state_logic_counts_up(tmp_path, mode, library):
-    """Cut the flops: their D pins are the next state, their outputs the state."""
+def test_counter_graph_alone_computes_next_state(tmp_path, mode, library):
+    """Cut the flops in the DOT: edges into D are the next state, edges out of Q the state."""
     module = build(tmp_path, COUNTER, mode, library)
+    nodes, edges = parse_dot(module.dump_graph())
     instances = {i.name: i for i in module.instances}
-    flops = [i for i in module.instances
-             if any(c.pin in {"D"} for c in i.connections)]
+    flops = {n: i for n, i in instances.items()
+             if any(c.pin == "D" for c in i.connections)}
     assert len(flops) == 4
-    state_net = {}
-    for flop in flops:
-        q = next(c.net for c in flop.connections if pin_is_output(flop, c.pin))
-        state_net[q] = int(re.search(r"\[(\d)\]", q).group(1))
-    d_net = {state_net[next(c.net for c in f.connections if pin_is_output(f, c.pin))]:
-             next(c.net for c in f.connections if c.pin == "D") for f in flops}
+    # Flop -> state bit index, read from the labels of the edges that leave the flop.
+    bit_of = {}
+    for src, dst, net, _ in edges:
+        if src in flops and dst == "port:count":
+            bit_of[src] = int(re.fullmatch(r"count\[(\d)\]", net).group(1))
+    assert sorted(bit_of.values()) == [0, 1, 2, 3]
+
+    incoming = {}
+    for src, dst, net, pin in edges:
+        incoming.setdefault(dst, []).append((src, net, pin))
 
     def next_state(count, rst):
-        nets = {f"count[{i}]": (count >> i) & 1 for i in range(4)}
-        nets["rst"] = rst
-        pending = [i for i in instances.values() if i not in flops]
+        net_value = {f"count[{i}]": (count >> i) & 1 for i in range(4)}
+        net_value["rst"] = rst
+        logic = [n for n in instances if n not in flops]
+        pending = list(logic)
         while pending:
-            progress = False
-            for inst in list(pending):
-                ins = {c.pin: nets[c.net] for c in inst.connections
-                       if not pin_is_output(inst, c.pin) and c.net in nets}
-                needed = [c for c in inst.connections if not pin_is_output(inst, c.pin)]
-                if len(ins) != len(needed):
+            progressed = False
+            for name in list(pending):
+                feeds = incoming.get(name, [])
+                if not all(net in net_value for _, net, _ in feeds):
                     continue
-                out = next(c.net for c in inst.connections if pin_is_output(inst, c.pin))
-                nets[out] = cell_output(inst, ins)
-                pending.remove(inst)
-                progress = True
-            assert progress
-        return sum(nets[d_net[i]] << i for i in range(4))
+                inst = instances[name]
+                out_net = next(c.net for c in inst.connections
+                               if pin_is_output(inst, c.pin))
+                net_value[out_net] = cell_output(inst, {p: net_value[n] for _, n, p in feeds})
+                pending.remove(name)
+                progressed = True
+            assert progressed, "next-state logic is not evaluable from the graph"
+        result = 0
+        for flop, bit in bit_of.items():
+            (_, d_net, _), = [e for e in incoming[flop] if e[2] == "D"]
+            result |= net_value[d_net] << bit
+        return result
 
     for count in range(16):
         assert next_state(count, 0) == (count + 1) & 0xF
