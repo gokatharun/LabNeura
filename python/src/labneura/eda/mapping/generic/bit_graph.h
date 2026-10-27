@@ -43,6 +43,8 @@ public:
         nodes_.push_back({Op::Const, -1, -1, -1, false, "0"});
         nodes_.push_back({Op::Const, -1, -1, -1, false, "1"});
         nodes_.push_back({Op::Latch, -1, -1, -1, false, "latch"});
+        tainted_.assign(3, 0);
+        tainted_[kLatch] = 1;
     }
 
     const Node& node(Bit id) const { return nodes_.at(static_cast<std::size_t>(id)); }
@@ -111,6 +113,11 @@ public:
         if (select == kOne) return when_true;
         if (select == kZero) return when_false;
         if (when_true == when_false) return when_true;
+        // A value that may be "unassigned" must keep its mux: folding a constant arm
+        // away would lose the condition under which the signal is assigned.
+        if (is_tainted(when_true) || is_tainted(when_false)) {
+            return hashed(Op::Mux, when_false, when_true, select);
+        }
         if (when_false == kZero && when_true == kOne) return select;
         if (when_false == kOne && when_true == kZero) return make_not(select);
         if (when_false == kZero) return make_and(select, when_true);
@@ -122,8 +129,12 @@ public:
 
 private:
     std::vector<Node> nodes_;
+    std::vector<char> tainted_;  // node depends on the unassigned-value marker
     std::map<std::tuple<int, Bit, Bit, Bit>, Bit> table_;
 
+    bool is_tainted(Bit id) const {
+        return id >= 0 && static_cast<std::size_t>(id) < tainted_.size() && tainted_[id];
+    }
     Bit last() const { return static_cast<Bit>(nodes_.size() - 1); }
     bool is_complement(Bit a, Bit b) const {
         return (node(a).op == Op::Not && node(a).a == b) ||
@@ -138,7 +149,10 @@ private:
         created.a = a;
         created.b = b;
         created.c = c;
+        const bool tainted = is_tainted(a) || is_tainted(b) || is_tainted(c);
         nodes_.push_back(std::move(created));
+        tainted_.resize(nodes_.size(), 0);
+        tainted_.back() = tainted;
         table_.emplace(key, last());
         return last();
     }

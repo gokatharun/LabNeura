@@ -121,6 +121,14 @@ void bind_eda(pybind11::module_& labneura_module) {
         .def("get_nets", &eda::Module::get_nets)
         .def("get_instances", &eda::Module::get_instances)
         .def("get_assignments", &eda::Module::get_assignments)
+        .def("dump_graph",
+             [](const eda::Module& self, const std::string& path) {
+                 if (path.empty()) return eda::to_dot(self);
+                 eda::write_dot(self, path);
+                 return std::string();
+             },
+             py::arg("path") = "",
+             "Return the netlist as Graphviz DOT, or write it to `path`.")
         .def_property_readonly("port_count", &eda::Module::get_port_count)
         .def_property_readonly("wire_count", &eda::Module::get_wire_count)
         .def_property_readonly("instance_count", &eda::Module::get_instance_count)

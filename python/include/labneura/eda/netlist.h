@@ -207,6 +207,9 @@ Module tech_map(const Project& project, const StandardCellLibrary& cell_library,
                 const std::map<std::string, std::string>& parameters = {});
 std::string to_json(const Module& module);
 void write_json(const Module& module, const std::string& path);
+// Graphviz DOT view: cells and ports are nodes, nets are driver-to-sink edges.
+std::string to_dot(const Module& module);
+void write_dot(const Module& module, const std::string& path);
 
 }  // namespace labneura::eda
 

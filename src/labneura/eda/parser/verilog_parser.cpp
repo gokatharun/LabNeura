@@ -35,6 +35,11 @@
 namespace labneura::eda {
 namespace {
 
+bool is_systemverilog(const std::filesystem::path& path) {
+    return path.extension() == ".sv";
+}
+
+
 struct Declaration {
     std::string name;
     std::string direction;
@@ -106,8 +111,9 @@ std::vector<std::string> split_names(const std::string& text) {
     return names;
 }
 
-std::string source_range_text(const slang::SourceRange& range,
+std::string source_range_text(const slang::SourceRange& macro_range,
                               const slang::SourceManager& source_manager) {
+    const auto range = source_manager.getFullyOriginalRange(macro_range);
     const auto start = range.start();
     const auto end = range.end();
     if (!start.valid() || !end.valid() || start.buffer() != end.buffer() ||
@@ -563,7 +569,8 @@ Module parse_verilog(const std::string& path) {
             .lexically_normal()
             .string();
     std::vector<std::string> arguments = {
-        "labneura-eda", "--std=1364-2005",
+        "labneura-eda",
+        is_systemverilog(source_path) ? "--std=1800-2017" : "--std=1364-2005",
         "--include-directory=" + include_directory, absolute_path};
 
     slang::driver::Driver driver;
@@ -646,18 +653,21 @@ Project parse_verilog_project(const std::string& directory) {
             include_directories.insert(
                 std::filesystem::absolute(entry.path()).lexically_normal().string());
         }
-        if (entry.is_regular_file() && entry.path().extension() == ".v") {
+        if (entry.is_regular_file() && (entry.path().extension() == ".v" || is_systemverilog(entry.path()))) {
             verilog_files.push_back(entry.path());
         }
     }
     std::sort(verilog_files.begin(), verilog_files.end());
     if (verilog_files.empty()) {
-        throw std::runtime_error("no .v Verilog files found in project: " +
+        throw std::runtime_error("no .v or .sv files found in project: " +
                                  directory);
     }
 
     Project project;
-    std::vector<std::string> arguments = {"labneura-eda", "--std=1364-2005"};
+    const bool any_systemverilog =
+        std::any_of(verilog_files.begin(), verilog_files.end(), is_systemverilog);
+    std::vector<std::string> arguments = {
+        "labneura-eda", any_systemverilog ? "--std=1800-2017" : "--std=1364-2005"};
     for (const auto& path : verilog_files) {
         project.source_files_.push_back(
             std::filesystem::absolute(path).lexically_normal().string());

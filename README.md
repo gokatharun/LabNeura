@@ -115,6 +115,7 @@ for instance in module.instances:
         print(connection.pin, "->", connection.net)
 
 eda.write_json(module, "logic_example.json")
+module.dump_graph("logic_example.dot")  # Graphviz: dot -Tsvg logic_example.dot
 ```
 
 `parse_verilog_project` recursively reads `.v` files, resolves module

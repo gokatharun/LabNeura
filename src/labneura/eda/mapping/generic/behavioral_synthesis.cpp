@@ -36,6 +36,7 @@
 #include "slang/driver/Driver.h"
 
 #include <algorithm>
+#include <span>
 #include <filesystem>
 #include <functional>
 #include <map>
@@ -85,6 +86,7 @@ struct Target {
 struct State {
     std::unordered_map<const sa::Symbol*, Word> cur;
     std::unordered_map<const sa::Symbol*, Word> nb;
+    Bit returned = 0;  // condition under which a function `return` already executed
 };
 
 struct Candidate {
@@ -102,7 +104,15 @@ long signed_value(const Word& word, bool is_signed) {
     return static_cast<long>(result);
 }
 
-std::size_t type_width(const sa::Type& type) { return type.getBitWidth(); }
+std::size_t type_width(const sa::Type& type) {
+    // Unpacked arrays report no bit width; they are stored flat, element by element.
+    const auto& canonical = type.getCanonicalType();
+    if (canonical.isUnpackedArray() && canonical.hasFixedRange()) {
+        const auto* element = canonical.getArrayElementType();
+        return element ? canonical.getFixedRange().width() * type_width(*element) : 0;
+    }
+    return type.getBitWidth();
+}
 
 class Synthesizer {
 public:
@@ -119,6 +129,8 @@ private:
     State st_;
     bool seq_ = false;
     int call_depth_ = 0;
+    Var* return_var_ = nullptr;
+    const sa::Expression* lvalue_reference_ = nullptr;
 
     struct Output {
         std::string name;
@@ -478,10 +490,11 @@ private:
         const std::size_t width = type_width(*expr.type);
         if (const auto constant = constant_of(expr)) return *constant;
         switch (expr.kind) {
+            case K::HierarchicalValue:
             case K::NamedValue: {
-                const auto& symbol = expr.as<sa::NamedValueExpression>().symbol;
+                const auto& symbol = expr.as<sa::ValueExpressionBase>().symbol;
                 Var& var = var_for(symbol);
-                if (var.is_array) unsupported("whole-array read of '" + var.name + "'");
+                // Arrays are stored flat, so a whole-array read is the flat word.
                 return synth::resize(read_var(var), width, false);
             }
             case K::Conversion: {
@@ -592,6 +605,63 @@ private:
                               range_candidates(select, select.value().type->getFixedRange()),
                               width);
             }
+            case K::SimpleAssignmentPattern:
+                return pattern_word(
+                    expr.as<sa::SimpleAssignmentPatternExpression>().elements(), *expr.type);
+            case K::StructuredAssignmentPattern:
+                return pattern_word(
+                    expr.as<sa::StructuredAssignmentPatternExpression>().elements(),
+                    *expr.type);
+            case K::LValueReference:
+                if (!lvalue_reference_) unsupported("lvalue reference outside an assignment");
+                return synth::resize(eval(*lvalue_reference_), width, false);
+            case K::Inside: {
+                const auto& inside = expr.as<sa::InsideExpression>();
+                const Word subject = eval(inside.left());
+                bool is_signed = inside.left().type->isSigned();
+                Bit match = kZero;
+                for (const auto* item : inside.rangeList()) {
+                    const auto compare_width = [&](const sa::Expression& e) {
+                        return std::max(subject.size(), type_width(*e.type));
+                    };
+                    if (item->kind == K::ValueRange) {
+                        const auto& range = item->as<sa::ValueRangeExpression>();
+                        const bool item_signed =
+                            is_signed && range.left().type->isSigned() &&
+                            range.right().type->isSigned();
+                        const std::size_t w = std::max(compare_width(range.left()),
+                                                       compare_width(range.right()));
+                        const Word v = synth::resize(subject, w, item_signed);
+                        const Word lo = synth::resize(eval(range.left()), w, item_signed);
+                        const Word hi = synth::resize(eval(range.right()), w, item_signed);
+                        match = graph_.make_or(
+                            match, graph_.make_and(
+                                       graph_.make_not(ops_.less_than(v, lo, item_signed)),
+                                       graph_.make_not(ops_.less_than(hi, v, item_signed))));
+                    } else {
+                        const bool item_signed = is_signed && item->type->isSigned();
+                        const std::size_t w = compare_width(*item);
+                        match = graph_.make_or(
+                            match, ops_.equal(synth::resize(subject, w, item_signed),
+                                              synth::resize(eval(*item), w, item_signed)));
+                    }
+                }
+                return synth::resize(Word{match}, width, false);
+            }
+            case K::MemberAccess: {
+                const auto& access = expr.as<sa::MemberAccessExpression>();
+                if (!access.value().type->isIntegral() ||
+                    access.member.kind != sa::SymbolKind::Field) {
+                    unsupported("member access on a non-packed type");
+                }
+                const Word packed = eval(access.value());
+                const auto offset = access.member.as<sa::FieldSymbol>().bitOffset;
+                Word field(width, kZero);
+                for (std::size_t i = 0; i < width && offset + i < packed.size(); ++i) {
+                    field[i] = packed[offset + i];
+                }
+                return field;
+            }
             case K::Call: {
                 const auto& call = expr.as<sa::CallExpression>();
                 if (call.isSystemCall()) {
@@ -613,6 +683,47 @@ private:
         }
     }
 
+    // Elements of an assignment pattern arrive in declaration order (struct fields,
+    // or array elements from the left bound), already resolved against defaults.
+    Word pattern_word(std::span<const sa::Expression* const> elements, const sa::Type& type) {
+        const std::size_t total = type_width(type);
+        Word result(total, kZero);
+        const auto place = [&](const sa::Expression& element, std::size_t offset,
+                               std::size_t width) {
+            const Word value = synth::resize(eval(element), width, element.type->isSigned());
+            for (std::size_t i = 0; i < width && offset + i < total; ++i) {
+                result[offset + i] = value[i];
+            }
+        };
+        const auto& canonical = type.getCanonicalType();
+        if (canonical.isStruct() && canonical.isIntegral()) {
+            std::size_t index = 0;
+            for (const auto& field :
+                 canonical.as<sa::PackedStructType>().membersOfType<sa::FieldSymbol>()) {
+                if (index >= elements.size()) break;
+                place(*elements[index++], field.bitOffset, type_width(field.getType()));
+            }
+            return result;
+        }
+        if (canonical.isUnpackedArray() || canonical.isIntegral()) {
+            const auto* element_type = canonical.getArrayElementType();
+            if (!element_type || !canonical.hasFixedRange() || elements.empty()) {
+                unsupported("assignment pattern for this type");
+            }
+            const auto range = canonical.getFixedRange();
+            const std::size_t element_width = type_width(*element_type);
+            for (std::size_t i = 0; i < elements.size(); ++i) {
+                const std::size_t position =
+                    canonical.isUnpackedArray()
+                        ? (range.left <= range.right ? i : elements.size() - 1 - i)
+                        : elements.size() - 1 - i;
+                place(*elements[i], position * element_width, element_width);
+            }
+            return result;
+        }
+        unsupported("assignment pattern for this type");
+    }
+
     // ---- lvalues ----
     using TargetList = std::vector<std::vector<Target>>;
 
@@ -620,8 +731,9 @@ private:
         using K = sa::ExpressionKind;
         const std::size_t width = type_width(*expr.type);
         switch (expr.kind) {
+            case K::HierarchicalValue:
             case K::NamedValue: {
-                Var& var = var_for(expr.as<sa::NamedValueExpression>().symbol);
+                Var& var = var_for(expr.as<sa::ValueExpressionBase>().symbol);
                 TargetList result(var.width);
                 for (std::size_t i = 0; i < var.width; ++i) result[i].push_back({&var, i, kOne});
                 return result;
@@ -661,6 +773,20 @@ private:
                 for (const auto& candidate : range_candidates(
                          select, select.value().type->getFixedRange())) {
                     add_slice(result, base, candidate);
+                }
+                return result;
+            }
+            case K::MemberAccess: {
+                const auto& access = expr.as<sa::MemberAccessExpression>();
+                if (!access.value().type->isIntegral() ||
+                    access.member.kind != sa::SymbolKind::Field) {
+                    unsupported("member access on a non-packed type");
+                }
+                const auto base = lvalue_bits(access.value());
+                const auto offset = access.member.as<sa::FieldSymbol>().bitOffset;
+                TargetList result(width);
+                for (std::size_t j = 0; j < width && offset + j < base.size(); ++j) {
+                    result[j] = base[offset + j];
                 }
                 return result;
             }
@@ -751,6 +877,7 @@ private:
         State result;
         merge_maps(condition, when_true.cur, when_false.cur, result.cur, false);
         merge_maps(condition, when_true.nb, when_false.nb, result.nb, true);
+        result.returned = graph_.make_mux(condition, when_true.returned, when_false.returned);
         return result;
     }
 
@@ -824,6 +951,10 @@ private:
             const Node& n = graph_.node(id);
             switch (n.op) {
                 case Op::Const: break;
+                case Op::Wire:
+                    if (n.a >= 0) stack.push_back(n.a);
+                    else leaves.push_back(id);
+                    break;
                 case Op::Not: stack.push_back(n.a); break;
                 case Op::And:
                 case Op::Or:
@@ -838,6 +969,7 @@ private:
             const Node& n = graph_.node(id);
             switch (n.op) {
                 case Op::Const: return id == kOne;
+                case Op::Wire: return n.a >= 0 ? evaluate(n.a) : value.at(id);
                 case Op::Not: return !evaluate(n.a);
                 case Op::And: return evaluate(n.a) && evaluate(n.b);
                 case Op::Or: return evaluate(n.a) || evaluate(n.b);
@@ -898,7 +1030,13 @@ private:
             result_var = &var_for(*subroutine->returnValVar);
             st_.cur[subroutine->returnValVar] = Word(result_var->width, kLatch);
         }
+        Var* const outer_return_var = return_var_;
+        const Bit outer_returned = st_.returned;
+        return_var_ = result_var;
+        st_.returned = kZero;
         exec(subroutine->getBody());
+        return_var_ = outer_return_var;
+        st_.returned = outer_returned;
         for (std::size_t i = 0; i < formals.size(); ++i) {
             const auto direction = formals[i]->direction;
             if (direction != sa::ArgumentDirection::Out &&
@@ -920,16 +1058,14 @@ private:
         if (expr.kind == K::Assignment) {
             const auto& assignment = expr.as<sa::AssignmentExpression>();
             const auto& left = assignment.left();
+            // For compound assignments slang folds the operator into right(), with an
+            // LValueReference standing for the current value of the target.
+            const sa::Expression* const outer_reference = lvalue_reference_;
+            lvalue_reference_ = &left;
             Word value = eval(assignment.right());
+            lvalue_reference_ = outer_reference;
             const std::size_t width = type_width(*left.type);
-            if (assignment.isCompound()) {
-                value = apply_binary(*assignment.op, eval(left), value,
-                                     left.type->isSigned() &&
-                                         assignment.right().type->isSigned(),
-                                     width);
-            } else {
-                value = synth::resize(value, width, assignment.right().type->isSigned());
-            }
+            value = synth::resize(value, width, assignment.right().type->isSigned());
             write(left, value, assignment.isNonBlocking());
             return;
         }
@@ -959,6 +1095,18 @@ private:
         unsupported("expression statement");
     }
 
+    // Statements after a possible `return` only run when it has not fired.
+    void exec_sequence(std::span<const sa::Statement* const> list, std::size_t first) {
+        for (std::size_t i = first; i < list.size(); ++i) {
+            exec(*list[i]);
+            if (st_.returned == kZero || i + 1 == list.size()) continue;
+            if (st_.returned == kOne) return;
+            exec_branch(graph_.make_not(st_.returned), [&] { exec_sequence(list, i + 1); },
+                        [] {});
+            return;
+        }
+    }
+
     void exec(const sa::Statement& statement) {
         using S = sa::StatementKind;
         switch (statement.kind) {
@@ -967,8 +1115,18 @@ private:
             case S::ConcurrentAssertion:
                 return;
             case S::List:
-                for (const auto* child : statement.as<sa::StatementList>().list) exec(*child);
+                exec_sequence(statement.as<sa::StatementList>().list, 0);
                 return;
+            case S::Return: {
+                const auto& node = statement.as<sa::ReturnStatement>();
+                if (node.expr && return_var_ != nullptr) {
+                    touch_cur(*return_var_) =
+                        synth::resize(eval(*node.expr), return_var_->width,
+                                      node.expr->type->isSigned());
+                }
+                st_.returned = kOne;
+                return;
+            }
             case S::Block:
                 exec(statement.as<sa::BlockStatement>().body);
                 return;
@@ -1673,7 +1831,14 @@ Module detail::lower_behavioral_rtl(
     for (const auto& file : source_files) {
         include_directories.insert(std::filesystem::path(file).parent_path().string());
     }
-    std::vector<std::string> arguments = {"labneura-eda", "--std=1364-2005", "-Wnone"};
+    const bool any_systemverilog = std::any_of(
+        source_files.begin(), source_files.end(),
+        [](const std::string& file) {
+            return std::filesystem::path(file).extension() == ".sv";
+        });
+    std::vector<std::string> arguments = {
+        "labneura-eda", any_systemverilog ? "--std=1800-2017" : "--std=1364-2005",
+        "-Wnone"};
     for (const auto& directory : include_directories) {
         arguments.push_back("--include-directory=" + directory);
     }

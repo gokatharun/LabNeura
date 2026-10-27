@@ -1006,3 +1006,17 @@ def test_generic_and_tech_map_accept_a_project_with_top_and_parameters(tmp_path)
     assert [i.cell_type for i in mapped.instances].count("sky130_fd_sc_hd__dfxtp_1") == 5
     with pytest.raises(RuntimeError, match="not found"):
         eda.generic_map(project, "missing")
+
+
+def test_module_dump_graph_emits_dot(tmp_path):
+    module = eda.generic_map(eda.parse_verilog_text(
+        "module t(input a, input b, output y); assign y = a & b; endmodule"
+    )) if hasattr(eda, "parse_verilog_text") else None
+    if module is None:
+        path = tmp_path / "t.v"
+        path.write_text("module t(input a, input b, output y); assign y = a & b; endmodule")
+        module = eda.generic_map(eda.parse_verilog(str(path)))
+    dot = module.dump_graph()
+    assert dot.startswith('digraph "t"') and "->" in dot
+    out = tmp_path / "t.dot"
+    assert module.dump_graph(str(out)) == "" and out.read_text() == dot

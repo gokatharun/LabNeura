@@ -1,0 +1,27 @@
+digraph "full_adder" {
+  rankdir=LR;
+  "port:A" [shape=invhouse, label="A"];
+  "port:B" [shape=invhouse, label="B"];
+  "port:Cin" [shape=invhouse, label="Cin"];
+  "port:Sum" [shape=house, label="Sum"];
+  "port:Cout" [shape=house, label="Cout"];
+  "__generic_inst3" [shape=box, label="__generic_inst3\\nXOR3"];
+  "__generic_inst7" [shape=box, label="__generic_inst7\\nAND2"];
+  "__generic_inst11" [shape=box, label="__generic_inst11\\nAND2"];
+  "__generic_inst15" [shape=box, label="__generic_inst15\\nAND2"];
+  "__generic_inst16" [shape=box, label="__generic_inst16\\nOR3"];
+  "port:A" -> "__generic_inst3" [label="A", headlabel="A"];
+  "port:A" -> "__generic_inst7" [label="A", headlabel="A"];
+  "port:A" -> "__generic_inst15" [label="A", headlabel="A"];
+  "port:B" -> "__generic_inst3" [label="B", headlabel="B"];
+  "port:B" -> "__generic_inst7" [label="B", headlabel="B"];
+  "port:B" -> "__generic_inst11" [label="B", headlabel="A"];
+  "port:Cin" -> "__generic_inst3" [label="Cin", headlabel="C"];
+  "port:Cin" -> "__generic_inst11" [label="Cin", headlabel="B"];
+  "port:Cin" -> "__generic_inst15" [label="Cin", headlabel="B"];
+  "__generic_inst16" -> "port:Cout" [label="Cout", headlabel=""];
+  "__generic_inst3" -> "port:Sum" [label="Sum", headlabel=""];
+  "__generic_inst15" -> "__generic_inst16" [label="__generic_net12", headlabel="C"];
+  "__generic_inst7" -> "__generic_inst16" [label="__generic_net4", headlabel="A"];
+  "__generic_inst11" -> "__generic_inst16" [label="__generic_net8", headlabel="B"];
+}

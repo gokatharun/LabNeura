@@ -116,6 +116,7 @@ add_library(labneura
   src/labneura/eda/parser/verilog_parser.cpp
   src/labneura/eda/parser/liberty_parser.cpp
   src/labneura/eda/netlist/netlist_json.cpp
+  src/labneura/eda/netlist/netlist_graph.cpp
   src/labneura/eda/mapping/generic/generic_mapping.cpp
   src/labneura/eda/mapping/generic/behavioral_synthesis.cpp
   src/labneura/eda/mapping/technology/technology_mapping.cpp
