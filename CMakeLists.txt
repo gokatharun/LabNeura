@@ -149,7 +149,7 @@ target_link_libraries(labneura PRIVATE slang::slang)
 
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
   # Check for AVX2 support
-  check_cxx_compile_flag("-mavx2" LABNEURA_COMPILER_SUPPORTS_AVX2)
+  check_cxx_compiler_flag("-mavx2" LABNEURA_COMPILER_SUPPORTS_AVX2)
   if(LABNEURA_COMPILER_SUPPORTS_AVX2)
     # Apply AVX2 flags to all AVX2 backend files
     set_source_files_properties(
