@@ -6,6 +6,18 @@ All backend files have been successfully modularized and integrated into the Pyt
 
 ## Package Configuration Status
 
+## Wheel publishing
+
+The GitHub Actions publish workflow builds CPython 3.8–3.13 wheels for Linux
+x86_64 and native macOS Intel and Apple Silicon, plus one source distribution.
+Each wheel is smoke tested by importing `labneura` before the artifacts are
+published. Release publishes go to PyPI; manual workflow runs publish to
+TestPyPI.
+
+Source builds using GCC require GCC 13 or newer. CMake rejects older GCC
+versions with an actionable error; the CI workflow also builds and tests with
+GCC 13 to keep this supported source-build path covered.
+
 ### Files Updated for Modularization
 
 - ✅ **CMakeLists.txt** - C++ library and Python extension build configuration

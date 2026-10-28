@@ -1,16 +1,39 @@
 name: LabNeura CI
 
-# on:
-#   push:
-#     branches: [ main, develop ]
-#   pull_request:
-#     branches: [ main, develop ]
-on: workflow_dispatch
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
+  gcc-source-build:
+    name: Source build (GCC 13)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install GCC 13
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-13 g++-13
+
+      - name: Build and test with GCC 13
+        run: |
+          export CC=gcc-13
+          export CXX=g++-13
+          make clean install test
+
   build-test:
     name: Build & Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

@@ -73,6 +73,16 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
+   AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 13)
+  message(FATAL_ERROR
+    "LabNeura requires GCC 13 or newer for source builds; detected "
+    "GCC ${CMAKE_CXX_COMPILER_VERSION}. Install a prebuilt wheel with "
+    "'python -m pip install labneura' or select a newer compiler using "
+    "CC and CXX."
+  )
+endif()
+
 # ======================================
 # Verilog frontend
 # ======================================

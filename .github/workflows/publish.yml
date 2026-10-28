@@ -9,8 +9,23 @@ permissions:
   contents: read
 
 jobs:
-  build-and-publish:
-    runs-on: ubuntu-latest
+  build:
+    name: Build (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+            arch: x86_64
+          - os: macos-15-intel
+            platform: macos-intel
+            arch: x86_64
+          - os: macos-latest
+            platform: macos-arm64
+            arch: arm64
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -20,26 +35,57 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install build deps
+      - name: Install wheel build tools
         run: |
           python -m pip install --upgrade pip
-          python -m pip install build twine
+          python -m pip install build cibuildwheel==2.22.0
 
-      - name: Build distribution (sdist + wheel)
+      - name: Build source distribution
+        if: matrix.platform == 'linux'
         run: |
-          python -m build
+          python -m build --sdist --outdir wheelhouse
+
+      - name: Build platform wheels
+        env:
+          CIBW_BUILD: cp38-* cp39-* cp310-* cp311-* cp312-* cp313-*
+          CIBW_ARCHS_LINUX: x86_64
+          CIBW_ARCHS_MACOS: ${{ matrix.arch }}
+          CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
+          CIBW_ENVIRONMENT_MACOS: MACOSX_DEPLOYMENT_TARGET=11.0
+          CIBW_TEST_COMMAND: python -c "import labneura"
+        run: |
+          python -m cibuildwheel --output-dir wheelhouse
+
+      - name: Upload built packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages-${{ matrix.platform }}
+          path: wheelhouse/*
+
+  publish:
+    name: Publish distributions
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Download built packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: packages-*
+          path: dist
+          merge-multiple: true
+
+      - name: Install publishing tools
+        run: python -m pip install --upgrade twine
 
       - name: Check distribution metadata
-        run: |
-          twine check dist/*
+        run: python -m twine check dist/*
 
       - name: Publish to PyPI
         if: github.event_name == 'release'
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
-        run: |
-          twine upload --non-interactive dist/*
+        run: python -m twine upload --non-interactive dist/*
 
       - name: Publish to TestPyPI (manual dispatch)
         if: github.event_name == 'workflow_dispatch'
@@ -47,4 +93,4 @@ jobs:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.TEST_PYPI_API_TOKEN }}
         run: |
-          twine upload --repository testpypi --non-interactive dist/*
+          python -m twine upload --repository testpypi --non-interactive dist/*
