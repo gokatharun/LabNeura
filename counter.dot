@@ -1,6 +1,18 @@
 digraph "counter_4bit" {
   rankdir=LR;
   "port:clk" [shape=invhouse, label="clk"];
-  "port:rst" [shape=invhouse, label="rst"];
   "port:count" [shape=house, label="count"];
+  "__g0" [shape=box, label="__g0\nDFF"];
+  "__g2" [shape=box, label="__g2\nDFF"];
+  "__lut0" [shape=box, label="__lut0\nLUT2"];
+  "__lut1" [shape=box, label="__lut1\nLUT1"];
+  "__lut1" -> "__g0" [label="_n4", headlabel="D"];
+  "__lut0" -> "__g2" [label="_n7", headlabel="D"];
+  "port:clk" -> "__g0" [label="clk", headlabel="CLK"];
+  "port:clk" -> "__g2" [label="clk", headlabel="CLK"];
+  "__g0" -> "port:count" [label="count[0]", headlabel=""];
+  "__g0" -> "__lut0" [label="count[0]", headlabel="I1"];
+  "__g0" -> "__lut1" [label="count[0]", headlabel="I0"];
+  "__g2" -> "port:count" [label="count[1]", headlabel=""];
+  "__g2" -> "__lut0" [label="count[1]", headlabel="I0"];
 }

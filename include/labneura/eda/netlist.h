@@ -69,11 +69,13 @@ class Instance {
 public:
     Instance(std::string name, std::string cell_type,
              std::vector<PinConnection> connections,
-             std::optional<StandardCell> cell = std::nullopt)
+             std::optional<StandardCell> cell = std::nullopt,
+             std::map<std::string, std::string> parameters = {})
         : name_(std::move(name)),
           cell_type_(std::move(cell_type)),
           connections_(std::move(connections)),
-          cell_(std::move(cell)) {}
+          cell_(std::move(cell)),
+          parameters_(std::move(parameters)) {}
 
     const std::string& get_name() const noexcept { return name_; }
     const std::string& get_cell_type() const noexcept { return cell_type_; }
@@ -81,12 +83,17 @@ public:
         return connections_;
     }
     const std::optional<StandardCell>& get_cell() const noexcept { return cell_; }
+    // Cell parameters, e.g. the truth table "INIT" of an FPGA LUT.
+    const std::map<std::string, std::string>& get_parameters() const noexcept {
+        return parameters_;
+    }
 
 private:
     std::string name_;
     std::string cell_type_;
     std::vector<PinConnection> connections_;
     std::optional<StandardCell> cell_;
+    std::map<std::string, std::string> parameters_;
 };
 
 class ContinuousAssignment {
@@ -205,6 +212,22 @@ Module tech_map(const Module& generic_module,
 Module tech_map(const Project& project, const StandardCellLibrary& cell_library,
                 const std::string& top = "",
                 const std::map<std::string, std::string>& parameters = {});
+// Maps a generic netlist onto `lut_size`-input LUTs (2..6) with a depth-optimal,
+// area-recovering cut-based mapper. Flops, latches and tristates pass through.
+// LUT cells are named LUT<n>, use pins I0..I<n-1> and O, and carry the truth
+// table as hex parameter "INIT" (bit i = output for input pattern i, I0 = LSB).
+// Every mapped instance carries its `cell` (area, pins, timing arcs) taken from
+// `library`, which defaults to the built-in generic FPGA architecture model.
+const StandardCellLibrary& get_default_fpga_library();
+Module fpga_map(const Module& generic_module, std::size_t lut_size = 4,
+                const StandardCellLibrary& library = get_default_fpga_library());
+Module fpga_map(const Project& project, const std::string& top = "",
+                const std::map<std::string, std::string>& parameters = {},
+                std::size_t lut_size = 4,
+                const StandardCellLibrary& library = get_default_fpga_library());
+// Writes a LUT netlist as BLIF for tools such as Yosys, ABC or VPR.
+std::string to_blif(const Module& module);
+void write_blif(const Module& module, const std::string& path);
 std::string to_json(const Module& module);
 void write_json(const Module& module, const std::string& path);
 // Graphviz DOT view: cells and ports are nodes, nets are driver-to-sink edges.

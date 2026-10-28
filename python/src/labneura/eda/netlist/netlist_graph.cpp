@@ -29,7 +29,7 @@ bool is_output_pin(const Instance& instance, const std::string& pin) {
         }
     }
     static const std::set<std::string> outputs = {
-        "Y", "Q", "X", "Z", "ZN", "QN", "Q_N", "HI", "LO", "SUM", "COUT"};
+        "Y", "Q", "X", "Z", "ZN", "QN", "Q_N", "HI", "LO", "SUM", "COUT", "O"};
     return outputs.count(pin) > 0;
 }
 

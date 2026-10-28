@@ -1,0 +1,127 @@
+/*
+ * Lattice iCE40 HX (HX1K) logic-cell model for LabNeura's fpga_map.
+ *
+ * Timing comes from the measured iCE40 HX1K numbers published by Project
+ * IceStorm and used by Yosys in techlibs/ice40/cells_sim.v (ISC licence,
+ * Copyright (C) Claire Xenia Wolf and contributors). Picoseconds were converted
+ * to ns. Source: https://github.com/YosysHQ/yosys/blob/main/techlibs/ice40/cells_sim.v
+ *
+ * Notes:
+ *  - iCE40 has a single physical LUT4 (SB_LUT4); LUT2/LUT3 are the same logic
+ *    cell with unused inputs tied, so they share the area and per-pin delays.
+ *  - Area is in logic-cell units: one LUT = 1, one flop = 1 (unpacked; the
+ *    hardware packs a LUT and a flop into one logic cell).
+ *  - Routing delay is not included. Capacitance is not published, so it is left out.
+ *  - Reset/set pins follow LabNeura's generic names (RESET_B / SET_B). Hardware
+ *    R/S are active high, only the timing is taken from the source.
+ *  - No LATCH or TRIBUF cells: iCE40 has no such logic-cell primitives.
+ */
+library (ice40_hx) {
+    time_unit : "1ns";
+    capacitive_load_unit (1, pf);
+    lu_table_template (scalar) {
+        variable_1 : input_net_transition;
+        variable_2 : total_output_net_capacitance;
+        index_1 ("0.0");
+        index_2 ("0.0");
+    }
+
+    cell (LUT2) {
+        area : 1;
+        pin (I0) { direction : input; }
+        pin (I1) { direction : input; }
+        pin (O) {
+            direction : output;
+            timing () { related_pin : "I0"; timing_type : combinational; timing_sense : non_unate;
+                cell_rise (scalar) { values ("0.449"); } cell_fall (scalar) { values ("0.386"); } }
+            timing () { related_pin : "I1"; timing_type : combinational; timing_sense : non_unate;
+                cell_rise (scalar) { values ("0.400"); } cell_fall (scalar) { values ("0.379"); } }
+        }
+    }
+
+    cell (LUT3) {
+        area : 1;
+        pin (I0) { direction : input; }
+        pin (I1) { direction : input; }
+        pin (I2) { direction : input; }
+        pin (O) {
+            direction : output;
+            timing () { related_pin : "I0"; timing_type : combinational; timing_sense : non_unate;
+                cell_rise (scalar) { values ("0.449"); } cell_fall (scalar) { values ("0.386"); } }
+            timing () { related_pin : "I1"; timing_type : combinational; timing_sense : non_unate;
+                cell_rise (scalar) { values ("0.400"); } cell_fall (scalar) { values ("0.379"); } }
+            timing () { related_pin : "I2"; timing_type : combinational; timing_sense : non_unate;
+                cell_rise (scalar) { values ("0.379"); } cell_fall (scalar) { values ("0.351"); } }
+        }
+    }
+
+    cell (LUT4) {
+        area : 1;
+        pin (I0) { direction : input; }
+        pin (I1) { direction : input; }
+        pin (I2) { direction : input; }
+        pin (I3) { direction : input; }
+        pin (O) {
+            direction : output;
+            timing () { related_pin : "I0"; timing_type : combinational; timing_sense : non_unate;
+                cell_rise (scalar) { values ("0.449"); } cell_fall (scalar) { values ("0.386"); } }
+            timing () { related_pin : "I1"; timing_type : combinational; timing_sense : non_unate;
+                cell_rise (scalar) { values ("0.400"); } cell_fall (scalar) { values ("0.379"); } }
+            timing () { related_pin : "I2"; timing_type : combinational; timing_sense : non_unate;
+                cell_rise (scalar) { values ("0.379"); } cell_fall (scalar) { values ("0.351"); } }
+            timing () { related_pin : "I3"; timing_type : combinational; timing_sense : non_unate;
+                cell_rise (scalar) { values ("0.316"); } cell_fall (scalar) { values ("0.288"); } }
+        }
+    }
+
+    cell (DFF) {
+        area : 1;
+        pin (D) { direction : input;
+            timing () { related_pin : "CLK"; timing_type : setup_rising;
+                rise_constraint (scalar) { values ("0.021"); } fall_constraint (scalar) { values ("0.021"); } } }
+        pin (CLK) { direction : input; }
+        pin (Y) { direction : output;
+            timing () { related_pin : "CLK"; timing_type : rising_edge; timing_sense : non_unate;
+                cell_rise (scalar) { values ("0.540"); } cell_fall (scalar) { values ("0.540"); } } }
+    }
+
+    cell (DFFR) {
+        area : 1;
+        pin (D) { direction : input;
+            timing () { related_pin : "CLK"; timing_type : setup_rising;
+                rise_constraint (scalar) { values ("0.021"); } fall_constraint (scalar) { values ("0.021"); } } }
+        pin (CLK) { direction : input; }
+        pin (RESET_B) { direction : input; }
+        pin (Y) { direction : output;
+            timing () { related_pin : "CLK"; timing_type : rising_edge; timing_sense : non_unate;
+                cell_rise (scalar) { values ("0.540"); } cell_fall (scalar) { values ("0.540"); } } }
+    }
+
+    cell (DFFS) {
+        area : 1;
+        pin (D) { direction : input;
+            timing () { related_pin : "CLK"; timing_type : setup_rising;
+                rise_constraint (scalar) { values ("0.021"); } fall_constraint (scalar) { values ("0.021"); } } }
+        pin (CLK) { direction : input; }
+        pin (SET_B) { direction : input; }
+        pin (Y) { direction : output;
+            timing () { related_pin : "CLK"; timing_type : rising_edge; timing_sense : non_unate;
+                cell_rise (scalar) { values ("0.540"); } cell_fall (scalar) { values ("0.540"); } } }
+    }
+
+    cell (DFFSR) {
+        area : 1;
+        pin (D) { direction : input;
+            timing () { related_pin : "CLK"; timing_type : setup_rising;
+                rise_constraint (scalar) { values ("0.021"); } fall_constraint (scalar) { values ("0.021"); } } }
+        pin (CLK) { direction : input; }
+        pin (RESET_B) { direction : input; }
+        pin (SET_B) { direction : input; }
+        pin (Y) { direction : output;
+            timing () { related_pin : "CLK"; timing_type : rising_edge; timing_sense : non_unate;
+                cell_rise (scalar) { values ("0.540"); } cell_fall (scalar) { values ("0.540"); } } }
+    }
+
+    cell (TIEHI) { area : 0; pin (Y) { direction : output; } }
+    cell (TIELO) { area : 0; pin (Y) { direction : output; } }
+}

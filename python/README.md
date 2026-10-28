@@ -158,6 +158,21 @@ mapped = eda.tech_map(project, library, top="picorv32",
                       parameters={"ENABLE_MUL": "1"})
 ```
 
+For FPGAs, `fpga_map` replaces `tech_map`: it maps the generic netlist onto
+K-input LUTs (`lut_size` 2-6, default 4) with a depth-optimal, area-recovering
+cut mapper. Flops pass through; each LUT is a `LUT<n>` cell with pins `I0..`/`O`
+and a hex `INIT` truth table (`instance.parameters["INIT"]`). Like `tech_map`, each
+instance carries `instance.cell` with area, pins, capacitances and timing arcs
+(LUT delay per input, flop clock-to-Q and setup). They come from the built-in
+illustrative model `eda.default_fpga_library()` (area in config bits, ns, pF, no
+routing delay) or from your own Liberty file via `fpga_map(..., library=lib)`. `write_blif`
+exports the result for Yosys, ABC or VPR; async flops are written as `.subckt`.
+
+```python
+luts = eda.fpga_map(project, top="picorv32", lut_size=6)
+eda.write_blif(luts, "picorv32.blif")
+```
+
 Unsupported constructs (e.g. `initial` blocks, inout ports) fail explicitly rather than
 being silently dropped. The bundled SKY130 file is available as a convenient
 library input; the educational library remains at `assets/cells.lib`.

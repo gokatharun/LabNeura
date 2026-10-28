@@ -79,6 +79,8 @@ void bind_eda(pybind11::module_& labneura_module) {
                                "Resolved standard-cell definition.")
         .def_property_readonly("connections", &eda::Instance::get_connections,
                                "Instance pin-to-net connections.")
+        .def_property_readonly("parameters", &eda::Instance::get_parameters,
+                               "Cell parameters such as a LUT's truth table INIT.")
         .def("get_name", &eda::Instance::get_name)
         .def("get_cell_type", &eda::Instance::get_cell_type)
         .def("get_cell", &eda::Instance::get_cell)
@@ -271,6 +273,29 @@ void bind_eda(pybind11::module_& labneura_module) {
                py::arg("project"), py::arg("cell_library"), py::arg("top") = "",
                py::arg("parameters") = std::map<std::string, std::string>{},
                "Generic-map and technology-map the hierarchy below `top` of a project.");
+    module.def("fpga_map",
+               py::overload_cast<const eda::Module&, std::size_t,
+                                 const eda::StandardCellLibrary&>(&eda::fpga_map),
+               py::arg("generic_module"), py::arg("lut_size") = 4,
+               py::arg("library") = eda::get_default_fpga_library(),
+               "Map a generic netlist onto K-input LUTs (K = 2..6); flops pass through. "
+               "Instances carry cell data (area, pins, timing) from `library`.");
+    module.def("fpga_map",
+               py::overload_cast<const eda::Project&, const std::string&,
+                                 const std::map<std::string, std::string>&, std::size_t,
+                                 const eda::StandardCellLibrary&>(&eda::fpga_map),
+               py::arg("project"), py::arg("top") = "",
+               py::arg("parameters") = std::map<std::string, std::string>{},
+               py::arg("lut_size") = 4,
+               py::arg("library") = eda::get_default_fpga_library(),
+               "Generic-map the hierarchy below `top` and map it onto K-input LUTs.");
+    module.def("default_fpga_library", &eda::get_default_fpga_library,
+               py::return_value_policy::copy,
+               "Built-in generic FPGA cell model (LUT2-6, flops, latch, tribuf).");
+    module.def("to_blif", &eda::to_blif, py::arg("module"),
+               "Serialize a LUT netlist as BLIF.");
+    module.def("write_blif", &eda::write_blif, py::arg("module"), py::arg("path"),
+               "Write a LUT netlist to a BLIF file.");
     module.def("parse_verilog_project", &eda::parse_verilog_project,
                py::arg("directory"),
                "Parse and elaborate .v files recursively using slang (Verilog-2005).");

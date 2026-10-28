@@ -117,9 +117,12 @@ add_library(labneura
   src/labneura/eda/parser/liberty_parser.cpp
   src/labneura/eda/netlist/netlist_json.cpp
   src/labneura/eda/netlist/netlist_graph.cpp
+  src/labneura/eda/netlist/netlist_blif.cpp
   src/labneura/eda/mapping/generic/generic_mapping.cpp
   src/labneura/eda/mapping/generic/behavioral_synthesis.cpp
   src/labneura/eda/mapping/technology/technology_mapping.cpp
+  src/labneura/eda/mapping/fpga/fpga_mapping.cpp
+  src/labneura/eda/mapping/fpga/fpga_library.cpp
   src/labneura/tensor.cpp
   src/labneura/backends/common/base.cpp
   src/labneura/backends/common/cpu_features.cpp

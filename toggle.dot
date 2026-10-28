@@ -1,0 +1,13 @@
+digraph "toggle" {
+  rankdir=LR;
+  "port:t" [shape=invhouse, label="t"];
+  "port:clk" [shape=invhouse, label="clk"];
+  "port:q" [shape=house, label="q"];
+  "__g0" [shape=box, label="__g0\nDFF"];
+  "__lut0" [shape=box, label="__lut0\nLUT2"];
+  "__lut0" -> "__g0" [label="_n5", headlabel="D"];
+  "port:clk" -> "__g0" [label="clk", headlabel="CLK"];
+  "__g0" -> "port:q" [label="q", headlabel=""];
+  "__g0" -> "__lut0" [label="q", headlabel="I1"];
+  "port:t" -> "__lut0" [label="t", headlabel="I0"];
+}
