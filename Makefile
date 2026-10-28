@@ -18,30 +18,25 @@ export CMAKE_BUILD_PARALLEL_LEVEL ?= $(NPROC)
 # Python
 # --------------------------------------
 PYTHON ?= python3
-PIP ?= pip3
 PKG_NAME := labneura
 MODULE_NAME := labneura
 
 # Prefer project virtualenv for publish steps
 # Get absolute path to workspace root
-WORKSPACE_ROOT := $(shell pwd)
-VENV_PYTHON := $(firstword \
-	 $(shell find $(WORKSPACE_ROOT)/.venv/bin -name "python*" -type f) \
-	 $(shell find #(WORKSPACE_ROOT)/evn/bin -name "python*" -type f) \
-	 $(shell find $(WORKSPACE_ROOT)/venv/bin -name "python*" -type f) \
-	 $(shell find $(WORKSPACE_ROOT)/.venv/Scripts -name "python*" -type f) \
-	 $(shell find $(WORKSPACE_ROOT)/env/Scripts -name "python*" -type f) \
-	 $(shell find $(WORKSPACE_ROOT)/venv/Scripts -name "python*" -type f) \
-	 $(shell command -v python3 2>/dev/null) \
-	 $(shell command -v python 2>/dev/null))
-
-TWINE := $(shell command -v twine 2>/dev/null || echo "$(VENV_PYTHON) -m twine")
+WORKSPACE_ROOT := $(abspath $(CURDIR))
+VENV_DIRS := $(WORKSPACE_ROOT)/.venv/bin $(WORKSPACE_ROOT)/env/bin \
+	$(WORKSPACE_ROOT)/venv/bin $(WORKSPACE_ROOT)/.venv/Scripts \
+	$(WORKSPACE_ROOT)/env/Scripts $(WORKSPACE_ROOT)/venv/Scripts
+VENV_PYTHON := $(firstword $(foreach dir,$(VENV_DIRS),$(wildcard \
+	$(dir)/python $(dir)/python3 $(dir)/python3.* $(dir)/python.exe \
+	$(dir)/python3.exe)))
 
 # Prefer venv if available to avoid PEP 668 system pip restrictions
-ifneq (,$(wildcard $(VENV_PYTHON)))
-	PIP := $(VENV_PYTHON) -m pip
+ifneq (,$(VENV_PYTHON))
 	PYTHON := $(VENV_PYTHON)
 endif
+PIP = $(PYTHON) -m pip
+TWINE = $(PYTHON) -m twine
 
 # --------------------------------------
 # Compiler detection
@@ -167,10 +162,6 @@ else
 
 endif
 
-.PHONY: coverage
-coverage:
-	pytest --cov=$(PKG_NAME) --cov-report=term-missing || true
-
 # --------------------------------------
 # CI (matches GitHub Actions)
 # --------------------------------------
@@ -227,9 +218,9 @@ git-commit-version:
 	@NEW_VERSION=$$(cat $(NEW_VERSION_FILE)); \
 	CURRENT_BRANCH=$$(git rev-parse --abbrev-ref HEAD); \
 	echo ""; \
-	echo "==================================="
+	echo "==================================="; \
 	echo "Git Commit & Push"; \
-	echo "==================================="
+	echo "==================================="; \
 	echo "Branch: $$CURRENT_BRANCH"; \
 	echo "New version: $$NEW_VERSION"; \
 	echo ""; \
@@ -258,7 +249,7 @@ publish: sync-src update-version git-commit-version
 		exit 1; \
 	fi
 	# Full local validation using venv
-	$(MAKE) clean install smoke test PIP=$(VENV_PIP) PYTHON=$(VENV_PYTHON)
+	$(MAKE) clean install smoke test
 	$(MAKE) build-dist
 	# Upload artifacts to PyPI
 	$(TWINE) upload --non-interactive dist/* --username __token__ --password $(PYPI_TOKEN)
@@ -274,7 +265,7 @@ publish-testpypi: sync-src update-version git-commit-version
 		echo "TEST_PYPI_TOKEN not set. Export TEST_PYPI_TOKEN before running 'make publish-testpypi'."; \
 		exit 1; \
 	fi
-	$(MAKE) clean install smoke test PIP=$(VENV_PIP) PYTHON=$(VENV_PYTHON)
+	$(MAKE) clean install smoke test
 	$(MAKE) build-dist
 	$(TWINE) upload --repository testpypi --non-interactive dist/* --username __token__ --password $(TEST_PYPI_TOKEN)
 	@echo "✅ Published to TestPyPI"

@@ -11,7 +11,7 @@ PYBIND11_MODULE(labneura, m) {
     m.doc() = "LabNeura Python bindings with Tensor support";
 
     // Surface package version at module import time
-    m.attr("__version__") = "0.3.7";
+    m.attr("__version__") = "0.3.8";
 
     // Quantization functions
     m.def("quantize_int8", &labneura::quantize_int8,
