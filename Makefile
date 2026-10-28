@@ -25,15 +25,21 @@ MODULE_NAME := labneura
 # Prefer project virtualenv for publish steps
 # Get absolute path to workspace root
 WORKSPACE_ROOT := $(shell pwd)
-VENV_PYTHON := $(WORKSPACE_ROOT)/.venv/bin/python
-VENV_PIP := $(WORKSPACE_ROOT)/.venv/bin/pip
-TWINE = $(PYTHON) -m twine
-PYPI_TOKEN ?=
-TEST_PYPI_TOKEN ?=
+VENV_PYTHON := $(firstword \
+	 $(shell find $(WORKSPACE_ROOT)/.venv/bin -name "python*" -type f) \
+	 $(shell find #(WORKSPACE_ROOT)/evn/bin -name "python*" -type f) \
+	 $(shell find $(WORKSPACE_ROOT)/venv/bin -name "python*" -type f) \
+	 $(shell find $(WORKSPACE_ROOT)/.venv/Scripts -name "python*" -type f) \
+	 $(shell find $(WORKSPACE_ROOT)/env/Scripts -name "python*" -type f) \
+	 $(shell find $(WORKSPACE_ROOT)/venv/Scripts -name "python*" -type f) \
+	 $(shell command -v python3 2>/dev/null) \
+	 $(shell command -v python 2>/dev/null))
+
+TWINE := $(shell command -v twine 2>/dev/null || echo "$(VENV_PYTHON) -m twine")
 
 # Prefer venv if available to avoid PEP 668 system pip restrictions
-ifneq (,$(wildcard $(VENV_PIP)))
-	PIP := $(VENV_PIP)
+ifneq (,$(wildcard $(VENV_PYTHON)))
+	PIP := $(VENV_PYTHON) -m pip
 	PYTHON := $(VENV_PYTHON)
 endif
 
