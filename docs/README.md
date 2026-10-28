@@ -36,3 +36,11 @@ Testing guides and coverage reports:
 - [Benchmarking Tools](../benchmarking/) - Run your own benchmarks
 - [Examples](../examples/) - Usage examples
 - [Tests](../tests/) - Test suite
+
+### 🧩 EDA and FPGA mapping
+
+Start with the [EDA learning guide](eda-flow.md) for the full path from Verilog
+parsing to generic logic, standard-cell mapping, FPGA LUT mapping, and BLIF.
+Then read [EDA algorithms and pseudocode](eda-algorithms.md) for implementation
+details and the [calculator walkthrough](calculator-walkthrough.md) to trace a
+sequential RTL example through the stages.

@@ -1,9 +1,9 @@
 
 module counter_4bit (
     input  wire       clk,
-    output reg  [1:0] count
+    output reg  [4:0] count
 );
     always @(posedge clk)
-        count <= count + 1'b1;
+        count <= count + 1;
 
 endmodule

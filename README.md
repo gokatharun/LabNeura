@@ -184,9 +184,10 @@ fetched during the build.
 
 EDA implementation sources are grouped by pipeline stage: Verilog and Liberty
 parsers live under `src/labneura/eda/parser/`, the shared netlist code under
-`netlist/`, and generic and technology mapping under `mapping/`. The
-optimization, placement, routing, and FPGA-mapping directories are reserved
-for future stage implementations.
+`netlist/`, and generic, technology, and FPGA mapping under `mapping/`.
+Optimization, placement, and routing directories are reserved for future
+stages. See the [EDA learning guide](docs/eda-flow.md) for a step-by-step
+explanation of the pipeline and its algorithms.
 
 Liberty standard-cell libraries can be read with `parse_liberty`. The reader
 exposes cell area, pin direction/function/capacitance, timing arcs, and
