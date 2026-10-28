@@ -177,16 +177,15 @@ Unsupported constructs (e.g. `initial` blocks, inout ports) fail explicitly rath
 being silently dropped. The bundled SKY130 file is available as a convenient
 library input; the educational library remains at `assets/cells.lib`.
 
-`parse_verilog_source` remains a separate lightweight parser for source strings
-and supports scalar ports/wires and `and`/`or`/`xor` primitives. Verilog parsing
-requires CMake 3.20+, a C++20 compiler, and the pinned slang frontend, which is
-fetched during the build.
+Verilog parsing requires CMake 3.20+, a C++20 compiler, and the pinned slang
+frontend, which is fetched during the build.
 
 EDA implementation sources are grouped by pipeline stage: Verilog and Liberty
 parsers live under `src/labneura/eda/parser/`, the shared netlist code under
-`netlist/`, and generic and technology mapping under `mapping/`. The
-optimization, placement, routing, and FPGA-mapping directories are reserved
-for future stage implementations.
+`netlist/`, and generic, technology, and FPGA mapping under `mapping/`.
+Optimization, placement, and routing directories are reserved for future
+stages. See the [EDA learning guide](docs/eda-flow.md) for a step-by-step
+explanation of the pipeline and its algorithms.
 
 Liberty standard-cell libraries can be read with `parse_liberty`. The reader
 exposes cell area, pin direction/function/capacitance, timing arcs, and

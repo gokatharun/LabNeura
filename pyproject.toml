@@ -4,7 +4,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "labneura"
-version = "0.3.0"
+version = "0.3.1"
 description = "SIMD-accelerated tensor operations for neural networks"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -21,6 +21,7 @@ classifiers = [
 
 [tool.scikit-build]
 cmake.version = ">=3.20"
+build-dir = "build/{wheel_tag}"
 wheel.packages = []
 
 [tool.pytest.ini_options]

@@ -60,20 +60,6 @@ project, gathers modules reachable from top-level instances, and stores an AST
 JSON snapshot. Pass a top-module name to mapping when the project has more than
 one top.
 
-The parser adds minimal module declarations for instantiated cells found in
-the bundled library so slang can type-check named pins. These declarations
-provide interface information; they do not model full Liberty semantics.
-
-### The separate lightweight parser
-
-`parse_verilog_source(text)` is intentionally not the full frontend. It is a
-small parser for a restricted structural subset: a simple module header,
-scalar `input`/`output`/`wire` declarations, and two-input `and`, `or`, `xor`
-primitive instances. It removes comments, splits statements at semicolons,
-validates names/declarations, and rejects unsupported syntax. Use
-`parse_verilog(path)` for normal RTL, expressions, buses, hierarchy, and
-behavioral constructs.
-
 ### Simulation-only and unsupported constructs
 
 The full parser reports compilation errors instead of guessing at invalid

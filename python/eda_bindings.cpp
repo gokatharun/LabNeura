@@ -243,8 +243,6 @@ void bind_eda(pybind11::module_& labneura_module) {
                "Parse cells, pins, Boolean functions, and timing tables from Liberty source.");
     module.def("parse_verilog", &eda::parse_verilog, py::arg("path"),
                "Parse one Verilog module into an unmapped RTL representation.");
-    module.def("parse_verilog_source", &eda::parse_verilog_source, py::arg("source"),
-               "Parse Verilog source text into a netlist Module.");
     module.def("parse_verilog_file", &eda::parse_verilog_file, py::arg("path"),
                "Parse one Verilog module using slang into an RTL Module.");
     module.def("generic_map",

@@ -84,6 +84,7 @@ set(SLANG_USE_MIMALLOC OFF CACHE BOOL "" FORCE)
 set(FETCHCONTENT_TRY_FIND_PACKAGE_MODE NEVER)
 set(SLANG_INCLUDE_PYLIB OFF CACHE BOOL "" FORCE)
 set(SLANG_INCLUDE_DOCS OFF CACHE BOOL "" FORCE)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 FetchContent_Declare(
   slang
@@ -148,7 +149,7 @@ target_link_libraries(labneura PRIVATE slang::slang)
 
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
   # Check for AVX2 support
-  check_cxx_compile_flag("-mavx2", LABNEURA_COMPILER_SUPPORTS_AVX2)
+  check_cxx_compile_flag("-mavx2" LABNEURA_COMPILER_SUPPORTS_AVX2)
   if(LABNEURA_COMPILER_SUPPORTS_AVX2)
     # Apply AVX2 flags to all AVX2 backend files
     set_source_files_properties(
@@ -243,7 +244,7 @@ if(SKBUILD)
   find_package(Python COMPONENTS Interpreter REQUIRED)
   execute_process(
     COMMAND "${Python_EXECUTABLE}" -c
-      "import pathlib, sysconfig; candidates = [sysconfig.get_path('include'), sysconfig.get_config_var('INCLUDEPY') or '', str(pathlib.Path(sysconfig.get_path('stdlib')).parents[1] / 'include' / ('python' + sysconfig.get_config_var('VERSION')))]; print(next((path for path in candidates if path and (pathlib.Path(path) / 'Python.h').is_file()), ''))"
+      "import pathlib, sys, sysconfig; version = sysconfig.get_config_var('VERSION'); candidates = [sysconfig.get_path('include'), sysconfig.get_config_var('INCLUDEPY') or '', str(pathlib.Path(sysconfig.get_path('stdlib')).parents[1] / 'include' / ('python' + version)), str(pathlib.Path(sys.prefix) / 'include' / ('python' + version))]; print(next((path for path in candidates if path and (pathlib.Path(path) / 'Python.h').is_file()), ''))"
     OUTPUT_VARIABLE LABNEURA_PYTHON_INCLUDE_DIR
     OUTPUT_STRIP_TRAILING_WHITESPACE
     RESULT_VARIABLE LABNEURA_PYTHON_INCLUDE_RESULT

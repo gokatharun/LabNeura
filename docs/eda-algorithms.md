@@ -17,8 +17,6 @@ parse_verilog(file):
     choose language mode from file extension (.v or .sv)
     configure slang with file and include directory
     parse syntax trees; report errors
-    collect names of instantiated cells
-    add interface stubs for matching bundled-library cells
     elaborate and type-check compilation; report errors
     find the unique non-library top module
     summarize top ports, nets, instances, assignments, and process presence
@@ -29,28 +27,6 @@ Project parsing runs the frontend over recursively discovered `.v`/`.sv` files,
 then stores an AST JSON snapshot and summarizes modules reachable from
 top-level instances. Slang elaboration resolves parameters and generate
 constructs before LabNeura lowers the result.
-
-### Lightweight source-string parser
-
-`parse_verilog_source` is a different algorithm and intentionally supports
-much less:
-
-```text
-remove line and block comments
-split source into semicolon-terminated statements
-require one simple module header with a port list
-for each statement:
-    if input/output/wire declaration: validate comma-separated identifiers
-    else if and/or/xor primitive: require exactly output plus two inputs
-    else if endmodule: require it to be final
-    else: reject unsupported statement
-check header ports equal declared input/output ports
-check every primitive connection names a declared net
-return structural Module
-```
-
-Use the slang-backed parser for actual RTL rather than extending assumptions
-from this lightweight subset.
 
 ## B. Behavioral synthesis: statements to a bit-level graph
 

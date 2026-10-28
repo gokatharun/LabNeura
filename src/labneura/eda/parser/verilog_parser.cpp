@@ -17,7 +17,6 @@
 #include "slang/driver/Driver.h"
 #include "slang/ast/SemanticFacts.h"
 #include "slang/syntax/SyntaxTree.h"
-#include "slang/syntax/SyntaxVisitor.h"
 #include "slang/text/Json.h"
 #include "slang/text/SourceManager.h"
 
@@ -25,8 +24,6 @@
 #include <cstddef>
 #include <filesystem>
 #include <fstream>
-#include <regex>
-#include <sstream>
 #include <stdexcept>
 #include <unordered_set>
 #include <utility>
@@ -40,75 +37,11 @@ bool is_systemverilog(const std::filesystem::path& path) {
 }
 
 
-struct Declaration {
-    std::string name;
-    std::string direction;
-};
-
-struct ParsedInstance {
-    Instance instance;
-};
-
 std::string trim(const std::string& text) {
     const auto first = text.find_first_not_of(" \t\r\n");
     if (first == std::string::npos) return {};
     const auto last = text.find_last_not_of(" \t\r\n");
     return text.substr(first, last - first + 1);
-}
-
-std::string remove_comments(const std::string& source) {
-    std::string result;
-    result.reserve(source.size());
-    bool line_comment = false;
-    bool block_comment = false;
-    for (std::size_t i = 0; i < source.size(); ++i) {
-        const char current = source[i];
-        const char next = i + 1 < source.size() ? source[i + 1] : '\0';
-        if (line_comment) {
-            if (current == '\n') {
-                line_comment = false;
-                result += current;
-            }
-            continue;
-        }
-        if (block_comment) {
-            if (current == '*' && next == '/') {
-                block_comment = false;
-                ++i;
-            } else if (current == '\n') {
-                result += current;
-            }
-            continue;
-        }
-        if (current == '/' && next == '/') {
-            line_comment = true;
-            ++i;
-        } else if (current == '/' && next == '*') {
-            block_comment = true;
-            ++i;
-        } else {
-            result += current;
-        }
-    }
-    if (block_comment) throw std::runtime_error("unterminated block comment");
-    return result;
-}
-
-std::vector<std::string> split_names(const std::string& text) {
-    static const std::regex identifier(R"([A-Za-z_][A-Za-z0-9_$]*)");
-    std::vector<std::string> names;
-    std::stringstream stream(text);
-    std::string name;
-    while (std::getline(stream, name, ',')) {
-        name = trim(name);
-        if (!std::regex_match(name, identifier)) {
-            throw std::runtime_error(
-                "expected comma-separated scalar identifiers, got: " + text);
-        }
-        names.push_back(name);
-    }
-    if (names.empty()) throw std::runtime_error("expected at least one identifier");
-    return names;
 }
 
 std::string source_range_text(const slang::SourceRange& macro_range,
@@ -134,90 +67,6 @@ std::string source_range_text(const slang::SourceRange& macro_range,
 std::string expression_source(const slang::ast::Expression& expression,
                               const slang::SourceManager& source_manager) {
     return source_range_text(expression.sourceRange, source_manager);
-}
-
-std::string liberty_cell_name(const std::string& verilog_type) {
-    if (verilog_type == "and" || verilog_type == "AND" ||
-        verilog_type == "AND2_X1") {
-        return "sky130_fd_sc_hd__and2_1";
-    }
-    if (verilog_type == "or" || verilog_type == "OR" ||
-        verilog_type == "OR2_X1") {
-        return "sky130_fd_sc_hd__or2_1";
-    }
-    if (verilog_type == "xor" || verilog_type == "XOR" ||
-        verilog_type == "XOR2_X1") {
-        return "sky130_fd_sc_hd__xor2_1";
-    }
-    if (verilog_type == "INV_X1") return "sky130_fd_sc_hd__inv_1";
-    if (verilog_type == "BUF_X1") return "sky130_fd_sc_hd__buf_1";
-    if (verilog_type == "TIELO_X1" || verilog_type == "TIEHI_X1") {
-        return "sky130_fd_sc_hd__conb_1";
-    }
-    if (verilog_type == "MUX2_X1") return "sky130_fd_sc_hd__mux2_1";
-    return verilog_type;
-}
-
-bool is_cell_type(const StandardCellLibrary& library,
-                  const std::string& verilog_type) {
-    return library.find_cell(verilog_type) ||
-           library.find_cell(liberty_cell_name(verilog_type));
-}
-
-struct InstantiatedTypeCollector
-    : slang::syntax::SyntaxVisitor<InstantiatedTypeCollector> {
-    std::unordered_set<std::string> names;
-
-    void handle(const slang::syntax::HierarchyInstantiationSyntax& node) {
-        names.emplace(node.type.valueText());
-        visitDefault(node);
-    }
-};
-
-// Only cells the design actually instantiates need a stub definition, which
-// keeps the stub compilation tiny instead of one module per library cell.
-std::string make_cell_stub_source(
-    const StandardCellLibrary& library,
-    const std::unordered_set<std::string>& instantiated) {
-    std::unordered_set<std::string> needed = instantiated;
-    for (const auto& name : instantiated) {
-        needed.insert(liberty_cell_name(name));
-    }
-
-    std::ostringstream source;
-    for (const auto& cell : library.get_cells()) {
-        if (!needed.count(cell.get_name())) continue;
-        source << "module " << cell.get_name() << " (";
-        bool first = true;
-        for (const auto& pin : cell.get_pins()) {
-            if (pin.get_direction() != "input" &&
-                pin.get_direction() != "output" &&
-                pin.get_direction() != "inout")
-                continue;
-            if (!first) source << ", ";
-            source << pin.get_direction() << ' ' << pin.get_name();
-            first = false;
-        }
-        source << "); endmodule\n";
-    }
-
-    const std::vector<std::pair<std::string, std::string>> aliases = {
-        {"AND2_X1", "input A, input B, output Y"},
-        {"OR2_X1", "input A, input B, output Y"},
-        {"XOR2_X1", "input A, input B, output Y"},
-        {"INV_X1", "input A, output Y"},
-        {"BUF_X1", "input A, output Y"},
-        {"TIELO_X1", "output Y"},
-        {"TIEHI_X1", "output Y"},
-        {"MUX2_X1", "input A0, input A1, input S, output Y"},
-    };
-    for (const auto& [alias, pins] : aliases) {
-        if (instantiated.count(alias) && !library.find_cell(alias) &&
-            library.find_cell(liberty_cell_name(alias))) {
-            source << "module " << alias << " (" << pins << "); endmodule\n";
-        }
-    }
-    return source.str();
 }
 
 std::vector<PinConnection> module_port_connections(
@@ -414,145 +263,6 @@ Module summarize_module(const slang::ast::InstanceSymbol& instance,
 
 }  // namespace
 
-Module parse_verilog_source(const std::string& source) {
-    const std::string uncommented = remove_comments(source);
-    static const std::regex module_end(R"(\bendmodule\b)");
-    const std::string delimited =
-        std::regex_replace(uncommented, module_end, ";endmodule;");
-
-    std::vector<std::string> statements;
-    std::stringstream stream(delimited);
-    std::string statement;
-    while (std::getline(stream, statement, ';')) {
-        statement = trim(statement);
-        if (!statement.empty()) statements.push_back(statement);
-    }
-
-    static const std::regex header(
-        R"(^module\s+([A-Za-z_][A-Za-z0-9_$]*)\s*\((.*?)\)$)");
-    static const std::regex declaration(
-        R"(^(input|output|wire)\s+(?:wire\s+)?(.+)$)");
-    static const std::regex gate(
-        R"(^(and|or|xor)\s+([A-Za-z_][A-Za-z0-9_$]*)\s*\((.*?)\)$)");
-
-    Module module;
-    std::vector<std::string> header_ports;
-    std::vector<Declaration> declarations;
-    std::vector<ParsedInstance> parsed_instances;
-    std::unordered_set<std::string> declared_nets;
-    std::unordered_set<std::string> declared_ports;
-    std::unordered_set<std::string> instance_names;
-    bool saw_header = false;
-    bool saw_endmodule = false;
-
-    for (std::size_t i = 0; i < statements.size(); ++i) {
-        const auto& current = statements[i];
-        std::smatch match;
-        if (!saw_header) {
-            if (!std::regex_match(current, match, header)) {
-                throw std::runtime_error("expected module header with a port list");
-            }
-            module.name_ = match[1].str();
-            header_ports = split_names(match[2].str());
-            saw_header = true;
-            continue;
-        }
-        if (current == "endmodule") {
-            if (i + 1 != statements.size()) {
-                throw std::runtime_error("unexpected content after endmodule");
-            }
-            saw_endmodule = true;
-            break;
-        }
-        if (std::regex_match(current, match, declaration)) {
-            const auto direction = match[1].str();
-            const auto names = split_names(match[2].str());
-            for (const auto& name : names) {
-                if (!declared_nets.insert(name).second) {
-                    throw std::runtime_error("net declared more than once: " + name);
-                }
-                if (direction != "wire" && !declared_ports.insert(name).second) {
-                    throw std::runtime_error("port declared more than once: " + name);
-                }
-                declarations.push_back({name, direction});
-            }
-            continue;
-        }
-        if (std::regex_match(current, match, gate)) {
-            const auto gate_type = match[1].str();
-            const auto instance_name = match[2].str();
-            if (!instance_names.insert(instance_name).second) {
-                throw std::runtime_error("duplicate instance name: " + instance_name);
-            }
-            const auto pins = split_names(match[3].str());
-            if (pins.size() != 3) {
-                throw std::runtime_error(gate_type + " instance " + instance_name +
-                                         " must have output and two inputs");
-            }
-            ParsedInstance instance{Instance{
-                instance_name, gate_type,
-                {{"Y", pins[0]}, {"A", pins[1]}, {"B", pins[2]}}}};
-            parsed_instances.push_back(std::move(instance));
-            continue;
-        }
-        throw std::runtime_error("unsupported Verilog statement: " + current);
-    }
-
-    if (!saw_header || !saw_endmodule) {
-        throw std::runtime_error("incomplete Verilog module");
-    }
-
-    std::unordered_set<std::string> header_port_set;
-    for (const auto& port : header_ports) {
-        if (!header_port_set.insert(port).second) {
-            throw std::runtime_error("duplicate module port: " + port);
-        }
-        if (declared_ports.count(port) == 0) {
-            throw std::runtime_error("module port lacks input/output declaration: " +
-                                     port);
-        }
-    }
-    if (header_port_set != declared_ports) {
-        throw std::runtime_error(
-            "module header ports and input/output declarations do not match");
-    }
-
-    for (const auto& port_name : header_ports) {
-        const auto declaration = std::find_if(
-            declarations.begin(), declarations.end(),
-            [&](const Declaration& candidate) {
-                return candidate.name == port_name && candidate.direction != "wire";
-            });
-        const auto direction = declaration->direction == "input"
-                                   ? PortDirection::Input
-                                   : PortDirection::Output;
-        module.ports_.emplace_back(port_name, direction);
-        module.nets_.emplace_back(
-            port_name, direction == PortDirection::Input ? NetType::Input
-                                                          : NetType::Output);
-    }
-
-    for (const auto& declaration : declarations) {
-        if (declaration.direction == "wire") {
-            module.nets_.emplace_back(declaration.name, NetType::Internal);
-        }
-    }
-
-    for (auto& parsed : parsed_instances) {
-        for (const auto& connection : parsed.instance.get_connections()) {
-            if (declared_nets.count(connection.get_net()) == 0) {
-                throw std::runtime_error("instance " +
-                                         parsed.instance.get_name() +
-                                         " uses undeclared net: " +
-                                         connection.get_net());
-            }
-        }
-        module.instances_.push_back(std::move(parsed.instance));
-    }
-
-    return module;
-}
-
 Module parse_verilog(const std::string& path) {
     const std::filesystem::path source_path(path);
     if (!std::filesystem::is_regular_file(source_path)) {
@@ -593,31 +303,16 @@ Module parse_verilog(const std::string& path) {
         throw std::runtime_error("slang failed to parse the Verilog file");
     }
 
-    const auto& cell_library = get_default_cell_library();
-    InstantiatedTypeCollector collector;
-    for (const auto& tree : driver.syntaxTrees) {
-        tree->root().visit(collector);
-    }
-    driver.syntaxTrees.push_back(slang::syntax::SyntaxTree::fromText(
-        make_cell_stub_source(cell_library, collector.names),
-        driver.sourceManager,
-        "labneura_cells.v", "labneura_cells.v"));
     auto compilation = driver.createCompilation();
     const auto& root_symbol = compilation->getRoot();
     driver.reportCompilation(*compilation, true);
     if (!driver.reportDiagnostics(true)) {
         throw std::runtime_error(
-            "slang failed to compile the Verilog file against the bundled "
-            "standard-cell library:\n" +
+            "slang failed to compile the Verilog file:\n" +
             driver.textDiagClient->getString());
     }
     const slang::ast::InstanceSymbol* top_module = nullptr;
     for (const auto* candidate : root_symbol.topInstances) {
-        if (is_cell_type(
-                cell_library,
-                std::string(candidate->getDefinition().name))) {
-            continue;
-        }
         if (top_module) {
             throw std::runtime_error(
                 "parse_verilog requires exactly one top-level module in the file");

@@ -80,8 +80,10 @@ def map_verilog(path):
     return eda.tech_map(generic_module, default_cell_library())
 
 
-def test_parse_verilog_builds_module_netlist():
-    module = eda.parse_verilog_source(VERILOG)
+def test_parse_verilog_builds_module_netlist(tmp_path):
+    verilog_path = tmp_path / "logic_example.v"
+    verilog_path.write_text(VERILOG, encoding="utf-8")
+    module = eda.parse_verilog(str(verilog_path))
 
     assert module.name == "logic_example"
     assert module.assignments == []
@@ -151,56 +153,11 @@ def test_parse_verilog_resolves_instances_to_bundled_cells(tmp_path):
     } == {"X": "w", "A": "a", "B": "b"}
 
 
-def test_parse_verilog_resolves_explicit_liberty_cell_instances(tmp_path):
-    verilog_path = tmp_path / "explicit_cell.v"
-    verilog_path.write_text(
-        "module top (a, b, y); input a, b; output y; "
-        "AND2_X1 gate (.A(a), .B(b), .Y(y)); endmodule",
-        encoding="utf-8",
-    )
-
-    rtl_module = eda.parse_verilog(str(verilog_path))
-    assert rtl_module.instances[0].cell is None
-    module = eda.tech_map(
-        eda.generic_map(rtl_module), default_cell_library()
-    )
-
-    instance = module.instances[0]
-    assert instance.cell.name == "sky130_fd_sc_hd__and2_1"
-    assert instance.cell.pins[0].direction == "input"
-    assert {
-        connection.pin: connection.net for connection in instance.connections
-    } == {"A": "a", "B": "b", "X": "y"}
-
-
-def test_parse_verilog_resolves_legacy_mux2_cell_alias(tmp_path):
-    verilog_path = tmp_path / "mux2_cell.v"
-    verilog_path.write_text(
-        "module top (a, b, s, y); input a, b, s; output y; "
-        "MUX2_X1 mux (.A0(a), .A1(b), .S(s), .Y(y)); endmodule",
-        encoding="utf-8",
-    )
-
-    instance = map_verilog(verilog_path).instances[0]
-
-    assert instance.cell.name == "sky130_fd_sc_hd__mux2_1"
-    assert {
-        connection.pin: connection.net for connection in instance.connections
-    } == {
-        "A0": "a",
-        "A1": "b",
-        "S": "s",
-        "X": "y",
-    }
-
-
 def test_parse_half_adder_verilog_resolves_cells():
     verilog_path = Path(__file__).resolve().parents[1] / "examples/verilog/half_adder.v"
 
     module = map_verilog(verilog_path)
-    source_module = eda.parse_verilog_source(
-        verilog_path.read_text(encoding="utf-8")
-    )
+    source_module = eda.parse_verilog(str(verilog_path))
 
     assert module.name == "half_adder"
     assert [(instance.name, instance.cell.name) for instance in module.instances] == [
@@ -222,18 +179,6 @@ def test_parse_half_adder_verilog_resolves_cells():
         instance.cell_type
         for instance in eda.generic_map(source_module).instances
     ] == ["XOR2", "AND2"]
-
-
-def test_parse_verilog_reports_cells_missing_from_bundled_library(tmp_path):
-    verilog_path = tmp_path / "missing_cell.v"
-    verilog_path.write_text(
-        "module top (a); input a; MISSING_X1 u1 (.A(a)); endmodule",
-        encoding="utf-8",
-    )
-
-    with pytest.raises(RuntimeError) as error:
-        eda.parse_verilog(str(verilog_path))
-    assert "MISSING_X1" in str(error.value)
 
 
 def test_parse_verilog_reads_ansi_ports_and_assignments():
@@ -662,24 +607,6 @@ def test_parse_verilog_project_recursively_collects_modules(tmp_path):
     assert project.get_module_count() == project.module_count
 
 
-def test_rejects_undeclared_instance_net():
-    source = """
-    module bad (a, f);
-      input a;
-      output f;
-      and U1 (f, a, missing);
-    endmodule
-    """
-
-    with pytest.raises(RuntimeError, match="undeclared net"):
-        eda.parse_verilog_source(source)
-
-
-def test_rejects_unsupported_verilog():
-    with pytest.raises(RuntimeError, match="unsupported Verilog statement"):
-        eda.parse_verilog_source("module bad (a); input a; assign a = 1'b0; endmodule")
-
-
 def test_parse_behavioral_verilog_project():
     project_path = Path(__file__).resolve().parents[1] / "examples/verilog/8080_subset"
     project = eda.parse_verilog_project(str(project_path))
@@ -1009,13 +936,12 @@ def test_generic_and_tech_map_accept_a_project_with_top_and_parameters(tmp_path)
 
 
 def test_module_dump_graph_emits_dot(tmp_path):
-    module = eda.generic_map(eda.parse_verilog_text(
-        "module t(input a, input b, output y); assign y = a & b; endmodule"
-    )) if hasattr(eda, "parse_verilog_text") else None
-    if module is None:
-        path = tmp_path / "t.v"
-        path.write_text("module t(input a, input b, output y); assign y = a & b; endmodule")
-        module = eda.generic_map(eda.parse_verilog(str(path)))
+    path = tmp_path / "t.v"
+    path.write_text(
+        "module t(input a, input b, output y); assign y = a & b; endmodule",
+        encoding="utf-8",
+    )
+    module = eda.generic_map(eda.parse_verilog(str(path)))
     dot = module.dump_graph()
     assert dot.startswith('digraph "t"') and "->" in dot
     out = tmp_path / "t.dot"

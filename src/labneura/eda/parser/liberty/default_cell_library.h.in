@@ -6,7 +6,7 @@
 
 namespace labneura::eda::detail {
 
-inline constexpr std::string_view bundled_liberty_chunks[] = {
+inline const std::string_view bundled_liberty_chunks[] = {
 @LABNEURA_EDA_LIBERTY_CHUNKS@};
 
 inline std::string get_bundled_liberty() {

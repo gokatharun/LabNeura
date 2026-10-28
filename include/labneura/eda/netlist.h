@@ -159,7 +159,6 @@ private:
     bool behavioral_ = false;
     std::vector<std::string> source_files_;
 
-    friend Module parse_verilog_source(const std::string& source);
     friend Module parse_verilog(const std::string& path);
 };
 
@@ -197,7 +196,6 @@ private:
     friend Project parse_verilog_project(const std::string& directory);
 };
 
-Module parse_verilog_source(const std::string& source);
 Module parse_verilog(const std::string& path);
 Module parse_verilog_file(const std::string& path);
 Project parse_verilog_project(const std::string& directory);
