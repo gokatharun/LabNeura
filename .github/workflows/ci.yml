@@ -118,8 +118,8 @@ jobs:
       - name: Run LabNeura CI (Linux)
         if: runner.os == 'Linux'
         run: |
-          export CC=clang
-          export CXX=clang++
+          export CC=/usr/bin/clang
+          export CXX=/usr/bin/clang++
           export LABNEURA_COVERAGE=1
           make ci
 
