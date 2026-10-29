@@ -35,7 +35,8 @@ class TestAVX2DIVInt8:
         """Test basic INT8 division"""
         a = Tensor([10, 20, 30, 40], mode=QuantizationMode.INT8)
         b = Tensor([2, 4, 5, 8], mode=QuantizationMode.INT8)
-        result = a.div_inplace(b)
+        a.div_inplace(b)
+        result = a
         
         expected = np.array([5, 5, 6, 5], dtype=np.int8)
         assert np.allclose(result.data_int8(), expected), \
@@ -45,7 +46,8 @@ class TestAVX2DIVInt8:
         """Test INT8 division with negative numbers"""
         a = Tensor([-20, 30, -40, 50], mode=QuantizationMode.INT8)
         b = Tensor([2, -5, 8, -10], mode=QuantizationMode.INT8)
-        result = a.div_inplace(b)
+        a.div_inplace(b)
+        result = a
         
         expected = np.array([-10, -6, -5, -5], dtype=np.int8)
         assert np.allclose(result.data_int8(), expected), \
@@ -53,12 +55,13 @@ class TestAVX2DIVInt8:
 
     def test_int8_div_by_zero(self):
         """Test INT8 division by zero returns 0"""
-        a = Tensor([10, 20, 30, 40], mode=QuantizationMode.INT8)
-        b = Tensor([0, 2, 0, 4], mode=QuantizationMode.INT8)
-        result = a.div_inplace(b)
+        a = Tensor([10, 20, 30, 40] * 8, mode=QuantizationMode.INT8)
+        b = Tensor([0, 2, 0, 4] * 8, mode=QuantizationMode.INT8)
+        a.div_inplace(b)
+        result = a
         
         # Division by zero should yield 0
-        expected = np.array([0, 10, 0, 10], dtype=np.int8)
+        expected = np.array([0, 10, 0, 10] * 8, dtype=np.int8)
         assert np.allclose(result.data_int8(), expected), \
             f"Expected {expected}, got {result.data_int8()}"
 
@@ -66,7 +69,8 @@ class TestAVX2DIVInt8:
         """Test INT8 division with saturation on overflow"""
         a = Tensor([127, -128, 100, -100], mode=QuantizationMode.INT8)
         b = Tensor([1, 1, 2, 2], mode=QuantizationMode.INT8)
-        result = a.div_inplace(b)
+        a.div_inplace(b)
+        result = a
         
         # Should saturate to [-128, 127]
         expected = np.array([127, -128, 50, -50], dtype=np.int8)
@@ -81,13 +85,15 @@ class TestAVX2DIVInt8:
         
         a = Tensor(a_data.tolist(), mode=QuantizationMode.INT8)
         b = Tensor(b_data.tolist(), mode=QuantizationMode.INT8)
-        result = a.div_inplace(b)
+        a.div_inplace(b)
+        result = a
         
         # Compute expected result
-        expected = np.array([
-            np.int8(np.clip(int(a_data[i]) // int(b_data[i]), -128, 127))
-            for i in range(size)
-        ], dtype=np.int8)
+        expected = np.clip(
+            np.trunc(a_data.astype(np.float64) / b_data.astype(np.float64)),
+            -128,
+            127,
+        ).astype(np.int8)
         
         assert np.allclose(result.data_int8(), expected), \
             f"Large array INT8 division failed"
@@ -97,7 +103,8 @@ class TestAVX2DIVInt8:
         data = [-100, -50, 0, 50, 100]
         a = Tensor(data, mode=QuantizationMode.INT8)
         b = Tensor([1] * len(data), mode=QuantizationMode.INT8)
-        result = a.div_inplace(b)
+        a.div_inplace(b)
+        result = a
         
         expected = np.array(data, dtype=np.int8)
         assert np.allclose(result.data_int8(), expected), \
@@ -112,7 +119,8 @@ class TestAVX2DIVInt16:
         """Test basic INT16 division"""
         a = Tensor([100, 200, 300, 400], mode=QuantizationMode.INT16)
         b = Tensor([2, 4, 5, 8], mode=QuantizationMode.INT16)
-        result = a.div_inplace(b)
+        a.div_inplace(b)
+        result = a
         
         expected = np.array([50, 50, 60, 50], dtype=np.int16)
         assert np.allclose(result.data_int16(), expected), \
@@ -122,7 +130,8 @@ class TestAVX2DIVInt16:
         """Test INT16 division with negative numbers"""
         a = Tensor([-200, 300, -400, 500], mode=QuantizationMode.INT16)
         b = Tensor([2, -5, 8, -10], mode=QuantizationMode.INT16)
-        result = a.div_inplace(b)
+        a.div_inplace(b)
+        result = a
         
         expected = np.array([-100, -60, -50, -50], dtype=np.int16)
         assert np.allclose(result.data_int16(), expected), \
@@ -130,12 +139,13 @@ class TestAVX2DIVInt16:
 
     def test_int16_div_by_zero(self):
         """Test INT16 division by zero returns 0"""
-        a = Tensor([100, 200, 300, 400], mode=QuantizationMode.INT16)
-        b = Tensor([0, 2, 0, 4], mode=QuantizationMode.INT16)
-        result = a.div_inplace(b)
+        a = Tensor([100, 200, 300, 400] * 4, mode=QuantizationMode.INT16)
+        b = Tensor([0, 2, 0, 4] * 4, mode=QuantizationMode.INT16)
+        a.div_inplace(b)
+        result = a
         
         # Division by zero should yield 0
-        expected = np.array([0, 100, 0, 100], dtype=np.int16)
+        expected = np.array([0, 100, 0, 100] * 4, dtype=np.int16)
         assert np.allclose(result.data_int16(), expected), \
             f"Expected {expected}, got {result.data_int16()}"
 
@@ -143,7 +153,8 @@ class TestAVX2DIVInt16:
         """Test INT16 division with saturation on overflow"""
         a = Tensor([32767, -32768, 1000, -1000], mode=QuantizationMode.INT16)
         b = Tensor([1, 1, 2, 2], mode=QuantizationMode.INT16)
-        result = a.div_inplace(b)
+        a.div_inplace(b)
+        result = a
         
         # Should saturate to [-32768, 32767]
         expected = np.array([32767, -32768, 500, -500], dtype=np.int16)
@@ -158,13 +169,15 @@ class TestAVX2DIVInt16:
         
         a = Tensor(a_data.tolist(), mode=QuantizationMode.INT16)
         b = Tensor(b_data.tolist(), mode=QuantizationMode.INT16)
-        result = a.div_inplace(b)
+        a.div_inplace(b)
+        result = a
         
         # Compute expected result
-        expected = np.array([
-            np.int16(np.clip(int(a_data[i]) // int(b_data[i]), -32768, 32767))
-            for i in range(size)
-        ], dtype=np.int16)
+        expected = np.clip(
+            np.trunc(a_data.astype(np.float64) / b_data.astype(np.float64)),
+            -32768,
+            32767,
+        ).astype(np.int16)
         
         assert np.allclose(result.data_int16(), expected), \
             f"Large array INT16 division failed"
@@ -173,7 +186,8 @@ class TestAVX2DIVInt16:
         """Test INT16 division with boundary values"""
         a = Tensor([32767, -32768, 16384, -16384], mode=QuantizationMode.INT16)
         b = Tensor([1, 1, 2, 2], mode=QuantizationMode.INT16)
-        result = a.div_inplace(b)
+        a.div_inplace(b)
+        result = a
         
         expected = np.array([32767, -32768, 8192, -8192], dtype=np.int16)
         assert np.allclose(result.data_int16(), expected), \
@@ -184,7 +198,8 @@ class TestAVX2DIVInt16:
         data = [-1000, -500, 0, 500, 1000]
         a = Tensor(data, mode=QuantizationMode.INT16)
         b = Tensor([1] * len(data), mode=QuantizationMode.INT16)
-        result = a.div_inplace(b)
+        a.div_inplace(b)
+        result = a
         
         expected = np.array(data, dtype=np.int16)
         assert np.allclose(result.data_int16(), expected), \
@@ -201,7 +216,8 @@ class TestAVX2DIVFP16:
         # Testing with integer patterns that represent FP16 values
         a = Tensor([100, 200, 300, 400], mode=QuantizationMode.FP16)
         b = Tensor([2, 4, 5, 8], mode=QuantizationMode.FP16)
-        result = a.div_inplace(b)
+        a.div_inplace(b)
+        result = a
         
         # After division, should have approximate results
         result_data = result.data_fp16()
@@ -219,7 +235,8 @@ class TestAVX2DIVFP16:
         
         a = Tensor(a_int16.tolist(), mode=QuantizationMode.FP16)
         b = Tensor(b_int16.tolist(), mode=QuantizationMode.FP16)
-        result = a.div_inplace(b)
+        a.div_inplace(b)
+        result = a
         
         # Verify operation completed without error
         result_data = result.data_fp16()
@@ -231,7 +248,8 @@ class TestAVX2DIVFP16:
         """Test FP16 division by zero handling"""
         a = Tensor([100, 200, 300], mode=QuantizationMode.FP16)
         b = Tensor([0, 2, 0], mode=QuantizationMode.FP16)
-        result = a.div_inplace(b)
+        a.div_inplace(b)
+        result = a
         
         # Operation should complete; division by zero is platform-dependent
         result_data = result.data_fp16()
@@ -251,7 +269,8 @@ class TestAVX2DIVIntegration:
                    mode=QuantizationMode.INT8)
         
         original_size = a.size()
-        result = a.div_inplace(b)
+        a.div_inplace(b)
+        result = a
         
         assert result.size() == original_size, "DIV changed tensor size"
         assert result.size() == size, f"Expected size {size}, got {result.size()}"
@@ -260,7 +279,8 @@ class TestAVX2DIVIntegration:
         """Test INT8 division with all-zero dividend"""
         a = Tensor([0] * 32, mode=QuantizationMode.INT8)
         b = Tensor(list(range(1, 33)), mode=QuantizationMode.INT8)
-        result = a.div_inplace(b)
+        a.div_inplace(b)
+        result = a
         
         expected = np.zeros(32, dtype=np.int8)
         assert np.allclose(result.data_int8(), expected), \
@@ -277,7 +297,8 @@ class TestAVX2DIVIntegration:
             
             a = Tensor(a_data.tolist(), mode=QuantizationMode.INT16)
             b = Tensor(b_data.tolist(), mode=QuantizationMode.INT16)
-            result = a.div_inplace(b)
+            a.div_inplace(b)
+            result = a
             
             expected = np.full(size, 10, dtype=np.int16)
             assert np.allclose(result.data_int16(), expected), \
@@ -288,12 +309,14 @@ class TestAVX2DIVIntegration:
         # INT8: 40 / 5 = 8
         a8 = Tensor([40], mode=QuantizationMode.INT8)
         b8 = Tensor([5], mode=QuantizationMode.INT8)
-        r8 = a8.div_inplace(b8).data_int8()[0]
+        a8.div_inplace(b8)
+        r8 = a8.data_int8()[0]
         
         # INT16: 40 / 5 = 8
         a16 = Tensor([40], mode=QuantizationMode.INT16)
         b16 = Tensor([5], mode=QuantizationMode.INT16)
-        r16 = a16.div_inplace(b16).data_int16()[0]
+        a16.div_inplace(b16)
+        r16 = a16.data_int16()[0]
         
         assert r8 == 8, f"INT8 division failed: expected 8, got {r8}"
         assert r16 == 8, f"INT16 division failed: expected 8, got {r16}"
@@ -311,7 +334,8 @@ class TestAVX2DIVPerformance:
         
         a = Tensor(a_data.tolist(), mode=QuantizationMode.INT8)
         b = Tensor(b_data.tolist(), mode=QuantizationMode.INT8)
-        result = a.div_inplace(b)
+        a.div_inplace(b)
+        result = a
         
         assert result.size() == size, "Stress test failed: wrong size"
         result_data = result.data_int8()
@@ -325,7 +349,8 @@ class TestAVX2DIVPerformance:
         
         a = Tensor(a_data.tolist(), mode=QuantizationMode.INT16)
         b = Tensor(b_data.tolist(), mode=QuantizationMode.INT16)
-        result = a.div_inplace(b)
+        a.div_inplace(b)
+        result = a
         
         assert result.size() == size, "Stress test failed: wrong size"
         result_data = result.data_int16()
@@ -342,7 +367,8 @@ class TestAVX2DIVPerformance:
         
         a = Tensor(a_int16.tolist(), mode=QuantizationMode.FP16)
         b = Tensor(b_int16.tolist(), mode=QuantizationMode.FP16)
-        result = a.div_inplace(b)
+        a.div_inplace(b)
+        result = a
         
         assert result.size() == size, "Stress test failed: wrong size"
         result_data = result.data_fp16()

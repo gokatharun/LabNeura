@@ -45,21 +45,27 @@ void AVX2Backend::operation_int16(const TensorBackend& other, OperationType op_t
                 const __m256 fb_lo = _mm256_cvtepi32_ps(vb_lo);
                 const __m256 fb_hi = _mm256_cvtepi32_ps(vb_hi);
                 
-                // Add small epsilon to avoid division by zero
-                const __m256 eps = _mm256_set1_ps(1e-10f);
-                const __m256 fb_lo_safe = _mm256_add_ps(fb_lo, _mm256_and_ps(_mm256_cmp_ps(fb_lo, _mm256_setzero_ps(), _CMP_EQ_OQ), eps));
-                const __m256 fb_hi_safe = _mm256_add_ps(fb_hi, _mm256_and_ps(_mm256_cmp_ps(fb_hi, _mm256_setzero_ps(), _CMP_EQ_OQ), eps));
-                
-                // SIMD division
-                const __m256 res_lo = _mm256_div_ps(fa_lo, fb_lo_safe);
-                const __m256 res_hi = _mm256_div_ps(fa_hi, fb_hi_safe);
-                
-                // Convert back to int32
-                const __m256i res_lo_i = _mm256_cvtps_epi32(res_lo);
-                const __m256i res_hi_i = _mm256_cvtps_epi32(res_hi);
+                const __m256 zero_lo = _mm256_cmp_ps(
+                    fb_lo, _mm256_setzero_ps(), _CMP_EQ_OQ);
+                const __m256 zero_hi = _mm256_cmp_ps(
+                    fb_hi, _mm256_setzero_ps(), _CMP_EQ_OQ);
+                const __m256 safe_lo = _mm256_blendv_ps(
+                    fb_lo, _mm256_set1_ps(1.0f), zero_lo);
+                const __m256 safe_hi = _mm256_blendv_ps(
+                    fb_hi, _mm256_set1_ps(1.0f), zero_hi);
+                const __m256i res_lo_i = _mm256_cvttps_epi32(
+                    _mm256_div_ps(fa_lo, safe_lo));
+                const __m256i res_hi_i = _mm256_cvttps_epi32(
+                    _mm256_div_ps(fa_hi, safe_hi));
+                const __m256i zero_lo_i = _mm256_castps_si256(zero_lo);
+                const __m256i zero_hi_i = _mm256_castps_si256(zero_hi);
                 
                 // Pack int32 back to int16 with saturation
-                const __m256i result = _mm256_packs_epi32(res_lo_i, res_hi_i);
+                const __m256i packed = _mm256_packs_epi32(
+                    _mm256_andnot_si256(zero_lo_i, res_lo_i),
+                    _mm256_andnot_si256(zero_hi_i, res_hi_i));
+                const __m256i result = _mm256_permute4x64_epi64(
+                    packed, _MM_SHUFFLE(3, 1, 2, 0));
                 _mm256_store_si256(reinterpret_cast<__m256i*>(this_data + i), result);
                 i += 16;
             }
@@ -83,17 +89,26 @@ void AVX2Backend::operation_int16(const TensorBackend& other, OperationType op_t
                 const __m256 fb_lo = _mm256_cvtepi32_ps(vb_lo);
                 const __m256 fb_hi = _mm256_cvtepi32_ps(vb_hi);
                 
-                const __m256 eps = _mm256_set1_ps(1e-10f);
-                const __m256 fb_lo_safe = _mm256_add_ps(fb_lo, _mm256_and_ps(_mm256_cmp_ps(fb_lo, _mm256_setzero_ps(), _CMP_EQ_OQ), eps));
-                const __m256 fb_hi_safe = _mm256_add_ps(fb_hi, _mm256_and_ps(_mm256_cmp_ps(fb_hi, _mm256_setzero_ps(), _CMP_EQ_OQ), eps));
+                const __m256 zero_lo = _mm256_cmp_ps(
+                    fb_lo, _mm256_setzero_ps(), _CMP_EQ_OQ);
+                const __m256 zero_hi = _mm256_cmp_ps(
+                    fb_hi, _mm256_setzero_ps(), _CMP_EQ_OQ);
+                const __m256 safe_lo = _mm256_blendv_ps(
+                    fb_lo, _mm256_set1_ps(1.0f), zero_lo);
+                const __m256 safe_hi = _mm256_blendv_ps(
+                    fb_hi, _mm256_set1_ps(1.0f), zero_hi);
+                const __m256i res_lo_i = _mm256_cvttps_epi32(
+                    _mm256_div_ps(fa_lo, safe_lo));
+                const __m256i res_hi_i = _mm256_cvttps_epi32(
+                    _mm256_div_ps(fa_hi, safe_hi));
+                const __m256i zero_lo_i = _mm256_castps_si256(zero_lo);
+                const __m256i zero_hi_i = _mm256_castps_si256(zero_hi);
                 
-                const __m256 res_lo = _mm256_div_ps(fa_lo, fb_lo_safe);
-                const __m256 res_hi = _mm256_div_ps(fa_hi, fb_hi_safe);
-                
-                const __m256i res_lo_i = _mm256_cvtps_epi32(res_lo);
-                const __m256i res_hi_i = _mm256_cvtps_epi32(res_hi);
-                
-                const __m256i result = _mm256_packs_epi32(res_lo_i, res_hi_i);
+                const __m256i packed = _mm256_packs_epi32(
+                    _mm256_andnot_si256(zero_lo_i, res_lo_i),
+                    _mm256_andnot_si256(zero_hi_i, res_hi_i));
+                const __m256i result = _mm256_permute4x64_epi64(
+                    packed, _MM_SHUFFLE(3, 1, 2, 0));
                 _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i), result);
                 i += 16;
             }
