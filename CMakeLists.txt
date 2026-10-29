@@ -161,7 +161,7 @@ if("$ENV{LABNEURA_COVERAGE}" STREQUAL "1")
   if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     message(FATAL_ERROR "LABNEURA_COVERAGE requires Clang")
   endif()
-  target_compile_options(labneura PUBLIC
+  target_compile_options(labneura PRIVATE
     -fprofile-instr-generate
     -fcoverage-mapping
   )
@@ -291,6 +291,13 @@ if(SKBUILD)
     SUFFIX "${CMAKE_SHARED_MODULE_SUFFIX}"
   )
   target_link_libraries(labneura_python PRIVATE pybind11::module labneura)
+  if("$ENV{LABNEURA_COVERAGE}" STREQUAL "1")
+    target_compile_options(labneura_python PRIVATE
+      -fprofile-instr-generate
+      -fcoverage-mapping
+    )
+    target_link_options(labneura_python PRIVATE -fprofile-instr-generate)
+  endif()
   if(APPLE)
     target_link_options(labneura_python PRIVATE
       "-undefined" "dynamic_lookup"
