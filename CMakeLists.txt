@@ -161,7 +161,7 @@ if("$ENV{LABNEURA_COVERAGE}" STREQUAL "1")
   if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     message(FATAL_ERROR "LABNEURA_COVERAGE requires Clang")
   endif()
-  target_compile_options(labneura PRIVATE
+  target_compile_options(labneura PUBLIC
     -fprofile-instr-generate
     -fcoverage-mapping
   )
