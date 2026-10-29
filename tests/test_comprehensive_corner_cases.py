@@ -338,7 +338,8 @@ class TestCornerCases:
             b = labneura.Tensor([3] * size, mode=labneura.QuantizationMode.FP16)
             a.add_inplace(b)
             for i in range(size):
-                assert a.data_fp16()[i] == 8, f"Size {size}, index {i}: got {a.data_fp16()[i]}"
+                result = labneura.dequantize_fp16(a.data_fp16()[i])
+                assert result == 8, f"Size {size}, index {i}: got {result}"
 
     @pytest.mark.skipif(platform.machine() not in ['x86_64', 'AMD64'], 
                         reason="AVX2 only on x86-64")

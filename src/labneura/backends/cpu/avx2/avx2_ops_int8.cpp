@@ -82,19 +82,9 @@ void AVX2Backend::operation_int8(const TensorBackend& other, OperationType op_ty
             const __m256i va_11 = _mm256_cvtepi16_epi32(_mm256_extracti128_si256(va_hi16, 1));
             const __m256i vb_11 = _mm256_cvtepi16_epi32(_mm256_extracti128_si256(vb_hi16, 1));
             
-            // Convert to FP32 and divide
+            // Divide with a corrected FP32 estimate for exact integer results
             auto safe_div = [](const __m256i& a, const __m256i& b) -> __m256i {
-                const __m256 numerator = _mm256_cvtepi32_ps(a);
-                const __m256 denominator = _mm256_cvtepi32_ps(b);
-                const __m256 zero_mask = _mm256_cmp_ps(
-                    denominator, _mm256_setzero_ps(), _CMP_EQ_OQ);
-                const __m256 safe_denominator = _mm256_blendv_ps(
-                    denominator, _mm256_set1_ps(1.0f), zero_mask);
-                const __m256 quotient =
-                    _mm256_div_ps(numerator, safe_denominator);
-                const __m256i truncated = _mm256_cvttps_epi32(quotient);
-                return _mm256_andnot_si256(_mm256_castps_si256(zero_mask),
-                                           truncated);
+                return divide_int32_avx2(a, b);
             };
             
             const __m256i res_00 = safe_div(va_00, vb_00);

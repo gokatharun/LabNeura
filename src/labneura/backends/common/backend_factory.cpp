@@ -15,12 +15,12 @@ namespace labneura {
 
 // Return the preferred backend label based on runtime CPU features
 std::string detect_backend() {
-#if defined(__x86_64__) || defined(_M_X64)
+#if (defined(__x86_64__) || defined(_M_X64)) && defined(LABNEURA_ENABLE_AVX2)
     if (cpu_supports_avx2()) {
         return "AVX2";
     }
     return "GENERIC";
-#elif defined(__aarch64__) || defined(__ARM_NEON)
+#elif (defined(__aarch64__) || defined(__ARM_NEON)) && defined(LABNEURA_ENABLE_NEON)
     if (cpu_supports_neon()) {
         return "NEON";
     }
