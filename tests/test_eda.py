@@ -488,7 +488,7 @@ def test_parse_liberty_exposes_cells_pins_and_timing_tables(tmp_path):
     ]
 
 
-def test_parse_liberty_accepts_backslash_line_continuations():
+def test_parse_liberty_accepts_backslash_line_continuations(tmp_path):
     source = """
     library (continued_values) {
       cell (BUF_X1) {
@@ -505,7 +505,9 @@ def test_parse_liberty_accepts_backslash_line_continuations():
     }
     """
 
-    library = eda.parse_liberty_source(source)
+    liberty_path = tmp_path / "continued.lib"
+    liberty_path.write_text(source, encoding="utf-8")
+    library = eda.parse_liberty(str(liberty_path))
     table = library.cells[0].pins[0].timing_arcs[0].cell_rise
 
     assert table.values == [
@@ -550,12 +552,16 @@ def test_parse_sky130_typical_liberty_asset():
     assert library.cell_count == 428
 
 
-def test_parse_liberty_source_rejects_missing_cells():
+def test_parse_liberty_rejects_missing_cells(tmp_path):
+    liberty_path = tmp_path / "empty.lib"
+    liberty_path.write_text(
+        'library (empty) { time_unit : "1ns"; }', encoding="utf-8"
+    )
     with pytest.raises(RuntimeError, match="contains no cell"):
-        eda.parse_liberty_source('library (empty) { time_unit : "1ns"; }')
+        eda.parse_liberty(str(liberty_path))
 
 
-def test_parse_verilog_project_recursively_collects_modules(tmp_path):
+def test_parse_verilog_directory_recursively_collects_modules(tmp_path):
     project_dir = tmp_path / "project"
     nested_dir = project_dir / "nested"
     nested_dir.mkdir(parents=True)
@@ -590,7 +596,7 @@ def test_parse_verilog_project_recursively_collects_modules(tmp_path):
     )
     (project_dir / "notes.txt").write_text("ignored", encoding="utf-8")
 
-    project = eda.parse_verilog_project(str(project_dir))
+    project = eda.parse_verilog(str(project_dir))
 
     assert project.module_count == 3
     assert [module.name for module in project.modules] == [
@@ -609,7 +615,7 @@ def test_parse_verilog_project_recursively_collects_modules(tmp_path):
 
 def test_parse_behavioral_verilog_project():
     project_path = Path(__file__).resolve().parents[1] / "examples/verilog/8080_subset"
-    project = eda.parse_verilog_project(str(project_path))
+    project = eda.parse_verilog(str(project_path))
     ast = json.loads(project.ast_json)
 
     assert project.module_count >= 1
@@ -628,7 +634,7 @@ def test_parse_behavioral_verilog_project():
 
 def test_parse_full_8080_core_project():
     project_path = Path(__file__).resolve().parents[1] / "examples/verilog/8080_core"
-    project = eda.parse_verilog_project(str(project_path))
+    project = eda.parse_verilog(str(project_path))
 
     assert project.module_count == 3
     assert {module.name for module in project.modules} == {
@@ -669,7 +675,7 @@ def test_parse_full_8080_core_project():
 
 def test_parse_modular_traffic_signal_project():
     project_path = Path(__file__).resolve().parents[1] / "examples/verilog/traffic_signal"
-    project = eda.parse_verilog_project(str(project_path))
+    project = eda.parse_verilog(str(project_path))
 
     assert project.module_count == 5
     assert {module.name for module in project.modules} == {
@@ -682,7 +688,7 @@ def test_parse_modular_traffic_signal_project():
     assert project.total_instance_count == 4
 
 
-def test_parse_verilog_project_resolves_nested_include_directories(tmp_path):
+def test_parse_verilog_directory_resolves_nested_include_directories(tmp_path):
     project_dir = tmp_path / "project"
     source_dir = project_dir / "rtl"
     include_dir = project_dir / "include"
@@ -699,20 +705,20 @@ def test_parse_verilog_project_resolves_nested_include_directories(tmp_path):
         encoding="utf-8",
     )
 
-    project = eda.parse_verilog_project(str(project_dir))
+    project = eda.parse_verilog(str(project_dir))
 
     assert project.module_count == 1
     assert project.modules[0].name == "top"
     assert project.modules[0].port_count == 2
 
 
-def test_parse_verilog_project_reports_syntax_errors(tmp_path):
+def test_parse_verilog_directory_reports_syntax_errors(tmp_path):
     project_dir = tmp_path / "broken"
     project_dir.mkdir()
     (project_dir / "broken.v").write_text("module broken ( ;", encoding="utf-8")
 
     with pytest.raises(RuntimeError, match="slang failed to parse|compile"):
-        eda.parse_verilog_project(str(project_dir))
+        eda.parse_verilog(str(project_dir))
 
 
 def test_tensor_supports_two_dimensions():
@@ -912,6 +918,7 @@ def test_parse_verilog_flags_behavioral_modules_and_generic_map_lowers_them(tmp_
                       " always @(posedge clk) if (rst) q <= 0; else q <= q + 1; endmodule")
     module = eda.parse_verilog(str(source))
     assert module.is_behavioral and not module.instances
+    source.unlink()
     generic = eda.generic_map(module)
     assert sum(i.cell_type == "DFF" for i in generic.instances) == 4
 
@@ -923,7 +930,9 @@ def test_generic_and_tech_map_accept_a_project_with_top_and_parameters(tmp_path)
     (tmp_path / "top.v").write_text(
         "module top #(parameter W = 2)(input clk, input [W-1:0] d, output [W-1:0] q);"
         " leaf #(.W(W)) u(.clk(clk), .d(d), .q(q)); endmodule")
-    project = eda.parse_verilog_project(str(tmp_path))
+    project = eda.parse_verilog(str(tmp_path))
+    for source in tmp_path.glob("*.v"):
+        source.unlink()
     library = eda.parse_liberty(str(Path(__file__).parent.parent / "assets" /
                                     "sky130_fd_sc_hd__tt_025C_1v80.lib"))
     assert sum(i.cell_type == "DFF" for i in eda.generic_map(project, "top").instances) == 2

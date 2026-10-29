@@ -3,6 +3,7 @@
 #include "labneura/eda/cell_library.h"
 #include "labneura/eda/netlist.h"
 
+#include <filesystem>
 #include <pybind11/stl.h>
 
 void bind_eda(pybind11::module_& labneura_module) {
@@ -238,13 +239,16 @@ void bind_eda(pybind11::module_& labneura_module) {
 
     module.def("parse_liberty", &eda::parse_liberty, py::arg("path"),
                "Parse cells, pins, Boolean functions, and timing tables from a Liberty file.");
-    module.def("parse_liberty_source", &eda::parse_liberty_source,
-               py::arg("source"),
-               "Parse cells, pins, Boolean functions, and timing tables from Liberty source.");
-    module.def("parse_verilog", &eda::parse_verilog, py::arg("path"),
-               "Parse one Verilog module into an unmapped RTL representation.");
-    module.def("parse_verilog_file", &eda::parse_verilog_file, py::arg("path"),
-               "Parse one Verilog module using slang into an RTL Module.");
+    module.def(
+        "parse_verilog",
+        [](const std::string& path) -> py::object {
+            if (std::filesystem::is_directory(path)) {
+                return py::cast(eda::parse_verilog_directory(path));
+            }
+            return py::cast(eda::parse_verilog(path));
+        },
+        py::arg("path"),
+        "Parse a Verilog file into a Module or a project directory into a Project.");
     module.def("generic_map",
                py::overload_cast<const eda::Module&>(&eda::generic_map),
                py::arg("rtl_module"),
@@ -294,9 +298,6 @@ void bind_eda(pybind11::module_& labneura_module) {
                "Serialize a LUT netlist as BLIF.");
     module.def("write_blif", &eda::write_blif, py::arg("module"), py::arg("path"),
                "Write a LUT netlist to a BLIF file.");
-    module.def("parse_verilog_project", &eda::parse_verilog_project,
-               py::arg("directory"),
-               "Parse and elaborate .v files recursively using slang (Verilog-2005).");
     module.def("to_json", &eda::to_json, py::arg("module"),
                "Serialize a Module using the versioned eda-netlist JSON format.");
     module.def("write_json", &eda::write_json, py::arg("module"), py::arg("path"),

@@ -53,12 +53,17 @@ as trees with their source text, operator, operands, and bit width where the
 AST exposes them. `always`/procedural blocks are recorded as behavioral RTL;
 they are not converted to gates by `parse_verilog`.
 
-`parse_verilog` expects exactly one non-library top-level module in the file.
-For multi-file designs, `parse_verilog_project(directory)` recursively collects
-`.v` and `.sv` source files, sorts them, asks slang to resolve/elaborate the
-project, gathers modules reachable from top-level instances, and stores an AST
-JSON snapshot. Pass a top-module name to mapping when the project has more than
-one top.
+For a file, `parse_verilog` expects exactly one non-library top-level module
+and returns a `Module`. For a directory, it recursively collects `.v` and
+`.sv` source files, sorts them, asks slang to resolve/elaborate the project,
+gathers modules reachable from top-level instances, and returns a `Project`
+with an AST JSON snapshot. Pass a top-module name to mapping when the project
+has more than one top.
+
+The parsed model retains the Slang frontend context needed for behavioral
+lowering, so `generic_map` does not reread or reparse source files. Parameter
+overrides or selecting a non-root module may require re-elaboration from the
+retained syntax trees, but not another source parse.
 
 ### Simulation-only and unsupported constructs
 

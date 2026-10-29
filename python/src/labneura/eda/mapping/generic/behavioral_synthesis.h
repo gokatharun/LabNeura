@@ -4,17 +4,16 @@
 #include "labneura/eda/netlist.h"
 
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
 namespace labneura::eda::detail {
 
-// Internal helper of generic_map: elaborates `source_files` with slang and
-// lowers behavioral Verilog-2005 RTL (always blocks, generate, memories,
-// hierarchy) below `top` into a flat bit-level generic netlist.
-Module lower_behavioral_rtl(const std::vector<std::string>& source_files,
-                            const std::string& top,
-                            const std::map<std::string, std::string>& parameters);
+// Lowers a previously parsed Slang design without reparsing its source files.
+Module lower_behavioral_rtl(
+    const std::shared_ptr<ParsedVerilogContext>& context, const std::string& top,
+    const std::map<std::string, std::string>& parameters);
 
 }  // namespace labneura::eda::detail
 

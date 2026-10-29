@@ -1,4 +1,5 @@
 #include "labneura/eda/netlist.h"
+#include "labneura/eda/parsed_verilog_context.h"
 
 #include "slang/ast/ASTSerializer.h"
 #include "slang/ast/Compilation.h"
@@ -31,6 +32,40 @@
 
 namespace labneura::eda {
 namespace {
+
+std::shared_ptr<detail::ParsedVerilogContext> parse_sources(
+    std::vector<std::string>& arguments, const std::string& context_name) {
+    auto context = std::make_shared<detail::ParsedVerilogContext>();
+    auto& driver = context->driver;
+    driver.addStandardArgs();
+    std::vector<char*> argv;
+    argv.reserve(arguments.size());
+    for (auto& argument : arguments) argv.push_back(argument.data());
+
+    if (!driver.parseCommandLine(static_cast<int>(argv.size()), argv.data())) {
+        (void)driver.reportDiagnostics(false);
+        throw std::runtime_error("slang could not parse the " + context_name +
+                                 " options");
+    }
+    if (!driver.processOptions()) {
+        (void)driver.reportDiagnostics(false);
+        throw std::runtime_error("slang failed to process the " + context_name +
+                                 " options");
+    }
+    const bool parsed_sources = driver.parseAllSources();
+    const bool parse_diagnostics_ok = driver.reportParseDiags();
+    if (!parsed_sources || !parse_diagnostics_ok) {
+        throw std::runtime_error("slang failed to parse the " + context_name);
+    }
+
+    context->compilation = driver.createCompilation();
+    driver.reportCompilation(*context->compilation, true);
+    if (!driver.reportDiagnostics(true)) {
+        throw std::runtime_error("slang failed to compile the " + context_name +
+                                 ":\n" + driver.textDiagClient->getString());
+    }
+    return context;
+}
 
 bool is_systemverilog(const std::filesystem::path& path) {
     return path.extension() == ".sv";
@@ -283,34 +318,9 @@ Module parse_verilog(const std::string& path) {
         is_systemverilog(source_path) ? "--std=1800-2017" : "--std=1364-2005",
         "--include-directory=" + include_directory, absolute_path};
 
-    slang::driver::Driver driver;
-    driver.addStandardArgs();
-    std::vector<char*> argv;
-    argv.reserve(arguments.size());
-    for (auto& argument : arguments) argv.push_back(argument.data());
-
-    if (!driver.parseCommandLine(static_cast<int>(argv.size()), argv.data())) {
-        (void)driver.reportDiagnostics(false);
-        throw std::runtime_error("slang could not parse the Verilog file options");
-    }
-    if (!driver.processOptions()) {
-        (void)driver.reportDiagnostics(false);
-        throw std::runtime_error("slang failed to process the Verilog file options");
-    }
-    const bool parsed_sources = driver.parseAllSources();
-    const bool parse_diagnostics_ok = driver.reportParseDiags();
-    if (!parsed_sources || !parse_diagnostics_ok) {
-        throw std::runtime_error("slang failed to parse the Verilog file");
-    }
-
-    auto compilation = driver.createCompilation();
-    const auto& root_symbol = compilation->getRoot();
-    driver.reportCompilation(*compilation, true);
-    if (!driver.reportDiagnostics(true)) {
-        throw std::runtime_error(
-            "slang failed to compile the Verilog file:\n" +
-            driver.textDiagClient->getString());
-    }
+    auto parsed_context = parse_sources(arguments, "Verilog file");
+    auto& driver = parsed_context->driver;
+    const auto& root_symbol = parsed_context->compilation->getRoot();
     const slang::ast::InstanceSymbol* top_module = nullptr;
     for (const auto* candidate : root_symbol.topInstances) {
         if (top_module) {
@@ -324,15 +334,13 @@ Module parse_verilog(const std::string& path) {
             "parse_verilog found no top-level Verilog module in the file");
     }
     auto module = summarize_module(*top_module, driver.sourceManager);
-    if (module.is_behavioral()) module.source_files_ = {absolute_path};
+    if (module.is_behavioral()) {
+        module.parsed_context_ = std::move(parsed_context);
+    }
     return module;
 }
 
-Module parse_verilog_file(const std::string& path) {
-    return parse_verilog(path);
-}
-
-Project parse_verilog_project(const std::string& directory) {
+Project parse_verilog_directory(const std::string& directory) {
     const std::filesystem::path root(directory);
     if (!std::filesystem::is_directory(root)) {
         throw std::runtime_error("Verilog project path is not a directory: " +
@@ -377,42 +385,21 @@ Project parse_verilog_project(const std::string& directory) {
         arguments.push_back(source_file);
     }
 
-    slang::driver::Driver driver;
-    driver.addStandardArgs();
-    std::vector<char*> argv;
-    argv.reserve(arguments.size());
-    for (auto& argument : arguments) argv.push_back(argument.data());
-
-    if (!driver.parseCommandLine(static_cast<int>(argv.size()), argv.data())) {
-        (void)        driver.reportDiagnostics(false);
-        throw std::runtime_error("slang could not parse the Verilog project options");
-    }
-    if (!driver.processOptions()) {
-        (void)driver.reportDiagnostics(false);
-        throw std::runtime_error("slang failed to process the Verilog project options");
-    }
-    const bool parsed_sources = driver.parseAllSources();
-    const bool parse_diagnostics_ok = driver.reportParseDiags();
-    if (!parsed_sources || !parse_diagnostics_ok) {
-        throw std::runtime_error("slang failed to parse the Verilog project");
-    }
-
-    auto compilation = driver.createCompilation();
-    const auto& root_symbol = compilation->getRoot();
-    driver.reportCompilation(*compilation, true);
-    if (!driver.reportDiagnostics(true)) {
-        throw std::runtime_error("slang failed to compile the Verilog project");
-    }
+    project.parsed_context_ = parse_sources(arguments, "Verilog project");
+    auto& driver = project.parsed_context_->driver;
+    const auto& root_symbol = project.parsed_context_->compilation->getRoot();
 
     slang::JsonWriter writer;
     writer.setPrettyPrint(true);
-    slang::ast::ASTSerializer serializer(*compilation, writer);
+    slang::ast::ASTSerializer serializer(*project.parsed_context_->compilation,
+                                         writer);
     serializer.setIncludeAddresses(false);
     serializer.setIncludeSourceInfo(true);
     writer.startObject();
     writer.writeProperty("definitions");
     writer.startArray();
-    for (const auto* definition : compilation->getDefinitions()) {
+    for (const auto* definition :
+         project.parsed_context_->compilation->getDefinitions()) {
         serializer.serialize(*definition);
     }
     writer.endArray();
@@ -429,7 +416,11 @@ Project parse_verilog_project(const std::string& directory) {
 
         const std::string module_name(instance.getDefinition().name);
         if (module_names.insert(module_name).second) {
-            modules.push_back(summarize_module(instance, driver.sourceManager, true));
+            auto module = summarize_module(instance, driver.sourceManager, true);
+            if (module.is_behavioral()) {
+                module.parsed_context_ = project.parsed_context_;
+            }
+            modules.push_back(std::move(module));
 
             for (const auto& member : instance.body.members()) {
                 if (member.kind == slang::ast::SymbolKind::Instance) {

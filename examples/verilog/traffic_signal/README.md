@@ -26,11 +26,11 @@ iverilog -g2012 -o sim tick_generator.v phase_timer.v traffic_fsm.v traffic_sign
 vvp sim
 ```
 
-LabNeura can also parse the project with `parse_verilog_project`:
+LabNeura can also parse the project by passing its directory to `parse_verilog`:
 
 ```python
 import labneura.eda as eda
 
-project = eda.parse_verilog_project("examples/verilog/traffic_signal")
+project = eda.parse_verilog("examples/verilog/traffic_signal")
 print(project.module_count)
 ```

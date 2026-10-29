@@ -5,6 +5,7 @@
 #include "labneura/eda/netlist.h"
 
 #include "behavioral_synthesis.h"
+#include "labneura/eda/parsed_verilog_context.h"
 #include "bit_graph.h"
 
 #include "slang/ast/Compilation.h"
@@ -37,10 +38,11 @@
 
 #include <algorithm>
 #include <span>
-#include <filesystem>
 #include <functional>
 #include <map>
+#include <mutex>
 #include <memory>
+#include <mutex>
 #include <set>
 #include <unordered_map>
 #include <unordered_set>
@@ -1825,56 +1827,66 @@ Module Synthesizer::run(const sa::InstanceSymbol& top, const std::string& top_na
 }  // namespace
 
 Module detail::lower_behavioral_rtl(
-    const std::vector<std::string>& source_files, const std::string& top,
+    const std::shared_ptr<ParsedVerilogContext>& context, const std::string& top,
     const std::map<std::string, std::string>& parameters) {
-    std::set<std::string> include_directories;
-    for (const auto& file : source_files) {
-        include_directories.insert(std::filesystem::path(file).parent_path().string());
-    }
-    const bool any_systemverilog = std::any_of(
-        source_files.begin(), source_files.end(),
-        [](const std::string& file) {
-            return std::filesystem::path(file).extension() == ".sv";
-        });
-    std::vector<std::string> arguments = {
-        "labneura-eda", any_systemverilog ? "--std=1800-2017" : "--std=1364-2005",
-        "-Wnone"};
-    for (const auto& directory : include_directories) {
-        arguments.push_back("--include-directory=" + directory);
-    }
-    if (!top.empty()) arguments.push_back("--top=" + top);
-    for (const auto& [name, value] : parameters) {
-        arguments.push_back("-G" + name + "=" + value);
-    }
-    for (const auto& file : source_files) arguments.push_back(file);
-
-    slang::driver::Driver driver;
-    driver.addStandardArgs();
-    std::vector<char*> argv;
-    for (auto& argument : arguments) argv.push_back(argument.data());
-    if (!driver.parseCommandLine(static_cast<int>(argv.size()), argv.data()) ||
-        !driver.processOptions()) {
-        throw std::runtime_error("slang rejected the synthesis options");
-    }
-    if (!driver.parseAllSources() || !driver.reportParseDiags()) {
-        throw std::runtime_error("slang failed to parse the Verilog file");
-    }
-    auto compilation = driver.createCompilation();
-    driver.reportCompilation(*compilation, true);
-    if (!driver.reportDiagnostics(true)) {
-        throw std::runtime_error("slang failed to elaborate the Verilog file:\n" +
-                                 driver.textDiagClient->getString());
-    }
-    const auto& tops = compilation->getRoot().topInstances;
-    if (tops.empty()) throw std::runtime_error("no top-level module found");
-    if (tops.size() > 1) {
-        std::string names;
-        for (const auto* candidate : tops) names += " " + std::string(candidate->name);
+    if (!context || !context->compilation) {
         throw std::runtime_error(
-            "several top-level modules found (" + names + " ); pass top=<module>");
+            "behavioral RTL has no retained Slang parse context; create it with parse_verilog");
     }
+    std::lock_guard lock(context->mutex);
+    auto& driver = context->driver;
+    struct DriverOptionsRestore {
+        slang::driver::Driver& driver;
+        std::vector<std::string> top_modules;
+        std::vector<std::string> parameter_overrides;
+        bool active = false;
+
+        ~DriverOptionsRestore() {
+            if (!active) return;
+            driver.options.topModules = std::move(top_modules);
+            driver.options.paramOverrides = std::move(parameter_overrides);
+        }
+    } restore_options{driver, driver.options.topModules,
+                      driver.options.paramOverrides};
+    slang::ast::Compilation* compilation = context->compilation.get();
+    const auto has_top = [&](slang::ast::Compilation& candidate) {
+        for (const auto* instance : candidate.getRoot().topInstances) {
+            if (instance->getDefinition().name == top) return true;
+        }
+        return false;
+    };
+
+    std::unique_ptr<slang::ast::Compilation> specialized_compilation;
+    if (!parameters.empty() || !has_top(*compilation)) {
+        restore_options.active = true;
+        driver.options.topModules = {top};
+        driver.options.paramOverrides.clear();
+        for (const auto& [name, value] : parameters) {
+            driver.options.paramOverrides.push_back(name + "=" + value);
+        }
+        specialized_compilation = driver.createCompilation();
+        driver.reportCompilation(*specialized_compilation, true);
+        if (!driver.reportDiagnostics(true)) {
+            throw std::runtime_error(
+                "slang failed to elaborate the Verilog design:\n" +
+                driver.textDiagClient->getString());
+        }
+        compilation = specialized_compilation.get();
+    }
+
+    const slang::ast::InstanceSymbol* selected_top = nullptr;
+    for (const auto* candidate : compilation->getRoot().topInstances) {
+        if (candidate->getDefinition().name == top) {
+            selected_top = candidate;
+            break;
+        }
+    }
+    if (!selected_top) {
+        throw std::runtime_error("top module '" + top + "' not found in parsed design");
+    }
+
     Synthesizer synthesizer;
-    return synthesizer.run(*tops[0], std::string(tops[0]->name));
+    return synthesizer.run(*selected_top, std::string(selected_top->name));
 }
 
 }  // namespace labneura::eda

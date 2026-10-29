@@ -380,7 +380,7 @@ def test_blif_keeps_async_flops_as_subckt(tmp_path):
 
 @pytest.mark.skipif(not IBEX.exists(), reason="ibex example not present")
 def test_ibex_alu_maps_and_matches_generic():
-    project = eda.parse_verilog_project(str(IBEX))
+    project = eda.parse_verilog(str(IBEX))
     generic = eda.generic_map(project, "ibex_alu")
     for k in (4, 6):
         mapped = eda.fpga_map(generic, k)
@@ -391,7 +391,7 @@ def test_ibex_alu_maps_and_matches_generic():
 
 @pytest.mark.skipif(not IBEX.exists(), reason="ibex example not present")
 def test_project_overload_with_top_and_lut_size():
-    project = eda.parse_verilog_project(str(IBEX))
+    project = eda.parse_verilog(str(IBEX))
     direct = eda.fpga_map(project, top="ibex_counter", lut_size=5)
     staged = eda.fpga_map(eda.generic_map(project, "ibex_counter"), 5)
     assert eda.to_blif(direct) == eda.to_blif(staged)
@@ -399,7 +399,7 @@ def test_project_overload_with_top_and_lut_size():
 
 @pytest.mark.skipif(not IBEX.exists(), reason="ibex example not present")
 def test_ibex_core_maps_and_matches_generic():
-    project = eda.parse_verilog_project(str(IBEX))
+    project = eda.parse_verilog(str(IBEX))
     generic = eda.generic_map(project, "ibex_core")
     mapped = eda.fpga_map(generic, 6)
     seq = sum(v for t, v in counts(generic).items() if t.startswith("DFF"))
@@ -515,7 +515,9 @@ library (my_fpga) {
 
 
 def test_custom_library_overrides_cell_data_and_missing_cells_stay_unset(tmp_path):
-    library = eda.parse_liberty_source(LIBERTY_LUTS)
+    liberty_path = tmp_path / "lut.lib"
+    liberty_path.write_text(LIBERTY_LUTS, encoding="utf-8")
+    library = eda.parse_liberty(str(liberty_path))
     generic = generic_of(tmp_path, SEQUENTIAL_SET)
     mapped = eda.fpga_map(generic, 3, library)
     seen = set()
@@ -528,9 +530,11 @@ def test_custom_library_overrides_cell_data_and_missing_cells_stay_unset(tmp_pat
     assert seen
 
 
-def test_project_overload_accepts_a_library():
-    library = eda.parse_liberty_source(LIBERTY_LUTS)
-    project = eda.parse_verilog_project(str(IBEX))
+def test_project_overload_accepts_a_library(tmp_path):
+    liberty_path = tmp_path / "lut.lib"
+    liberty_path.write_text(LIBERTY_LUTS, encoding="utf-8")
+    library = eda.parse_liberty(str(liberty_path))
+    project = eda.parse_verilog(str(IBEX))
     mapped = eda.fpga_map(project, top="ibex_counter", lut_size=3, library=library)
     assert any(i.cell is not None and i.cell.area == 99 for i in mapped.instances)
 

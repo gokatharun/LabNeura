@@ -530,10 +530,6 @@ StandardCellLibrary parse_library(const std::string& source) {
 
 }  // namespace
 
-StandardCellLibrary parse_liberty_source(const std::string& source) {
-    return parse_library(source);
-}
-
 StandardCellLibrary parse_liberty(const std::string& path) {
     std::ifstream input(path, std::ios::binary | std::ios::ate);
     if (!input) {
@@ -554,7 +550,7 @@ StandardCellLibrary parse_liberty(const std::string& path) {
 
 const StandardCellLibrary& get_default_cell_library() {
     static const StandardCellLibrary library =
-        parse_liberty_source(detail::get_bundled_liberty());
+        parse_library(detail::get_bundled_liberty());
     return library;
 }
 

@@ -127,13 +127,14 @@ eda.write_json(module, "logic_example.json")
 module.dump_graph("logic_example.dot")  # Graphviz: dot -Tsvg logic_example.dot
 ```
 
-`parse_verilog_project` recursively reads `.v` files, resolves module
-hierarchy, and exposes an elaborated AST as JSON. Project summary counts are
-available alongside module ports, wires, instances, and each instance's
-formal-port-to-net connections:
+`parse_verilog` accepts either a Verilog file or a directory. For a file, it
+returns a `Module`; for a directory, it recursively reads `.v` and `.sv` files,
+resolves module hierarchy, and returns a `Project` with an elaborated AST as
+JSON. Project summary counts are available alongside module ports, wires,
+instances, and each instance's formal-port-to-net connections:
 
 ```python
-project = eda.parse_verilog_project("examples/verilog")
+project = eda.parse_verilog("examples/verilog")
 print(project.module_count, project.total_port_count, project.total_wire_count)
 for module in project.modules:
     print(module.name, module.port_count, module.wire_count)
@@ -162,7 +163,7 @@ inlining). Both `generic_map` and `tech_map` also accept a whole project and a
 top module, flattening the hierarchy below it:
 
 ```python
-project = eda.parse_verilog_project("examples/verilog/picorv32")
+project = eda.parse_verilog("examples/verilog/picorv32")
 mapped = eda.tech_map(project, library, top="picorv32",
                       parameters={"ENABLE_MUL": "1"})
 ```

@@ -6,12 +6,17 @@
 
 #include <cstddef>
 #include <map>
+#include <memory>
 #include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 
 namespace labneura::eda {
+
+namespace detail {
+struct ParsedVerilogContext;
+}
 
 enum class PortDirection {
     Input,
@@ -111,6 +116,8 @@ private:
     Expression rhs_;
 };
 
+class Project;
+
 class Module {
 public:
     Module() = default;
@@ -145,11 +152,6 @@ public:
     std::size_t get_instance_count() const noexcept { return instances_.size(); }
     // True when the RTL contains always blocks that generic_map must lower.
     bool is_behavioral() const noexcept { return behavioral_; }
-    // Source files a behavioral module was parsed from (set by parse_verilog).
-    const std::vector<std::string>& get_source_files() const noexcept {
-        return source_files_;
-    }
-
 private:
     std::string name_;
     std::vector<Port> ports_;
@@ -157,9 +159,14 @@ private:
     std::vector<Instance> instances_;
     std::vector<ContinuousAssignment> assignments_;
     bool behavioral_ = false;
-    std::vector<std::string> source_files_;
+    std::shared_ptr<detail::ParsedVerilogContext> parsed_context_;
 
     friend Module parse_verilog(const std::string& path);
+    friend Project parse_verilog_directory(const std::string& directory);
+    friend Module generic_map(const Module& rtl_module);
+    friend Module generic_map(
+        const Project& project, const std::string& top,
+        const std::map<std::string, std::string>& parameters);
 };
 
 class Project {
@@ -192,13 +199,16 @@ private:
     std::vector<Module> modules_;
     std::string ast_json_;
     std::vector<std::string> source_files_;
+    std::shared_ptr<detail::ParsedVerilogContext> parsed_context_;
 
-    friend Project parse_verilog_project(const std::string& directory);
+    friend Project parse_verilog_directory(const std::string& directory);
+    friend Module generic_map(
+        const Project& project, const std::string& top,
+        const std::map<std::string, std::string>& parameters);
 };
 
 Module parse_verilog(const std::string& path);
-Module parse_verilog_file(const std::string& path);
-Project parse_verilog_project(const std::string& directory);
+Project parse_verilog_directory(const std::string& directory);
 // Lowers a parsed module, or the hierarchy below `top` in a parsed project,
 // into technology-independent generic cells. `parameters` overrides top-level
 // module parameters (for example {"ENABLE_MUL": "1"}).

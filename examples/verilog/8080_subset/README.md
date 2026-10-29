@@ -27,4 +27,4 @@ vvp sim
 ```
 
 The behavioral RTL can be read by LabNeura's project reader with
-`parse_verilog_project`.
+`parse_verilog` with the project directory.

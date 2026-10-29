@@ -183,7 +183,6 @@ private:
 };
 
 StandardCellLibrary parse_liberty(const std::string& path);
-StandardCellLibrary parse_liberty_source(const std::string& source);
 const StandardCellLibrary& get_default_cell_library();
 
 }  // namespace labneura::eda

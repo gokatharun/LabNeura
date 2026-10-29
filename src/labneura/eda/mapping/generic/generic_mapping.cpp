@@ -230,7 +230,7 @@ struct GenericMapper {
 
 Module generic_map(const Module& rtl_module) {
     if (rtl_module.is_behavioral()) {
-        return detail::lower_behavioral_rtl(rtl_module.get_source_files(),
+        return detail::lower_behavioral_rtl(rtl_module.parsed_context_,
                                             rtl_module.get_name(), {});
     }
     GenericMapper mapper(rtl_module);
@@ -338,7 +338,7 @@ Module generic_map(const Project& project, const std::string& top,
         }
     }
     if (!needs_lowering) return generic_map(*top_module->second);
-    return detail::lower_behavioral_rtl(project.get_source_files(), top_name, parameters);
+    return detail::lower_behavioral_rtl(project.parsed_context_, top_name, parameters);
 }
 
 }  // namespace labneura::eda
