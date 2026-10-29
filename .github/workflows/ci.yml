@@ -98,9 +98,8 @@ jobs:
               brew install llvm
             fi
 
-            LLVM_PREFIX=$(brew --prefix llvm)
-            echo "LLVM_PROFDATA=$LLVM_PREFIX/bin/llvm-profdata" >> $GITHUB_ENV
-            echo "LLVM_COV=$LLVM_PREFIX/bin/llvm-cov" >> $GITHUB_ENV
+            echo "LLVM_PROFDATA=$(xcrun --find llvm-profdata)" >> $GITHUB_ENV
+            echo "LLVM_COV=$(xcrun --find llvm-cov)" >> $GITHUB_ENV
 
           else
             if ! command -v llvm-profdata >/dev/null 2>&1; then
