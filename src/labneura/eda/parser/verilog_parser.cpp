@@ -71,6 +71,10 @@ bool is_systemverilog(const std::filesystem::path& path) {
     return path.extension() == ".sv";
 }
 
+std::size_t declared_width(const slang::ast::Symbol& symbol) {
+    const auto* type = symbol.getDeclaredType();
+    return type ? static_cast<std::size_t>(type->getType().getBitWidth()) : 1;
+}
 
 std::string trim(const std::string& text) {
     const auto first = text.find_first_not_of(" \t\r\n");
@@ -241,20 +245,22 @@ Module summarize_module(const slang::ast::InstanceSymbol& instance,
         } else if (port.direction == slang::ast::ArgumentDirection::Out) {
             direction = PortDirection::Output;
         }
-        ports.emplace_back(port_name, direction);
+        const auto width = static_cast<std::size_t>(port.getType().getBitWidth());
+        ports.emplace_back(port_name, direction, width);
         const auto net_type =
             direction == PortDirection::Input
                 ? NetType::Input
                 : direction == PortDirection::Output ? NetType::Output
                                                      : NetType::InOut;
-        nets.emplace_back(port_name, net_type);
+        nets.emplace_back(port_name, net_type, width);
     }
 
     for (const auto& member : instance.body.members()) {
         if ((member.kind == slang::ast::SymbolKind::Net ||
              member.kind == slang::ast::SymbolKind::Variable) &&
             port_names.count(std::string(member.name)) == 0) {
-            nets.emplace_back(std::string(member.name), NetType::Internal);
+             nets.emplace_back(std::string(member.name), NetType::Internal,
+                               declared_width(member));
         } else if (member.kind == slang::ast::SymbolKind::Instance) {
             const auto& child = member.as<slang::ast::InstanceSymbol>();
             const std::string cell_type(child.getDefinition().name);

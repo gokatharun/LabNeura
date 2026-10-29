@@ -33,28 +33,32 @@ enum class NetType {
 
 class Port {
 public:
-    Port(std::string name, PortDirection direction)
-        : name_(std::move(name)), direction_(direction) {}
+    Port(std::string name, PortDirection direction, std::size_t width = 1)
+        : name_(std::move(name)), direction_(direction), width_(width) {}
 
     const std::string& get_name() const noexcept { return name_; }
     PortDirection get_direction() const noexcept { return direction_; }
+    std::size_t get_width() const noexcept { return width_; }
 
 private:
     std::string name_;
     PortDirection direction_;
+    std::size_t width_;
 };
 
 class Net {
 public:
-    Net(std::string name, NetType kind)
-        : name_(std::move(name)), kind_(kind) {}
+    Net(std::string name, NetType kind, std::size_t width = 1)
+        : name_(std::move(name)), kind_(kind), width_(width) {}
 
     const std::string& get_name() const noexcept { return name_; }
     NetType get_kind() const noexcept { return kind_; }
+    std::size_t get_width() const noexcept { return width_; }
 
 private:
     std::string name_;
     NetType kind_;
+    std::size_t width_;
 };
 
 class PinConnection {
