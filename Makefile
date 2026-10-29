@@ -136,6 +136,7 @@ else ifeq ($(LLVM_COV),)
 	@echo "⚠️ llvm-cov not found, skipping C++ coverage"
 else
 	@echo "⚠️ Running C++ coverage"
+	set -e; \
 	export LABNEURA_COVERAGE=1; \
 	export LLVM_PROFILE_FILE=labneura.profraw; \
 	$(MAKE) clean install test; \

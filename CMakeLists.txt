@@ -157,6 +157,18 @@ add_library(labneura
 set_target_properties(labneura PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_link_libraries(labneura PRIVATE slang::slang)
 
+if("$ENV{LABNEURA_COVERAGE}" STREQUAL "1")
+  if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    message(FATAL_ERROR "LABNEURA_COVERAGE requires Clang")
+  endif()
+  target_compile_options(labneura PRIVATE
+    -fprofile-instr-generate
+    -fcoverage-mapping
+  )
+  target_link_options(labneura INTERFACE -fprofile-instr-generate)
+  message(STATUS "LabNeura: LLVM coverage instrumentation enabled")
+endif()
+
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
   # Check for AVX2 support
   check_cxx_compiler_flag("-mavx2" LABNEURA_COMPILER_SUPPORTS_AVX2)
