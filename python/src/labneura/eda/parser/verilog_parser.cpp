@@ -359,26 +359,6 @@ Module parse_verilog(const std::string& path) {
     };
     retain_behavioral_context(retain_behavioral_context, module);
 
-    std::unordered_set<std::string> defined_names;
-    const auto collect_definitions =
-        [&](const auto& self, const Module& current, bool include) -> void {
-        if (defined_names.insert(current.get_name()).second) {
-            if (include) {
-                module.defined_modules_.emplace_back(
-                    current.get_name(), current.get_ports(), current.get_nets(),
-                    current.get_instances(), current.get_assignments(),
-                    current.is_behavioral());
-                if (current.is_behavioral()) {
-                    module.defined_modules_.back().parsed_context_ =
-                        parsed_context;
-                }
-            }
-        }
-        for (const auto& child : current.get_child_modules()) {
-            self(self, child, true);
-        }
-    };
-    collect_definitions(collect_definitions, module, false);
     return module;
 }
 

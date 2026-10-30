@@ -142,12 +142,6 @@ def test_parse_verilog_exposes_hierarchy_in_python_module_api(tmp_path):
     assert top.hierarchy_instance_name == ""
     assert top.get_hierarchy_instance_name() == ""
     assert len(top.child_modules) == 2
-    assert [module.name for module in top.defined_modules] == [
-        "half_adder",
-    ]
-    assert [module.name for module in top.get_defined_modules()] == [
-        "half_adder",
-    ]
     assert top.get_child_modules()[0].name == "half_adder"
     assert top.child_modules[0].hierarchy_instance_name == "u_ha1"
     assert top.child_modules[0].get_hierarchy_instance_name() == "u_ha1"
@@ -156,10 +150,9 @@ def test_parse_verilog_exposes_hierarchy_in_python_module_api(tmp_path):
         "s",
         "c",
     ]
-
+    generic = eda.generic_map(top)
     generic = eda.generic_map(top)
 
-    assert [module.name for module in generic.defined_modules] == ["half_adder"]
     assert [module.hierarchy_instance_name for module in generic.child_modules] == [
         "u_ha1",
         "u_ha2",

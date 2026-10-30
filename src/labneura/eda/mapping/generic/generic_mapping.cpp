@@ -230,12 +230,11 @@ struct GenericMapper {
 
 Module generic_map(const Module& rtl_module) {
     const auto map_module =
-        [&](const auto& self, const Module& source,
-            bool include_definitions) -> Module {
+        [&](const auto& self, const Module& source) -> Module {
         std::vector<Module> child_modules;
         child_modules.reserve(source.get_child_modules().size());
         for (const auto& child : source.get_child_modules()) {
-            child_modules.push_back(self(self, child, false));
+            child_modules.push_back(self(self, child));
         }
 
         Module mapped;
@@ -322,16 +321,10 @@ Module generic_map(const Module& rtl_module) {
                             std::move(child_modules));
         }
 
-        if (include_definitions) {
-            for (const auto& definition : source.defined_modules_) {
-                mapped.defined_modules_.push_back(
-                    self(self, definition, false));
-            }
-        }
         return mapped;
     };
 
-    return map_module(map_module, rtl_module, true);
+    return map_module(map_module, rtl_module);
 }
 
 Module generic_map(const Project& project, const std::string& top,

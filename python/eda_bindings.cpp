@@ -123,9 +123,6 @@ void bind_eda(pybind11::module_& labneura_module) {
                                "Gate instances in the module.")
         .def_property_readonly("child_modules", &eda::Module::get_child_modules,
                                "Elaborated child module instances.")
-        .def_property_readonly("defined_modules",
-                               &eda::Module::get_defined_modules,
-                               "Unique module definitions in the parsed hierarchy.")
         .def_property_readonly("assignments", &eda::Module::get_assignments,
                                "Continuous assignments in the module.")
         .def("get_name", &eda::Module::get_name)
@@ -135,7 +132,6 @@ void bind_eda(pybind11::module_& labneura_module) {
         .def("get_nets", &eda::Module::get_nets)
         .def("get_instances", &eda::Module::get_instances)
         .def("get_child_modules", &eda::Module::get_child_modules)
-        .def("get_defined_modules", &eda::Module::get_defined_modules)
         .def("get_assignments", &eda::Module::get_assignments)
         .def("dump_graph",
              [](const eda::Module& self, const std::string& path) {

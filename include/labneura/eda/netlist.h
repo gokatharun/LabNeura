@@ -154,11 +154,6 @@ public:
     const std::vector<Module>& get_child_modules() const noexcept {
         return child_modules_;
     }
-    // Unique module definitions present in this parsed hierarchy, including
-    // this module. Populated on the root returned by parse_verilog().
-    const std::vector<Module>& get_defined_modules() const noexcept {
-        return defined_modules_;
-    }
     const std::vector<ContinuousAssignment>& get_assignments() const noexcept {
         return assignments_;
     }
@@ -182,7 +177,6 @@ private:
     bool behavioral_ = false;
     std::string hierarchy_instance_name_;
     std::vector<Module> child_modules_;
-    std::vector<Module> defined_modules_;
     std::shared_ptr<detail::ParsedVerilogContext> parsed_context_;
 
     friend Module parse_verilog(const std::string& path);
