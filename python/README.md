@@ -157,6 +157,11 @@ technology-independent cells. It preserves associative multi-input operators,
 such as an XOR3, in the generic netlist. `tech_map` takes both that generic
 netlist and an explicit `StandardCellLibrary`, resolves generic cells to
 available library cells, and attaches their Liberty definitions to instances.
+Structural Verilog gate primitives (`and`, `nand`, `or`, `nor`, `xor`, `xnor`,
+`buf`, `not`, tri-state gates, and pull-up/down) are lowered to generic cells.
+Complete combinational two-state user-defined primitive tables are lowered to
+generic logic. Switch-level primitives, sequential UDPs, and UDP tables with
+unsupported or unspecified logic values are rejected explicitly.
 Modules with `always` blocks are flagged by `parse_verilog` (`is_behavioral`)
 and lowered by `generic_map` (flops, latches, muxes, arithmetic, function/task
 inlining). Both `generic_map` and `tech_map` also accept a whole project and a

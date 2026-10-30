@@ -74,17 +74,28 @@ private:
     std::string net_;
 };
 
+struct UserDefinedPrimitiveRow {
+    std::string inputs;
+    char output;
+};
+
 class Instance {
 public:
     Instance(std::string name, std::string cell_type,
              std::vector<PinConnection> connections,
              std::optional<StandardCell> cell = std::nullopt,
-             std::map<std::string, std::string> parameters = {})
+             std::map<std::string, std::string> parameters = {},
+             bool user_defined_primitive = false,
+             std::vector<UserDefinedPrimitiveRow> primitive_table = {},
+             bool sequential_primitive = false)
         : name_(std::move(name)),
           cell_type_(std::move(cell_type)),
           connections_(std::move(connections)),
           cell_(std::move(cell)),
-          parameters_(std::move(parameters)) {}
+          parameters_(std::move(parameters)),
+          user_defined_primitive_(user_defined_primitive),
+          primitive_table_(std::move(primitive_table)),
+          sequential_primitive_(sequential_primitive) {}
 
     const std::string& get_name() const noexcept { return name_; }
     const std::string& get_cell_type() const noexcept { return cell_type_; }
@@ -96,6 +107,16 @@ public:
     const std::map<std::string, std::string>& get_parameters() const noexcept {
         return parameters_;
     }
+    bool is_user_defined_primitive() const noexcept {
+        return user_defined_primitive_;
+    }
+    const std::vector<UserDefinedPrimitiveRow>& get_primitive_table() const
+        noexcept {
+        return primitive_table_;
+    }
+    bool is_sequential_primitive() const noexcept {
+        return sequential_primitive_;
+    }
 
 private:
     std::string name_;
@@ -103,6 +124,9 @@ private:
     std::vector<PinConnection> connections_;
     std::optional<StandardCell> cell_;
     std::map<std::string, std::string> parameters_;
+    bool user_defined_primitive_ = false;
+    std::vector<UserDefinedPrimitiveRow> primitive_table_;
+    bool sequential_primitive_ = false;
 };
 
 class ContinuousAssignment {

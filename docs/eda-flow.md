@@ -92,13 +92,24 @@ lowered into generic cells:
 - a literal Boolean constant becomes `TIEHI` or `TIELO`;
 - a variable bit-select with a power-of-two bus and variable selector becomes
   a tree of `MUX2` cells;
-- `and`, `or`, and `xor` primitive instances become `ANDn`, `ORn`, and `XORn`.
+- `and`, `nand`, `or`, `nor`, `xor`, and `xnor` primitive instances become
+  their corresponding multi-input generic cells;
+- `buf` and `not` primitives become `BUF` and `INV`;
+- `bufif` / `notif` primitives become `TRIBUF` cells with any required
+  polarity inverters, and `pullup` / `pulldown` become `TIEHI` / `TIELO`.
 
 Associative operators are collected into a single multi-input generic cell
 rather than needlessly making a chain. A final `BUF` may be added when lowering
 an expression into a temporary signal before driving its assignment target.
 Unsupported operators, non-scalar assignment targets, and X/Z constants fail
-instead of being silently dropped.
+instead of being silently dropped. Switch-level primitives (`tran`, `mos`,
+and related devices) fail explicitly because their bidirectional switch
+behavior is not Boolean logic. Complete combinational, two-state user-defined
+primitive (UDP) truth tables are expanded into generic Boolean gates.
+Sequential UDPs, tables with X/Z outputs or unsupported input symbols, and
+tables with unspecified input combinations fail explicitly. User-defined
+module instances remain hierarchy or external cells rather than being renamed
+as gates.
 
 ### Behavioral path
 
@@ -137,19 +148,23 @@ first.
 For each generic instance, the mapper:
 
 1. keeps a cell with an exact type match when one exists;
-2. otherwise recognizes a generic gate family and finds a compatible library
-   cell (including matching input count);
+2. otherwise matches generic Boolean gates (`ANDn`, `NANDn`, `ORn`, `NORn`,
+   `XORn`, `XNORn`, `INV`, and `BUF`) against Liberty output functions and
+   input counts, independent of the library cell or pin names;
 3. prefers a unit-drive (`_1`) cell if available, then chooses the smallest
-   area among equivalent candidates when area data is present;
-4. connects generic input names to same-named input pins and translates the
-   generic `Y` output to the cell's output pin;
+   area among equivalent candidates when area data is present (conventional
+   cell names and single-output cells are preferred);
+4. connects generic inputs to the matching cell input pins and translates
+   generic `Y` to the matching output pin;
 5. stores the selected Liberty cell on the mapped instance.
 
 Non-generic instances that already match an exact cell are attached to that
 cell; otherwise they are preserved. A generic cell without a compatible
-library implementation is an error. This stage is a cell-family matcher, not
+library implementation is an error. Other generic state/mux cells continue to
+use the supported library cell-family conventions; arbitrary sequential or
+tri-state Liberty function matching is not inferred. This stage is not
 Boolean optimization, logic restructuring, timing-driven sizing, or physical
-design.
+design, and it cannot map a function absent from the selected library.
 
 ### What Liberty parsing supplies
 

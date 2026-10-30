@@ -269,7 +269,8 @@ Module summarize_module(const slang::ast::InstanceSymbol& instance,
             const std::string cell_type(child.getDefinition().name);
             instances.emplace_back(
                 std::string(child.name), cell_type,
-                module_port_connections(child, source_manager));
+                module_port_connections(child, source_manager), std::nullopt,
+                std::map<std::string, std::string>{});
             if (preserve_hierarchy && child.isModule()) {
                 child_modules.push_back(summarize_module(
                     child, source_manager, false, true,
@@ -279,9 +280,24 @@ Module summarize_module(const slang::ast::InstanceSymbol& instance,
             const auto& child =
                 member.as<slang::ast::PrimitiveInstanceSymbol>();
             const std::string cell_type(child.primitiveType.name);
+            std::vector<UserDefinedPrimitiveRow> primitive_table;
+            if (child.primitiveType.primitiveKind ==
+                slang::ast::PrimitiveSymbol::UserDefined) {
+                primitive_table.reserve(child.primitiveType.table.size());
+                for (const auto& row : child.primitiveType.table) {
+                    primitive_table.push_back(
+                        {std::string(row.inputs), row.output});
+                }
+            }
             instances.emplace_back(
                 std::string(child.name), cell_type,
-                parsed_primitive_connections(child, source_manager));
+                parsed_primitive_connections(child, source_manager),
+                std::nullopt, std::map<std::string, std::string>{},
+                child.primitiveType.primitiveKind ==
+                    slang::ast::PrimitiveSymbol::UserDefined,
+                std::move(primitive_table),
+                child.primitiveType.isSequential ||
+                    child.primitiveType.isEdgeSensitive);
         } else if (member.kind == slang::ast::SymbolKind::ContinuousAssign) {
             const auto& assignment =
                 member.as<slang::ast::ContinuousAssignSymbol>().getAssignment()

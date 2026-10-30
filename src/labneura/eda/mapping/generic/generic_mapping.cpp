@@ -9,6 +9,7 @@
 #include <optional>
 #include <regex>
 #include <map>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -75,6 +76,50 @@ std::string generic_type_for_operator(const std::string& op,
                              op);
 }
 
+std::optional<std::string> generic_type_for_primitive(
+    const std::string& cell_type, std::size_t input_count) {
+    if (cell_type == "pullup" || cell_type == "pulldown") {
+        if (input_count != 0) {
+            throw std::runtime_error(
+                "primitive gate '" + cell_type + "' must not have inputs");
+        }
+        return cell_type == "pullup" ? "TIEHI" : "TIELO";
+    }
+    if (cell_type == "buf" || cell_type == "not") {
+        if (input_count != 1) {
+            throw std::runtime_error(
+                "primitive gate '" + cell_type +
+                "' must have exactly one input");
+        }
+        return cell_type == "buf" ? "BUF" : "INV";
+    }
+
+    std::string generic_family;
+    if (cell_type == "and") generic_family = "AND";
+    else if (cell_type == "nand") generic_family = "NAND";
+    else if (cell_type == "or") generic_family = "OR";
+    else if (cell_type == "nor") generic_family = "NOR";
+    else if (cell_type == "xor") generic_family = "XOR";
+    else if (cell_type == "xnor") generic_family = "XNOR";
+    else return std::nullopt;
+
+    if (input_count < 2) {
+        throw std::runtime_error(
+            "primitive gate '" + cell_type +
+            "' must have at least two inputs");
+    }
+    return generic_family + std::to_string(input_count);
+}
+
+bool is_switch_level_primitive(const std::string& cell_type) {
+    return cell_type == "cmos" || cell_type == "nmos" ||
+           cell_type == "pmos" || cell_type == "rnmos" ||
+           cell_type == "rpmos" || cell_type == "tran" ||
+           cell_type == "rtran" || cell_type == "tranif0" ||
+           cell_type == "tranif1" || cell_type == "rtranif0" ||
+           cell_type == "rtranif1";
+}
+
 struct GenericMapper {
     std::vector<Net> nets;
     std::vector<Instance> instances;
@@ -101,6 +146,151 @@ struct GenericMapper {
         connections.emplace_back("Y", output);
         instances.emplace_back(unique_name("__generic_inst"), std::move(type),
                                std::move(connections));
+    }
+
+    void lower_user_defined_primitive(const Instance& instance,
+                                      std::vector<Net>& output_nets) {
+        if (instance.is_sequential_primitive()) {
+            throw std::runtime_error(
+                "generic mapping does not support sequential user-defined "
+                "primitive '" +
+                instance.get_cell_type() + "'");
+        }
+
+        const auto& connections = instance.get_connections();
+        const auto output_connection = std::find_if(
+            connections.begin(), connections.end(),
+            [](const PinConnection& connection) {
+                return connection.get_pin() == "Y";
+            });
+        std::vector<std::string> input_nets;
+        input_nets.reserve(connections.size());
+        for (const auto& connection : connections) {
+            if (connection.get_pin() != "Y") {
+                input_nets.push_back(connection.get_net());
+            }
+        }
+        if (output_connection == connections.end() || input_nets.empty() ||
+            input_nets.size() > 16 || instance.get_primitive_table().empty()) {
+            throw std::runtime_error(
+                "user-defined primitive '" + instance.get_cell_type() +
+                "' has an unsupported port count or empty truth table");
+        }
+
+        const std::size_t combinations =
+            std::size_t{1} << input_nets.size();
+        std::vector<bool> covered(combinations, false);
+        std::vector<bool> values(combinations, false);
+        std::set<std::string> product_terms;
+        for (const auto& row : instance.get_primitive_table()) {
+            if (row.inputs.size() != input_nets.size() ||
+                (row.output != '0' && row.output != '1')) {
+                throw std::runtime_error(
+                    "user-defined primitive '" + instance.get_cell_type() +
+                    "' uses an unsupported UDP table symbol");
+            }
+            for (std::size_t combination = 0; combination < combinations;
+                 ++combination) {
+                bool matches = true;
+                for (std::size_t index = 0; index < input_nets.size(); ++index) {
+                    const char symbol = static_cast<char>(std::tolower(
+                        static_cast<unsigned char>(row.inputs[index])));
+                    const bool input =
+                        (combination & (std::size_t{1} << index)) != 0;
+                    if ((symbol == '0' && input) ||
+                        (symbol == '1' && !input)) {
+                        matches = false;
+                        break;
+                    }
+                    if (symbol != '0' && symbol != '1' && symbol != '?' &&
+                        symbol != 'b') {
+                        throw std::runtime_error(
+                            "user-defined primitive '" +
+                            instance.get_cell_type() +
+                            "' uses an unsupported UDP input symbol");
+                    }
+                }
+                if (!matches) continue;
+                const bool output = row.output == '1';
+                if (covered[combination] && values[combination] != output) {
+                    throw std::runtime_error(
+                        "user-defined primitive '" +
+                        instance.get_cell_type() +
+                        "' has conflicting UDP table rows");
+                }
+                covered[combination] = true;
+                values[combination] = output;
+            }
+            if (row.output == '1') product_terms.insert(row.inputs);
+        }
+        if (std::find(covered.begin(), covered.end(), false) != covered.end()) {
+            throw std::runtime_error(
+                "user-defined primitive '" + instance.get_cell_type() +
+                "' has unspecified UDP outputs that cannot be mapped");
+        }
+        const auto output = output_connection->get_net();
+        if (std::find(values.begin(), values.end(), false) == values.end()) {
+            add_cell("TIEHI", {}, output);
+            return;
+        }
+        if (product_terms.empty()) {
+            add_cell("TIELO", {}, output);
+            return;
+        }
+
+        std::vector<std::string> inverted_inputs(input_nets.size());
+        std::vector<std::string> terms;
+        terms.reserve(product_terms.size());
+        for (const auto& pattern : product_terms) {
+            std::vector<std::string> literals;
+            for (std::size_t index = 0; index < input_nets.size(); ++index) {
+                const auto symbol = static_cast<char>(std::tolower(
+                    static_cast<unsigned char>(pattern[index])));
+                if (symbol == '?' || symbol == 'b') continue;
+                if (symbol == '1') {
+                    literals.push_back(input_nets[index]);
+                    continue;
+                }
+                if (inverted_inputs[index].empty()) {
+                    inverted_inputs[index] = unique_name("__generic_net");
+                    output_nets.emplace_back(inverted_inputs[index],
+                                             NetType::Internal);
+                    add_cell("INV", {{"A", input_nets[index]}},
+                             inverted_inputs[index]);
+                }
+                literals.push_back(inverted_inputs[index]);
+            }
+
+            if (literals.empty()) {
+                const auto constant = unique_name("__generic_net");
+                output_nets.emplace_back(constant, NetType::Internal);
+                add_cell("TIEHI", {}, constant);
+                terms.push_back(constant);
+            } else if (literals.size() == 1) {
+                terms.push_back(literals.front());
+            } else {
+                const auto term = unique_name("__generic_net");
+                output_nets.emplace_back(term, NetType::Internal);
+                std::vector<PinConnection> term_inputs;
+                for (std::size_t index = 0; index < literals.size(); ++index) {
+                    term_inputs.emplace_back(pin_name(index), literals[index]);
+                }
+                add_cell("AND" + std::to_string(literals.size()),
+                         std::move(term_inputs), term);
+                terms.push_back(term);
+            }
+        }
+
+        if (terms.size() == 1) {
+            add_cell("BUF", {{"A", terms.front()}}, output);
+            return;
+        }
+        std::vector<PinConnection> sum_inputs;
+        for (std::size_t index = 0; index < terms.size(); ++index) {
+            sum_inputs.emplace_back(pin_name(index), terms[index]);
+        }
+        add_cell("OR" + std::to_string(terms.size()), std::move(sum_inputs),
+                 output);
     }
 
     bool collect_associative(const Expression& expression,
@@ -284,30 +474,91 @@ Module generic_map(const Module& rtl_module) {
                         std::make_move_iterator(mapper.nets.begin()),
                         std::make_move_iterator(mapper.nets.end()));
             auto instances = source.get_instances();
-            for (auto& instance : instances) {
-                std::string generic_type;
+            for (std::size_t index = 0; index < instances.size();) {
+                auto& instance = instances[index];
                 const auto& cell_type = instance.get_cell_type();
-                if (cell_type == "and" || cell_type == "or" ||
-                    cell_type == "xor") {
-                    std::size_t input_count = 0;
-                    for (const auto& connection : instance.get_connections()) {
-                        if (connection.get_pin() != "Y") ++input_count;
-                    }
-                    if (input_count < 2) {
-                        throw std::runtime_error(
-                            "primitive gate '" + instance.get_name() +
-                            "' must have at least two inputs");
-                    }
-                    generic_type = (cell_type == "and" ? "AND" :
-                                    cell_type == "or"  ? "OR"
-                                                       : "XOR") +
-                                   std::to_string(input_count);
+                if (instance.is_user_defined_primitive()) {
+                    mapper.lower_user_defined_primitive(instance, nets);
+                    instances.erase(instances.begin() +
+                                    static_cast<std::ptrdiff_t>(index));
+                    continue;
                 }
-                if (!generic_type.empty()) {
+                if (is_switch_level_primitive(cell_type)) {
+                    throw std::runtime_error(
+                        "generic mapping does not support switch-level "
+                        "primitive '" +
+                        cell_type +
+                        "'; use a synthesis flow with switch-level support");
+                }
+                const auto input_count = static_cast<std::size_t>(
+                    std::count_if(
+                        instance.get_connections().begin(),
+                        instance.get_connections().end(),
+                        [](const PinConnection& connection) {
+                            return connection.get_pin() != "Y";
+                        }));
+                if (cell_type == "bufif0" || cell_type == "bufif1" ||
+                    cell_type == "notif0" || cell_type == "notif1") {
+                    if (input_count != 2) {
+                        throw std::runtime_error(
+                            "primitive gate '" + cell_type +
+                            "' must have exactly two inputs");
+                    }
+                    const auto& connections = instance.get_connections();
+                    const auto output = std::find_if(
+                        connections.begin(), connections.end(),
+                        [](const PinConnection& connection) {
+                            return connection.get_pin() == "Y";
+                        });
+                    const auto data = std::find_if(
+                        connections.begin(), connections.end(),
+                        [](const PinConnection& connection) {
+                            return connection.get_pin() == "A";
+                        });
+                    const auto enable = std::find_if(
+                        connections.begin(), connections.end(),
+                        [](const PinConnection& connection) {
+                            return connection.get_pin() == "B";
+                        });
+                    if (output == connections.end() ||
+                        data == connections.end() ||
+                        enable == connections.end()) {
+                        throw std::runtime_error(
+                            "primitive gate '" + cell_type +
+                            "' has invalid connections");
+                    }
+
+                    std::string data_net = data->get_net();
+                    std::string enable_net = enable->get_net();
+                    if (cell_type == "notif0" || cell_type == "notif1") {
+                        const auto inverted =
+                            mapper.unique_name("__generic_net");
+                        nets.emplace_back(inverted, NetType::Internal);
+                        mapper.add_cell("INV", {{"A", data_net}}, inverted);
+                        data_net = inverted;
+                    }
+                    if (cell_type == "bufif1" || cell_type == "notif1") {
+                        const auto inverted =
+                            mapper.unique_name("__generic_net");
+                        nets.emplace_back(inverted, NetType::Internal);
+                        mapper.add_cell("INV", {{"A", enable_net}}, inverted);
+                        enable_net = inverted;
+                    }
+                    instance = Instance(
+                        instance.get_name(), "TRIBUF",
+                        {{"A", std::move(data_net)},
+                         {"TE_B", std::move(enable_net)},
+                         {"Y", output->get_net()}});
+                    continue;
+                }
+                const auto generic_type = generic_type_for_primitive(
+                    cell_type, input_count);
+                if (generic_type) {
                     instance = Instance(instance.get_name(),
-                                        std::move(generic_type),
+                                        *generic_type,
                                         instance.get_connections());
                 }
+                ++index;
             }
             instances.insert(
                 instances.end(),

@@ -442,6 +442,147 @@ def test_generic_map_uses_library_independent_multi_input_cells():
     assert [instance.cell_type for instance in module.instances].count("OR3") == 1
 
 
+def test_generic_map_renames_all_boolean_gate_primitives(tmp_path):
+    verilog_path = tmp_path / "boolean_gate_primitives.v"
+    verilog_path.write_text(
+        """
+        module top(input wire a, b, c, enable,
+                   output wire y_and, y_nand, y_or, y_nor,
+                   y_xor, y_xnor, y_buf, y_not, y_bufif0, y_bufif1,
+                   y_notif0, y_notif1, y_pullup, y_pulldown);
+            and u_and(y_and, a, b, c);
+            nand u_nand(y_nand, a, b, c);
+            or u_or(y_or, a, b, c);
+            nor u_nor(y_nor, a, b, c);
+            xor u_xor(y_xor, a, b, c);
+            xnor u_xnor(y_xnor, a, b, c);
+            buf u_buf(y_buf, a);
+            not u_not(y_not, a);
+            bufif0 u_bufif0(y_bufif0, a, enable);
+            bufif1 u_bufif1(y_bufif1, a, enable);
+            notif0 u_notif0(y_notif0, a, enable);
+            notif1 u_notif1(y_notif1, a, enable);
+            pullup u_pullup(y_pullup);
+            pulldown u_pulldown(y_pulldown);
+        endmodule
+        """,
+        encoding="utf-8",
+    )
+
+    generic = eda.generic_map(eda.parse_verilog(str(verilog_path)))
+
+    assert [
+        (instance.name, instance.cell_type)
+        for instance in generic.instances
+        if instance.name.startswith("u_")
+    ] == [
+        ("u_and", "AND3"), ("u_nand", "NAND3"), ("u_or", "OR3"),
+        ("u_nor", "NOR3"), ("u_xor", "XOR3"), ("u_xnor", "XNOR3"),
+        ("u_buf", "BUF"), ("u_not", "INV"),
+        ("u_bufif0", "TRIBUF"), ("u_bufif1", "TRIBUF"),
+        ("u_notif0", "TRIBUF"), ("u_notif1", "TRIBUF"),
+        ("u_pullup", "TIEHI"), ("u_pulldown", "TIELO"),
+    ]
+    assert [instance.cell_type for instance in generic.instances].count("INV") == 5
+    mapped = eda.tech_map(generic, default_cell_library())
+    assert all(instance.cell is not None for instance in mapped.instances)
+
+
+def test_tech_map_matches_liberty_logic_by_function_and_pin_names(tmp_path):
+    verilog_path = tmp_path / "custom_nand.v"
+    liberty_path = tmp_path / "custom_logic.lib"
+    verilog_path.write_text(
+        "module top(input wire a, b, output wire y); "
+        "nand u_nand(y, a, b); endmodule",
+        encoding="utf-8",
+    )
+    liberty_path.write_text(
+        """
+        library (custom) {
+            cell (mystery_logic) {
+                area : 1.0;
+                pin (P) { direction : input; }
+                pin (R) { direction : input; }
+                pin (Q) { direction : output; function : "!(P & R)"; }
+            }
+        }
+        """,
+        encoding="utf-8",
+    )
+
+    generic = eda.generic_map(eda.parse_verilog(str(verilog_path)))
+    assert generic.instances[0].cell_type == "NAND2"
+    mapped = eda.tech_map(generic, eda.parse_liberty(str(liberty_path)))
+
+    assert mapped.instances[0].cell.name == "mystery_logic"
+    assert {
+        connection.pin: connection.net
+        for connection in mapped.instances[0].connections
+    } == {"Q": "y", "P": "a", "R": "b"}
+
+
+@pytest.mark.parametrize(
+    ("primitive", "connections"),
+    [
+        ("tran", "y, a"),
+        ("rtran", "y, a"),
+        ("tranif0", "y, a, b"),
+        ("tranif1", "y, a, b"),
+        ("rtranif0", "y, a, b"),
+        ("rtranif1", "y, a, b"),
+        ("cmos", "y, a, b, c"),
+        ("nmos", "y, a, b"),
+        ("pmos", "y, a, b"),
+        ("rnmos", "y, a, b"),
+        ("rpmos", "y, a, b"),
+    ],
+)
+def test_generic_map_rejects_switch_level_primitives(
+    tmp_path, primitive, connections
+):
+    verilog_path = tmp_path / f"{primitive}.v"
+    verilog_path.write_text(
+        "module top(input wire a, b, c, output wire y); "
+        f"{primitive} u_switch({connections}); endmodule",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RuntimeError, match="does not support switch-level"):
+        eda.generic_map(eda.parse_verilog(str(verilog_path)))
+
+
+def test_generic_map_lowers_combinational_user_defined_primitives(tmp_path):
+    verilog_path = tmp_path / "custom_udp.v"
+    verilog_path.write_text(
+        """
+        primitive custom_xor (y, a, b);
+            output y;
+            input a, b;
+            table
+                0 0 : 0;
+                0 1 : 1;
+                1 0 : 1;
+                1 1 : 0;
+            endtable
+        endprimitive
+        module top(input wire a, b, output wire y);
+            custom_xor u_xor(y, a, b);
+        endmodule
+        """,
+        encoding="utf-8",
+    )
+
+    generic = eda.generic_map(eda.parse_verilog(str(verilog_path)))
+
+    assert {instance.cell_type for instance in generic.instances} == {
+        "INV",
+        "AND2",
+        "OR2",
+    }
+    mapped = eda.tech_map(generic, default_cell_library())
+    assert all(instance.cell is not None for instance in mapped.instances)
+
+
 def test_generated_logic_instance_names_do_not_collide_with_nets(tmp_path):
     verilog_path = tmp_path / "generated_name_collision.v"
     verilog_path.write_text(
