@@ -226,11 +226,14 @@ Expression lower_expression(const slang::ast::Expression& expression,
 
 Module summarize_module(const slang::ast::InstanceSymbol& instance,
                        const slang::SourceManager& source_manager,
-                       bool project_summary = false) {
+                       bool project_summary = false,
+                       bool preserve_hierarchy = false,
+                       std::string hierarchy_instance_name = {}) {
     bool behavioral = false;
     std::vector<Port> ports;
     std::vector<Net> nets;
     std::vector<Instance> instances;
+    std::vector<Module> child_modules;
     std::vector<ContinuousAssignment> assignments;
     std::unordered_set<std::string> port_names;
 
@@ -267,6 +270,11 @@ Module summarize_module(const slang::ast::InstanceSymbol& instance,
             instances.emplace_back(
                 std::string(child.name), cell_type,
                 module_port_connections(child, source_manager));
+            if (preserve_hierarchy && child.isModule()) {
+                child_modules.push_back(summarize_module(
+                    child, source_manager, false, true,
+                    std::string(child.name)));
+            }
         } else if (member.kind == slang::ast::SymbolKind::PrimitiveInstance) {
             const auto& child =
                 member.as<slang::ast::PrimitiveInstanceSymbol>();
@@ -299,7 +307,9 @@ Module summarize_module(const slang::ast::InstanceSymbol& instance,
 
     return Module(std::string(instance.getDefinition().name), std::move(ports),
                   std::move(nets), std::move(instances),
-                  std::move(assignments), behavioral);
+                  std::move(assignments), behavioral,
+                  std::move(hierarchy_instance_name),
+                  std::move(child_modules));
 }
 
 }  // namespace
@@ -339,10 +349,36 @@ Module parse_verilog(const std::string& path) {
         throw std::runtime_error(
             "parse_verilog found no top-level Verilog module in the file");
     }
-    auto module = summarize_module(*top_module, driver.sourceManager);
-    if (module.is_behavioral()) {
-        module.parsed_context_ = std::move(parsed_context);
-    }
+    auto module = summarize_module(*top_module, driver.sourceManager, false,
+                                   true);
+    module.parsed_context_ = parsed_context;
+    const auto retain_behavioral_context =
+        [&](const auto& self, Module& current) -> void {
+        if (current.is_behavioral()) current.parsed_context_ = parsed_context;
+        for (auto& child : current.child_modules_) self(self, child);
+    };
+    retain_behavioral_context(retain_behavioral_context, module);
+
+    std::unordered_set<std::string> defined_names;
+    const auto collect_definitions =
+        [&](const auto& self, const Module& current, bool include) -> void {
+        if (defined_names.insert(current.get_name()).second) {
+            if (include) {
+                module.defined_modules_.emplace_back(
+                    current.get_name(), current.get_ports(), current.get_nets(),
+                    current.get_instances(), current.get_assignments(),
+                    current.is_behavioral());
+                if (current.is_behavioral()) {
+                    module.defined_modules_.back().parsed_context_ =
+                        parsed_context;
+                }
+            }
+        }
+        for (const auto& child : current.get_child_modules()) {
+            self(self, child, true);
+        }
+    };
+    collect_definitions(collect_definitions, module, false);
     return module;
 }
 

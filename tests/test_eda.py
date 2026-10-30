@@ -120,6 +120,62 @@ def test_parse_verilog_builds_module_netlist(tmp_path):
         module.name = "changed"
 
 
+def test_parse_verilog_exposes_hierarchy_in_python_module_api(tmp_path):
+    verilog_path = tmp_path / "hierarchy.v"
+    verilog_path.write_text(
+        """
+        module half_adder(input wire a, b, output wire s, c);
+            assign s = a ^ b;
+            assign c = a & b;
+        endmodule
+
+        module top_module(input wire a, b, output wire s1, c1, s2, c2);
+            half_adder u_ha1(a, b, s1, c1);
+            half_adder u_ha2(a, b, s2, c2);
+        endmodule
+        """,
+        encoding="utf-8",
+    )
+
+    top = eda.parse_verilog(str(verilog_path))
+
+    assert top.hierarchy_instance_name == ""
+    assert top.get_hierarchy_instance_name() == ""
+    assert len(top.child_modules) == 2
+    assert [module.name for module in top.defined_modules] == [
+        "half_adder",
+    ]
+    assert [module.name for module in top.get_defined_modules()] == [
+        "half_adder",
+    ]
+    assert top.get_child_modules()[0].name == "half_adder"
+    assert top.child_modules[0].hierarchy_instance_name == "u_ha1"
+    assert top.child_modules[0].get_hierarchy_instance_name() == "u_ha1"
+    assert top.child_modules[1].hierarchy_instance_name == "u_ha2"
+    assert [assignment.lhs for assignment in top.child_modules[0].assignments] == [
+        "s",
+        "c",
+    ]
+
+    generic = eda.generic_map(top)
+
+    assert [module.name for module in generic.defined_modules] == ["half_adder"]
+    assert [module.hierarchy_instance_name for module in generic.child_modules] == [
+        "u_ha1",
+        "u_ha2",
+    ]
+    assert [instance.cell_type for instance in generic.instances] == [
+        "half_adder",
+        "half_adder",
+    ]
+    for child in generic.child_modules:
+        assert child.assignments == []
+        assert {instance.cell_type for instance in child.instances} == {
+            "XOR2",
+            "AND2",
+        }
+
+
 def test_parse_file_and_write_json(tmp_path):
     verilog_path = tmp_path / "design.v"
     json_path = tmp_path / "design.json"

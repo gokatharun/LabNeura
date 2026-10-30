@@ -82,14 +82,9 @@ void AVX2Backend::operation_int8(const TensorBackend& other, OperationType op_ty
             const __m256i va_11 = _mm256_cvtepi16_epi32(_mm256_extracti128_si256(va_hi16, 1));
             const __m256i vb_11 = _mm256_cvtepi16_epi32(_mm256_extracti128_si256(vb_hi16, 1));
             
-            // Convert to FP32 and divide
+            // Divide with a corrected FP32 estimate for exact integer results
             auto safe_div = [](const __m256i& a, const __m256i& b) -> __m256i {
-                const __m256 fa = _mm256_cvtepi32_ps(a);
-                const __m256 fb = _mm256_cvtepi32_ps(b);
-                const __m256 eps = _mm256_set1_ps(1e-10f);
-                const __m256 fb_safe = _mm256_add_ps(fb, _mm256_and_ps(_mm256_cmp_ps(fb, _mm256_setzero_ps(), _CMP_EQ_OQ), eps));
-                const __m256 res = _mm256_div_ps(fa, fb_safe);
-                return _mm256_cvtps_epi32(res);
+                return divide_int32_avx2(a, b);
             };
             
             const __m256i res_00 = safe_div(va_00, vb_00);
@@ -98,11 +93,14 @@ void AVX2Backend::operation_int8(const TensorBackend& other, OperationType op_ty
             const __m256i res_11 = safe_div(va_11, vb_11);
             
             // Pack int32 back to int16
-            const __m256i res_lo16 = _mm256_packs_epi32(res_00, res_01);
-            const __m256i res_hi16 = _mm256_packs_epi32(res_10, res_11);
+            const __m256i res_lo16 = _mm256_permute4x64_epi64(
+                _mm256_packs_epi32(res_00, res_01), _MM_SHUFFLE(3, 1, 2, 0));
+            const __m256i res_hi16 = _mm256_permute4x64_epi64(
+                _mm256_packs_epi32(res_10, res_11), _MM_SHUFFLE(3, 1, 2, 0));
             
             // Pack int16 back to int8
-            const __m256i result = _mm256_packs_epi16(res_lo16, res_hi16);
+            const __m256i result = _mm256_permute4x64_epi64(
+                _mm256_packs_epi16(res_lo16, res_hi16), _MM_SHUFFLE(3, 1, 2, 0));
             _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i), result);
             i += 32;
         }

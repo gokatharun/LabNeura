@@ -229,65 +229,109 @@ struct GenericMapper {
 }  // namespace
 
 Module generic_map(const Module& rtl_module) {
-    if (rtl_module.is_behavioral()) {
-        return detail::lower_behavioral_rtl(rtl_module.parsed_context_,
-                                            rtl_module.get_name(), {});
-    }
-    GenericMapper mapper(rtl_module);
-    std::vector<ContinuousAssignment> remaining_assignments;
+    const auto map_module =
+        [&](const auto& self, const Module& source,
+            bool include_definitions) -> Module {
+        std::vector<Module> child_modules;
+        child_modules.reserve(source.get_child_modules().size());
+        for (const auto& child : source.get_child_modules()) {
+            child_modules.push_back(self(self, child, false));
+        }
 
-    for (const auto& assignment : rtl_module.get_assignments()) {
-        const auto& lhs = assignment.get_lhs_expression();
-        if (!is_identifier(lhs)) {
-            throw std::runtime_error(
-                "generic mapping currently requires scalar identifier assignment targets: " +
-                assignment.get_lhs());
-        }
-        const auto result =
-            mapper.lower(assignment.get_rhs_expression(), lhs.get_source());
-        if (!result) {
-            throw std::runtime_error("continuous assignment '" +
-                                     assignment.get_lhs() + " = " +
-                                     assignment.get_rhs() +
-                                     "' has no supported generic mapping");
-        }
-        if (*result != lhs.get_source()) {
-            mapper.add_cell("BUF", {{"A", *result}}, lhs.get_source());
-        }
-    }
+        Module mapped;
+        if (source.is_behavioral()) {
+            mapped = detail::lower_behavioral_rtl(
+                source.parsed_context_, source.get_name(), {}, true);
+            auto instances = mapped.get_instances();
+            for (const auto& instance : source.get_instances()) {
+                const bool is_hierarchical = std::any_of(
+                    child_modules.begin(), child_modules.end(),
+                    [&](const Module& child) {
+                        return child.get_name() == instance.get_cell_type();
+                    });
+                if (is_hierarchical) instances.push_back(instance);
+            }
+            mapped = Module(mapped.get_name(), mapped.get_ports(),
+                            mapped.get_nets(), std::move(instances),
+                            mapped.get_assignments(), false,
+                            source.get_hierarchy_instance_name(),
+                            std::move(child_modules));
+        } else {
+            GenericMapper mapper(source);
+            std::vector<ContinuousAssignment> remaining_assignments;
 
-    auto nets = rtl_module.get_nets();
-    nets.insert(nets.end(), std::make_move_iterator(mapper.nets.begin()),
-                std::make_move_iterator(mapper.nets.end()));
-    auto instances = rtl_module.get_instances();
-    for (auto& instance : instances) {
-        std::string generic_type;
-        const auto& cell_type = instance.get_cell_type();
-        if (cell_type == "and" || cell_type == "or" || cell_type == "xor") {
-            std::size_t input_count = 0;
-            for (const auto& connection : instance.get_connections()) {
-                if (connection.get_pin() != "Y") ++input_count;
+            for (const auto& assignment : source.get_assignments()) {
+                const auto& lhs = assignment.get_lhs_expression();
+                if (!is_identifier(lhs)) {
+                    throw std::runtime_error(
+                        "generic mapping currently requires scalar identifier assignment targets: " +
+                        assignment.get_lhs());
+                }
+                const auto result =
+                    mapper.lower(assignment.get_rhs_expression(), lhs.get_source());
+                if (!result) {
+                    throw std::runtime_error("continuous assignment '" +
+                                             assignment.get_lhs() + " = " +
+                                             assignment.get_rhs() +
+                                             "' has no supported generic mapping");
+                }
+                if (*result != lhs.get_source()) {
+                    mapper.add_cell("BUF", {{"A", *result}}, lhs.get_source());
+                }
             }
-            if (input_count < 2) {
-                throw std::runtime_error(
-                    "primitive gate '" + instance.get_name() +
-                    "' must have at least two inputs");
+
+            auto nets = source.get_nets();
+            nets.insert(nets.end(),
+                        std::make_move_iterator(mapper.nets.begin()),
+                        std::make_move_iterator(mapper.nets.end()));
+            auto instances = source.get_instances();
+            for (auto& instance : instances) {
+                std::string generic_type;
+                const auto& cell_type = instance.get_cell_type();
+                if (cell_type == "and" || cell_type == "or" ||
+                    cell_type == "xor") {
+                    std::size_t input_count = 0;
+                    for (const auto& connection : instance.get_connections()) {
+                        if (connection.get_pin() != "Y") ++input_count;
+                    }
+                    if (input_count < 2) {
+                        throw std::runtime_error(
+                            "primitive gate '" + instance.get_name() +
+                            "' must have at least two inputs");
+                    }
+                    generic_type = (cell_type == "and" ? "AND" :
+                                    cell_type == "or"  ? "OR"
+                                                       : "XOR") +
+                                   std::to_string(input_count);
+                }
+                if (!generic_type.empty()) {
+                    instance = Instance(instance.get_name(),
+                                        std::move(generic_type),
+                                        instance.get_connections());
+                }
             }
-            generic_type = (cell_type == "and" ? "AND" :
-                            cell_type == "or"  ? "OR"
-                                                : "XOR") +
-                           std::to_string(input_count);
+            instances.insert(
+                instances.end(),
+                std::make_move_iterator(mapper.instances.begin()),
+                std::make_move_iterator(mapper.instances.end()));
+            mapped = Module(source.get_name(), source.get_ports(),
+                            std::move(nets), std::move(instances),
+                            std::move(remaining_assignments),
+                            source.is_behavioral(),
+                            source.get_hierarchy_instance_name(),
+                            std::move(child_modules));
         }
-        if (!generic_type.empty()) {
-            instance = Instance(instance.get_name(), std::move(generic_type),
-                                instance.get_connections());
+
+        if (include_definitions) {
+            for (const auto& definition : source.defined_modules_) {
+                mapped.defined_modules_.push_back(
+                    self(self, definition, false));
+            }
         }
-    }
-    instances.insert(instances.end(),
-                     std::make_move_iterator(mapper.instances.begin()),
-                     std::make_move_iterator(mapper.instances.end()));
-    return Module(rtl_module.get_name(), rtl_module.get_ports(), std::move(nets),
-                  std::move(instances), std::move(remaining_assignments));
+        return mapped;
+    };
+
+    return map_module(map_module, rtl_module, true);
 }
 
 Module generic_map(const Project& project, const std::string& top,

@@ -128,19 +128,36 @@ public:
     Module(std::string name, std::vector<Port> ports, std::vector<Net> nets,
            std::vector<Instance> instances,
            std::vector<ContinuousAssignment> assignments = {},
-           bool behavioral = false)
+           bool behavioral = false, std::string hierarchy_instance_name = {},
+           std::vector<Module> child_modules = {})
         : name_(std::move(name)),
           ports_(std::move(ports)),
           nets_(std::move(nets)),
           instances_(std::move(instances)),
           assignments_(std::move(assignments)),
-          behavioral_(behavioral) {}
+          behavioral_(behavioral),
+          hierarchy_instance_name_(std::move(hierarchy_instance_name)),
+          child_modules_(std::move(child_modules)) {}
 
     const std::string& get_name() const noexcept { return name_; }
+    // Empty for a standalone module definition; otherwise the instance name
+    // that connects this hierarchy node to its parent.
+    const std::string& get_hierarchy_instance_name() const noexcept {
+        return hierarchy_instance_name_;
+    }
     const std::vector<Port>& get_ports() const noexcept { return ports_; }
     const std::vector<Net>& get_nets() const noexcept { return nets_; }
     const std::vector<Instance>& get_instances() const noexcept {
         return instances_;
+    }
+    // Elaborated child module instances, in the same scope as get_instances().
+    const std::vector<Module>& get_child_modules() const noexcept {
+        return child_modules_;
+    }
+    // Unique module definitions present in this parsed hierarchy, including
+    // this module. Populated on the root returned by parse_verilog().
+    const std::vector<Module>& get_defined_modules() const noexcept {
+        return defined_modules_;
     }
     const std::vector<ContinuousAssignment>& get_assignments() const noexcept {
         return assignments_;
@@ -163,6 +180,9 @@ private:
     std::vector<Instance> instances_;
     std::vector<ContinuousAssignment> assignments_;
     bool behavioral_ = false;
+    std::string hierarchy_instance_name_;
+    std::vector<Module> child_modules_;
+    std::vector<Module> defined_modules_;
     std::shared_ptr<detail::ParsedVerilogContext> parsed_context_;
 
     friend Module parse_verilog(const std::string& path);
@@ -209,6 +229,7 @@ private:
     friend Module generic_map(
         const Project& project, const std::string& top,
         const std::map<std::string, std::string>& parameters);
+    friend Module generic_map(const Module& rtl_module);
 };
 
 Module parse_verilog(const std::string& path);

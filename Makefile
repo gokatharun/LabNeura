@@ -37,6 +37,10 @@ ifneq (,$(VENV_PYTHON))
 endif
 PIP = $(PYTHON) -m pip
 TWINE = $(PYTHON) -m twine
+# Older pip versions copy local projects to a temporary directory, preventing
+# scikit-build-core from reusing its configured CMake build directory.
+PIP_IN_TREE_BUILD := $(shell $(PYTHON) -c \
+	'import pip; version = tuple(int(part) for part in pip.__version__.split(".")[:2]); print("--use-feature=in-tree-build" if version < (21, 3) else "")')
 
 # --------------------------------------
 # Compiler detection
@@ -101,7 +105,7 @@ sync-src:
 
 .PHONY: install
 install: sync-src
-	$(PIP) install . --no-cache-dir
+	$(PIP) install $(PIP_IN_TREE_BUILD) . --no-cache-dir
 
 # --------------------------------------
 # Smoke test

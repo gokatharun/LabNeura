@@ -63,6 +63,35 @@ static inline std::size_t get_avx2_fp32_chunk() {
     return get_avx2_unroll_factor() * 8;
 }
 
+static inline __m256i divide_int32_avx2(__m256i numerator, __m256i denominator) {
+    const __m256i zero = _mm256_setzero_si256();
+    const __m256i zero_mask = _mm256_cmpeq_epi32(denominator, zero);
+    const __m256i safe_denominator = _mm256_blendv_epi8(
+        denominator, _mm256_set1_epi32(1), zero_mask);
+    const __m256i abs_numerator = _mm256_abs_epi32(numerator);
+    const __m256i abs_denominator = _mm256_abs_epi32(safe_denominator);
+    __m256i quotient = _mm256_cvttps_epi32(_mm256_div_ps(
+        _mm256_cvtepi32_ps(abs_numerator),
+        _mm256_cvtepi32_ps(abs_denominator)));
+
+    const __m256i product = _mm256_mullo_epi32(quotient, abs_denominator);
+    const __m256i too_large = _mm256_cmpgt_epi32(product, abs_numerator);
+    quotient = _mm256_sub_epi32(
+        quotient, _mm256_and_si256(too_large, _mm256_set1_epi32(1)));
+
+    const __m256i next_product = _mm256_mullo_epi32(
+        _mm256_add_epi32(quotient, _mm256_set1_epi32(1)), abs_denominator);
+    const __m256i too_small = _mm256_andnot_si256(
+        _mm256_cmpgt_epi32(next_product, abs_numerator), _mm256_set1_epi32(1));
+    quotient = _mm256_add_epi32(quotient, too_small);
+
+    const __m256i negative = _mm256_cmpgt_epi32(
+        zero, _mm256_xor_si256(numerator, denominator));
+    quotient = _mm256_blendv_epi8(
+        quotient, _mm256_sub_epi32(zero, quotient), negative);
+    return _mm256_andnot_si256(zero_mask, quotient);
+}
+
 } // namespace labneura
 
 #endif // __AVX2__

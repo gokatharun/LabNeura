@@ -3,11 +3,11 @@
 #include "labneura/backends/cpu/generic.h"
 #include <iostream>
 #include <cstdlib>
-#if defined(__AVX2__)
+#if defined(LABNEURA_ENABLE_AVX2)
 #include "labneura/backends/cpu/avx2.h"
 #endif
 
-#if defined(__ARM_NEON)
+#if defined(LABNEURA_ENABLE_NEON)
 #include "labneura/backends/cpu/neon.h"
 #endif
 
@@ -15,12 +15,12 @@ namespace labneura {
 
 // Return the preferred backend label based on runtime CPU features
 std::string detect_backend() {
-#if defined(__x86_64__) || defined(_M_X64)
+#if (defined(__x86_64__) || defined(_M_X64)) && defined(LABNEURA_ENABLE_AVX2)
     if (cpu_supports_avx2()) {
         return "AVX2";
     }
     return "GENERIC";
-#elif defined(__aarch64__) || defined(__ARM_NEON)
+#elif (defined(__aarch64__) || defined(__ARM_NEON)) && defined(LABNEURA_ENABLE_NEON)
     if (cpu_supports_neon()) {
         return "NEON";
     }
@@ -40,12 +40,12 @@ create_best_backend(std::size_t size, QuantizationMode mode) {
         if (value == "GENERIC") {
             return std::make_unique<GenericBackend>(size, mode);
         }
-#if defined(__ARM_NEON)
+#if defined(LABNEURA_ENABLE_NEON)
         if (value == "NEON") {
             return std::make_unique<NEONBackend>(size, mode);
         }
 #endif
-#if defined(__AVX2__)
+#if defined(LABNEURA_ENABLE_AVX2)
         if (value == "AVX2") {
             return std::make_unique<AVX2Backend>(size, mode);
         }
@@ -56,7 +56,7 @@ create_best_backend(std::size_t size, QuantizationMode mode) {
 
 #if defined(__x86_64__) || defined(_M_X64)
     if (cpu_supports_avx2()) {
-#if defined(__AVX2__)
+#if defined(LABNEURA_ENABLE_AVX2)
         return std::make_unique<AVX2Backend>(size, mode);
 #endif
     }
@@ -64,7 +64,7 @@ create_best_backend(std::size_t size, QuantizationMode mode) {
 
 #if defined(__aarch64__) || defined(__ARM_NEON)
     if (cpu_supports_neon()) {
-#if defined(__ARM_NEON)
+#if defined(LABNEURA_ENABLE_NEON)
         return std::make_unique<NEONBackend>(size, mode);
 #endif
     }

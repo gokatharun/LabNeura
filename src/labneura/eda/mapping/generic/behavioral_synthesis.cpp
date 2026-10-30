@@ -120,7 +120,8 @@ class Synthesizer {
 public:
     Synthesizer() : ops_(graph_) {}
 
-    Module run(const sa::InstanceSymbol& top, const std::string& top_name);
+    Module run(const sa::InstanceSymbol& top, const std::string& top_name,
+               bool preserve_hierarchy);
 
 private:
     BitGraph graph_;
@@ -143,6 +144,7 @@ private:
     std::vector<const sa::ContinuousAssignSymbol*> assigns_;
     std::vector<const sa::NetSymbol*> net_initializers_;
     std::vector<const sa::InstanceSymbol*> instances_;
+    bool preserve_hierarchy_ = false;
 
     // ---- variables ----
     std::string path_name(const sa::Symbol& symbol) const {
@@ -253,7 +255,9 @@ private:
                 case sa::SymbolKind::Instance: {
                     const auto& child = member.as<sa::InstanceSymbol>();
                     instances_.push_back(&child);
-                    collect(child.body);
+                    if (!preserve_hierarchy_ || !child.isModule()) {
+                        collect(child.body);
+                    }
                     break;
                 }
                 case sa::SymbolKind::PrimitiveInstance:
@@ -1653,7 +1657,9 @@ struct Rebuilder {
     }
 };
 
-Module Synthesizer::run(const sa::InstanceSymbol& top, const std::string& top_name) {
+Module Synthesizer::run(const sa::InstanceSymbol& top, const std::string& top_name,
+                        bool preserve_hierarchy) {
+    preserve_hierarchy_ = preserve_hierarchy;
     top_prefix_ = top_name + ".";
     anchor_ = &top.body;
     collect(top.body);
@@ -1683,7 +1689,9 @@ Module Synthesizer::run(const sa::InstanceSymbol& top, const std::string& top_na
         }
     }
 
-    for (const auto* child : instances_) link_instance(*child);
+    for (const auto* child : instances_) {
+        if (!preserve_hierarchy_ || !child->isModule()) link_instance(*child);
+    }
     for (const auto* net : net_initializers_) {
         Var& var = var_for(*net);
         begin_process(false);
@@ -1828,7 +1836,8 @@ Module Synthesizer::run(const sa::InstanceSymbol& top, const std::string& top_na
 
 Module detail::lower_behavioral_rtl(
     const std::shared_ptr<ParsedVerilogContext>& context, const std::string& top,
-    const std::map<std::string, std::string>& parameters) {
+    const std::map<std::string, std::string>& parameters,
+    bool preserve_hierarchy) {
     if (!context || !context->compilation) {
         throw std::runtime_error(
             "behavioral RTL has no retained Slang parse context; create it with parse_verilog");
@@ -1886,7 +1895,8 @@ Module detail::lower_behavioral_rtl(
     }
 
     Synthesizer synthesizer;
-    return synthesizer.run(*selected_top, std::string(selected_top->name));
+    return synthesizer.run(*selected_top, std::string(selected_top->name),
+                           preserve_hierarchy);
 }
 
 }  // namespace labneura::eda

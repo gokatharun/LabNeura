@@ -110,6 +110,10 @@ void bind_eda(pybind11::module_& labneura_module) {
     py::class_<eda::Module>(module, "Module", "A parsed Verilog module.")
         .def_property_readonly("name", &eda::Module::get_name,
                                "Module identifier.")
+        .def_property_readonly(
+            "hierarchy_instance_name",
+            &eda::Module::get_hierarchy_instance_name,
+            "Instance name in the parent module, or an empty string for the root.")
         .def_property_readonly("ports", &eda::Module::get_ports,
                                "Module input and output ports.")
         .def_property_readonly("nets", &eda::Module::get_nets, "Module nets.")
@@ -117,12 +121,21 @@ void bind_eda(pybind11::module_& labneura_module) {
                                "True when the module has always blocks that generic_map lowers.")
         .def_property_readonly("instances", &eda::Module::get_instances,
                                "Gate instances in the module.")
+        .def_property_readonly("child_modules", &eda::Module::get_child_modules,
+                               "Elaborated child module instances.")
+        .def_property_readonly("defined_modules",
+                               &eda::Module::get_defined_modules,
+                               "Unique module definitions in the parsed hierarchy.")
         .def_property_readonly("assignments", &eda::Module::get_assignments,
                                "Continuous assignments in the module.")
         .def("get_name", &eda::Module::get_name)
+        .def("get_hierarchy_instance_name",
+             &eda::Module::get_hierarchy_instance_name)
         .def("get_ports", &eda::Module::get_ports)
         .def("get_nets", &eda::Module::get_nets)
         .def("get_instances", &eda::Module::get_instances)
+        .def("get_child_modules", &eda::Module::get_child_modules)
+        .def("get_defined_modules", &eda::Module::get_defined_modules)
         .def("get_assignments", &eda::Module::get_assignments)
         .def("dump_graph",
              [](const eda::Module& self, const std::string& path) {
