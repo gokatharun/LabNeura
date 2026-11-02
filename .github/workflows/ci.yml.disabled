@@ -75,13 +75,13 @@ jobs:
             clang \
             llvm \
             llvm-dev \
-            lld 
+            lld
       - name: Install system dependencies (macOS)
         if: runner.os == 'macOS'
         run: |
           brew update || true
           brew install llvm || true
-      
+
       # ----------------------------------
       # Python dependencies
       # ----------------------------------
@@ -94,7 +94,7 @@ jobs:
         run: |
           if [ "$RUNNER_OS" = "macOS" ]; then
             if ! command -v llvm-profdata >/dev/null 2>&1; then
-              echo "🔧 Installing LLVM via Homebrew"
+              echo "Installing LLVM via Homebrew"
               brew install llvm
             fi
 
@@ -112,7 +112,7 @@ jobs:
             LLVM_COV_TOOL="llvm-cov-$CLANG_VERSION"
             if ! command -v "$LLVM_PROFDATA_TOOL" >/dev/null 2>&1 ||
                ! command -v "$LLVM_COV_TOOL" >/dev/null 2>&1; then
-              echo "🔧 Installing LLVM $CLANG_VERSION coverage tools"
+              echo "Installing LLVM $CLANG_VERSION coverage tools"
               sudo apt-get update
               sudo apt-get install -y "llvm-$CLANG_VERSION"
             fi
@@ -143,7 +143,7 @@ jobs:
           export CXX=clang++
           export LABNEURA_COVERAGE=1
           make ci
-      
+
       # ----------------------------------
       # Upload coverage reports
       # ----------------------------------
@@ -158,10 +158,6 @@ jobs:
             coverage.txt
             coverage_html
 
-
-# ============================================================
-# Job 2: Publish Coverage (Single job)
-# ============================================================
   publish-coverage:
     name: Publish LLVM Coverage
     runs-on: ubuntu-latest
