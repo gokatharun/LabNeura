@@ -141,15 +141,29 @@ else ifeq ($(LLVM_COV),)
 else
 	@echo "⚠️ Running C++ coverage"
 	set -e; \
-	export LABNEURA_COVERAGE=1; \
-	export LLVM_PROFILE_FILE=labneura.profraw; \
-	export CMAKE_ARGS="-DLABNEURA_ENABLE_COVERAGE=ON"; \
-	$(MAKE) clean install test; \
-	$(LLVM_PROFDATA) merge -sparse labneura.profraw -o labneura.profdata; \
-	SO_PATH=`$(PYTHON) -c "import $(MODULE_NAME); import os; print(os.path.abspath($(MODULE_NAME).__file__))"`; \
+	COVERAGE_BUILD="$(CURDIR)/build/cpp-coverage"; \
+	rm -rf "$$COVERAGE_BUILD" coverage_html; \
+	mkdir -p "$$COVERAGE_BUILD"; \
+	export LLVM_PROFILE_FILE="$$COVERAGE_BUILD/labneura.profraw"; \
+	PYTHON_EXECUTABLE=`$(PYTHON) -c "import sys; print(sys.executable)"`; \
+	PYBIND11_DIR=`$(PYTHON) -m pybind11 --cmakedir`; \
+	cmake -S . -B "$$COVERAGE_BUILD" \
+		-DCMAKE_CXX_COMPILER="$(CXX)" \
+		-DPython_EXECUTABLE="$$PYTHON_EXECUTABLE" \
+		-Dpybind11_DIR="$$PYBIND11_DIR" \
+		-DCMAKE_INSTALL_PREFIX="$$COVERAGE_BUILD/install" \
+		-DSKBUILD=ON \
+		-DLABNEURA_ENABLE_COVERAGE=ON; \
+	cmake --build "$$COVERAGE_BUILD" --parallel "$(CMAKE_BUILD_PARALLEL_LEVEL)"; \
+	cmake --install "$$COVERAGE_BUILD"; \
+	SO_PATH=`PYTHONPATH="$$COVERAGE_BUILD/install" $(PYTHON) -c \
+		"import $(MODULE_NAME); print($(MODULE_NAME).__file__)"`; \
+	PYTHONPATH="$$COVERAGE_BUILD/install" $(PYTHON) -m pytest -v; \
+	$(LLVM_PROFDATA) merge -sparse "$$COVERAGE_BUILD/labneura.profraw" \
+		-o "$$COVERAGE_BUILD/labneura.profdata"; \
 	$(LLVM_COV) show $$SO_PATH \
 	$(COV_ARCH) \
-	-instr-profile=labneura.profdata \
+	-instr-profile="$$COVERAGE_BUILD/labneura.profdata" \
 	-path-equivalence=$(CURDIR)/src/labneura/backends/generic,$(CURDIR)/src/labneura/backends/cpu/generic \
 	-path-equivalence=$(CURDIR)/src/labneura/backends/neon,$(CURDIR)/src/labneura/backends/cpu/neon \
 	-path-equivalence=$(CURDIR)/src/labneura/backends/avx2,$(CURDIR)/src/labneura/backends/cpu/avx2 \
@@ -158,7 +172,7 @@ else
 	-ignore-filename-regex='site-packages|python|omp|libc\+\+|backends/base\.|backends/cpu_features\.|backends/backend_factory\.'; \
 	echo "✅ HTML coverage generated at coverage_html/index.html"; \
 	$(LLVM_COV) report $$SO_PATH \
-    -instr-profile=labneura.profdata \
+    -instr-profile="$$COVERAGE_BUILD/labneura.profdata" \
 	$(COV_ARCH) \
 	-path-equivalence=$(CURDIR)/src/labneura/backends/generic,$(CURDIR)/src/labneura/backends/cpu/generic \
 	-path-equivalence=$(CURDIR)/src/labneura/backends/neon,$(CURDIR)/src/labneura/backends/cpu/neon \
