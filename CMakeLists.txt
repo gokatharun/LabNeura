@@ -4,6 +4,12 @@ project(LabNeura LANGUAGES CXX)
 include(CheckCXXCompilerFlag)
 include(FetchContent)
 
+option(
+  LABNEURA_ENABLE_COVERAGE
+  "Enable LLVM source-based coverage instrumentation"
+  OFF
+)
+
 # Optimized by default: slang is very slow in unoptimized builds.
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
@@ -158,7 +164,7 @@ add_library(labneura
 set_target_properties(labneura PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_link_libraries(labneura PRIVATE slang::slang)
 
-if("$ENV{LABNEURA_COVERAGE}" STREQUAL "1")
+if(LABNEURA_ENABLE_COVERAGE OR "$ENV{LABNEURA_COVERAGE}" STREQUAL "1")
   if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     message(FATAL_ERROR "LABNEURA_COVERAGE requires Clang")
   endif()
@@ -292,7 +298,7 @@ if(SKBUILD)
     SUFFIX "${CMAKE_SHARED_MODULE_SUFFIX}"
   )
   target_link_libraries(labneura_python PRIVATE pybind11::module labneura)
-  if("$ENV{LABNEURA_COVERAGE}" STREQUAL "1")
+  if(LABNEURA_ENABLE_COVERAGE OR "$ENV{LABNEURA_COVERAGE}" STREQUAL "1")
     target_compile_options(labneura_python PRIVATE
       -fprofile-instr-generate
       -fcoverage-mapping
