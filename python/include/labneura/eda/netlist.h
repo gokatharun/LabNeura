@@ -5,6 +5,7 @@
 #include "labneura/eda/expression.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <optional>
@@ -33,32 +34,92 @@ enum class NetType {
 
 class Port {
 public:
-    Port(std::string name, PortDirection direction, std::size_t width = 1)
-        : name_(std::move(name)), direction_(direction), width_(width) {}
+    Port(std::string name, PortDirection direction, std::size_t width = 1,
+         std::optional<std::int64_t> left_index = std::nullopt,
+         std::optional<std::int64_t> right_index = std::nullopt,
+         std::optional<std::int64_t> unpacked_left_index = std::nullopt,
+         std::optional<std::int64_t> unpacked_right_index = std::nullopt,
+         std::size_t packed_width = 0)
+        : name_(std::move(name)),
+          direction_(direction),
+          width_(width),
+          left_index_(left_index),
+          right_index_(right_index),
+          unpacked_left_index_(unpacked_left_index),
+          unpacked_right_index_(unpacked_right_index),
+          packed_width_(packed_width == 0 ? width : packed_width) {}
 
     const std::string& get_name() const noexcept { return name_; }
     PortDirection get_direction() const noexcept { return direction_; }
     std::size_t get_width() const noexcept { return width_; }
+    const std::optional<std::int64_t>& get_left_index() const noexcept {
+        return left_index_;
+    }
+    const std::optional<std::int64_t>& get_right_index() const noexcept {
+        return right_index_;
+    }
+    const std::optional<std::int64_t>& get_unpacked_left_index() const noexcept {
+        return unpacked_left_index_;
+    }
+    const std::optional<std::int64_t>& get_unpacked_right_index() const noexcept {
+        return unpacked_right_index_;
+    }
+    std::size_t get_packed_width() const noexcept { return packed_width_; }
 
 private:
     std::string name_;
     PortDirection direction_;
     std::size_t width_;
+    std::optional<std::int64_t> left_index_;
+    std::optional<std::int64_t> right_index_;
+    std::optional<std::int64_t> unpacked_left_index_;
+    std::optional<std::int64_t> unpacked_right_index_;
+    std::size_t packed_width_;
 };
 
 class Net {
 public:
-    Net(std::string name, NetType kind, std::size_t width = 1)
-        : name_(std::move(name)), kind_(kind), width_(width) {}
+    Net(std::string name, NetType kind, std::size_t width = 1,
+        std::optional<std::int64_t> left_index = std::nullopt,
+        std::optional<std::int64_t> right_index = std::nullopt,
+        std::optional<std::int64_t> unpacked_left_index = std::nullopt,
+        std::optional<std::int64_t> unpacked_right_index = std::nullopt,
+        std::size_t packed_width = 0)
+        : name_(std::move(name)),
+          kind_(kind),
+          width_(width),
+          left_index_(left_index),
+          right_index_(right_index),
+          unpacked_left_index_(unpacked_left_index),
+          unpacked_right_index_(unpacked_right_index),
+          packed_width_(packed_width == 0 ? width : packed_width) {}
 
     const std::string& get_name() const noexcept { return name_; }
     NetType get_kind() const noexcept { return kind_; }
     std::size_t get_width() const noexcept { return width_; }
+    const std::optional<std::int64_t>& get_left_index() const noexcept {
+        return left_index_;
+    }
+    const std::optional<std::int64_t>& get_right_index() const noexcept {
+        return right_index_;
+    }
+    const std::optional<std::int64_t>& get_unpacked_left_index() const noexcept {
+        return unpacked_left_index_;
+    }
+    const std::optional<std::int64_t>& get_unpacked_right_index() const noexcept {
+        return unpacked_right_index_;
+    }
+    std::size_t get_packed_width() const noexcept { return packed_width_; }
 
 private:
     std::string name_;
     NetType kind_;
     std::size_t width_;
+    std::optional<std::int64_t> left_index_;
+    std::optional<std::int64_t> right_index_;
+    std::optional<std::int64_t> unpacked_left_index_;
+    std::optional<std::int64_t> unpacked_right_index_;
+    std::size_t packed_width_;
 };
 
 class PinConnection {
@@ -204,6 +265,7 @@ private:
     std::shared_ptr<detail::ParsedVerilogContext> parsed_context_;
 
     friend Module parse_verilog(const std::string& path);
+    friend Module read_verilog(const std::string& path);
     friend Project parse_verilog_directory(const std::string& directory);
     friend Module generic_map(const Module& rtl_module);
     friend Module generic_map(
@@ -252,6 +314,8 @@ private:
 
 Module parse_verilog(const std::string& path);
 Project parse_verilog_directory(const std::string& directory);
+// Reads a structural Verilog netlist into the same parsed Module model.
+Module read_verilog(const std::string& path);
 // Lowers a parsed module, or the hierarchy below `top` in a parsed project,
 // into technology-independent generic cells. `parameters` overrides top-level
 // module parameters (for example {"ENABLE_MUL": "1"}).
@@ -281,6 +345,9 @@ std::string to_blif(const Module& module);
 void write_blif(const Module& module, const std::string& path);
 std::string to_json(const Module& module);
 void write_json(const Module& module, const std::string& path);
+Module read_json(const std::string& path);
+std::string to_verilog(const Module& module);
+void write_verilog(const Module& module, const std::string& path);
 // Graphviz DOT view: cells and ports are nodes, nets are driver-to-sink edges.
 std::string to_dot(const Module& module);
 void write_dot(const Module& module, const std::string& path);

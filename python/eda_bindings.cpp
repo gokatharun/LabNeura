@@ -53,14 +53,33 @@ void bind_eda(pybind11::module_& labneura_module) {
         .def_property_readonly("name", &eda::Port::get_name, "Port identifier.")
         .def_property_readonly("direction", &eda::Port::get_direction,
                                "Port direction.")
+        .def_property_readonly("width", &eda::Port::get_width,
+                              "Port bit width.")
+        .def_property_readonly("left_index", &eda::Port::get_left_index)
+        .def_property_readonly("right_index", &eda::Port::get_right_index)
+        .def_property_readonly("unpacked_left_index",
+                               &eda::Port::get_unpacked_left_index)
+        .def_property_readonly("unpacked_right_index",
+                               &eda::Port::get_unpacked_right_index)
+        .def_property_readonly("packed_width", &eda::Port::get_packed_width)
         .def("get_name", &eda::Port::get_name)
-        .def("get_direction", &eda::Port::get_direction);
+        .def("get_direction", &eda::Port::get_direction)
+        .def("get_width", &eda::Port::get_width);
 
     py::class_<eda::Net>(module, "Net", "A signal net declared in a module.")
         .def_property_readonly("name", &eda::Net::get_name, "Net identifier.")
         .def_property_readonly("kind", &eda::Net::get_kind, "Net type.")
+        .def_property_readonly("width", &eda::Net::get_width, "Net bit width.")
+        .def_property_readonly("left_index", &eda::Net::get_left_index)
+        .def_property_readonly("right_index", &eda::Net::get_right_index)
+        .def_property_readonly("unpacked_left_index",
+                               &eda::Net::get_unpacked_left_index)
+        .def_property_readonly("unpacked_right_index",
+                               &eda::Net::get_unpacked_right_index)
+        .def_property_readonly("packed_width", &eda::Net::get_packed_width)
         .def("get_name", &eda::Net::get_name)
-        .def("get_kind", &eda::Net::get_kind);
+        .def("get_kind", &eda::Net::get_kind)
+        .def("get_width", &eda::Net::get_width);
 
     py::class_<eda::PinConnection>(
         module, "PinConnection", "A mapping from an instance pin to a net.")
@@ -258,6 +277,8 @@ void bind_eda(pybind11::module_& labneura_module) {
         },
         py::arg("path"),
         "Parse a Verilog file into a Module or a project directory into a Project.");
+    module.def("read_verilog", &eda::read_verilog, py::arg("path"),
+               "Read a structural Verilog netlist into a Module.");
     module.def("generic_map",
                py::overload_cast<const eda::Module&>(&eda::generic_map),
                py::arg("rtl_module"),
@@ -269,8 +290,9 @@ void bind_eda(pybind11::module_& labneura_module) {
                    &eda::generic_map),
                py::arg("project"), py::arg("top") = "",
                py::arg("parameters") = std::map<std::string, std::string>{},
-               "Lower the hierarchy below `top` of a parsed project into one flat "
-               "generic netlist; `parameters` overrides top-level parameters.");
+               "Lower the hierarchy below `top` of a parsed project into a "
+               "hierarchy-preserving generic netlist; `parameters` overrides "
+               "top-level parameters.");
     module.def("tech_map",
                py::overload_cast<const eda::Module&, const eda::StandardCellLibrary&>(
                    &eda::tech_map),
@@ -311,4 +333,11 @@ void bind_eda(pybind11::module_& labneura_module) {
                "Serialize a Module using the versioned eda-netlist JSON format.");
     module.def("write_json", &eda::write_json, py::arg("module"), py::arg("path"),
                "Write a Module to the versioned eda-netlist JSON format.");
+    module.def("read_json", &eda::read_json, py::arg("path"),
+               "Read a versioned parsed or generic-mapped netlist JSON file.");
+    module.def("to_verilog", &eda::to_verilog, py::arg("module"),
+               "Serialize a structural parsed or generic-mapped netlist as Verilog.");
+    module.def("write_verilog", &eda::write_verilog, py::arg("module"),
+               py::arg("path"),
+               "Write a structural parsed or generic-mapped netlist as Verilog.");
 }

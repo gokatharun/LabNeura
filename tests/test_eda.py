@@ -169,19 +169,292 @@ def test_parse_verilog_exposes_hierarchy_in_python_module_api(tmp_path):
         }
 
 
+def test_verilog_netlist_round_trip_preserves_parsed_and_generic_hierarchy(tmp_path):
+    source = tmp_path / "hierarchy.v"
+    source.write_text("""
+module leaf(input [7:4] a, input [7:4] b, output [7:4] y);
+  wire [9:6] temp;
+  assign temp = a;
+  assign y = a ^ b;
+endmodule
+module top(input [7:4] a, input [7:4] b, output [7:4] y);
+  leaf u_leaf(.a(a), .b(b), .y(y));
+endmodule
+""")
+    parsed = eda.parse_verilog(str(source))
+    parsed_round_trip_path = tmp_path / "parsed_round_trip.v"
+    eda.write_verilog(parsed, str(parsed_round_trip_path))
+    parsed_round_trip = eda.read_verilog(str(parsed_round_trip_path))
+    assert parsed_round_trip.name == "top"
+    assert [(p.name, p.width, p.left_index, p.right_index)
+            for p in parsed_round_trip.ports] == [
+        ("a", 4, 7, 4), ("b", 4, 7, 4), ("y", 4, 7, 4)
+    ]
+    temp = next(net for net in parsed_round_trip.child_modules[0].nets
+                if net.name == "temp")
+    assert (temp.width, temp.left_index, temp.right_index) == (4, 9, 6)
+    assert [child.hierarchy_instance_name
+            for child in parsed_round_trip.child_modules] == ["u_leaf"]
+    parsed_json_path = tmp_path / "parsed_hierarchy.json"
+    eda.write_json(parsed, str(parsed_json_path))
+    parsed_json_round_trip = eda.read_json(str(parsed_json_path))
+    assert parsed_json_round_trip.ports[0].left_index == 7
+    assert parsed_json_round_trip.ports[0].right_index == 4
+    temp_json = next(net for net in parsed_json_round_trip.child_modules[0].nets
+                     if net.name == "temp")
+    assert (temp_json.width, temp_json.left_index, temp_json.right_index) == (
+        4, 9, 6
+    )
+    assert [child.hierarchy_instance_name
+            for child in parsed_json_round_trip.child_modules] == ["u_leaf"]
+
+    generic_source = tmp_path / "generic_source.v"
+    generic_source.write_text("""
+module leaf(input a, input b, output y);
+  assign y = a ^ b;
+endmodule
+module top(input a, input b, output y);
+  leaf u_leaf(.a(a), .b(b), .y(y));
+endmodule
+""")
+    generic = eda.generic_map(eda.parse_verilog(str(generic_source)))
+    json_path = tmp_path / "generic_hierarchy.json"
+    eda.write_json(generic, str(json_path))
+    generic_json_round_trip = eda.read_json(str(json_path))
+    assert [child.hierarchy_instance_name
+            for child in generic_json_round_trip.child_modules] == ["u_leaf"]
+    assert generic_json_round_trip.child_modules[0].instances[0].cell_type == "XOR2"
+
+    generic_round_trip_path = tmp_path / "generic_round_trip.v"
+    eda.write_verilog(generic, str(generic_round_trip_path))
+    generic_round_trip = eda.read_verilog(str(generic_round_trip_path))
+    assert generic_round_trip.name == "top"
+    assert [child.hierarchy_instance_name
+            for child in generic_round_trip.child_modules] == ["u_leaf"]
+    assert generic_round_trip.child_modules[0].instances
+    assert generic_round_trip.child_modules[0].child_modules == []
+    assert generic_round_trip.child_modules[0].instances[0].cell_type == "XOR2"
+
+
+def test_verilog_writer_elaborates_constant_array_selectors_in_hierarchy(tmp_path):
+    source = tmp_path / "constant_selector.sv"
+    source.write_text("""
+package netlist_constants;
+  localparam int SELECTED_BIT = 3;
+endpackage
+module leaf(input logic a);
+endmodule
+module top(input logic [7:0] bus);
+  leaf u_leaf(.a(bus[netlist_constants::SELECTED_BIT]));
+endmodule
+""")
+    parsed = eda.parse_verilog(str(source))
+    assert parsed.instances[0].connections[0].net == "bus[3]"
+
+    output = tmp_path / "constant_selector_out.sv"
+    eda.write_verilog(parsed, str(output))
+    reread = eda.read_verilog(str(output))
+    assert reread.child_modules[0].hierarchy_instance_name == "u_leaf"
+    assert reread.instances[0].connections[0].net == "bus[3]"
+
+
+def test_generic_map_preserves_generated_scope_instance_connections(tmp_path):
+    source = tmp_path / "generated_scope.sv"
+    source.write_text("""
+module leaf(input logic a);
+endmodule
+module top(input logic a);
+  generate begin : gen_block
+    wire scoped;
+    assign scoped = a;
+    leaf child(.a(scoped));
+  end endgenerate
+endmodule
+""")
+    generic = eda.generic_map(eda.parse_verilog(str(source)))
+    assert generic.instances[0].connections[0].net == "gen_block.scoped"
+
+    output = tmp_path / "generated_scope_generic.sv"
+    eda.write_verilog(generic, str(output))
+    assert r"\gen_block.scoped " in output.read_text(encoding="utf-8")
+    reread = eda.read_verilog(str(output))
+    assert reread.child_modules[0].hierarchy_instance_name == "child"
+
+
+def test_json_reader_rejects_bad_versions_and_malformed_input(tmp_path):
+    path = tmp_path / "netlist.json"
+    path.write_text('{"format":"eda-netlist","version":99,"modules":[]}')
+    with pytest.raises(RuntimeError, match="version"):
+        eda.read_json(str(path))
+    path.write_text('{"format":"eda-netlist","version":2,"modules":[}')
+    with pytest.raises(RuntimeError, match="invalid JSON netlist"):
+        eda.read_json(str(path))
+    path.write_text("""
+{
+  "format": "eda-netlist",
+  "version": 1,
+  "modules": [{
+    "name": "legacy",
+    "ports": [{"name": "a", "direction": "input"}],
+    "nets": ["wire0"],
+    "instances": [{
+      "name": "buf0",
+      "cell_type": "BUF",
+      "connections": {"A": "a", "Y": "wire0"}
+    }],
+    "assignments": []
+  }]
+}
+""")
+    legacy = eda.read_json(str(path))
+    assert legacy.name == "legacy"
+    assert legacy.nets[0].name == "wire0"
+    assert legacy.instances[0].connections[0].pin == "A"
+
+
+def test_verilog_writer_rejects_behavioral_modules_without_lowering(tmp_path):
+    source = tmp_path / "counter.v"
+    source.write_text(
+        "module counter(input clk, output reg q); "
+        "always @(posedge clk) q <= ~q; endmodule"
+    )
+    module = eda.parse_verilog(str(source))
+    with pytest.raises(RuntimeError, match="generic_map"):
+        eda.to_verilog(module)
+
+
+def test_verilog_writer_round_trips_primitives_and_generic_flops(tmp_path):
+    gate_path = tmp_path / "gates.v"
+    gate_path.write_text("""
+module gates(input a, input b, output y, output z);
+  and g_and(y, a, b);
+  not g_not(z, a);
+endmodule
+""")
+    parsed = eda.read_verilog(str(gate_path))
+    emitted_gates = tmp_path / "gates_out.v"
+    eda.write_verilog(parsed, str(emitted_gates))
+    reparsed = eda.read_verilog(str(emitted_gates))
+    assert [(i.name, i.cell_type) for i in reparsed.instances] == [
+        ("g_and", "and"), ("g_not", "not")
+    ]
+
+    counter_path = tmp_path / "counter.v"
+    counter_path.write_text("""
+module counter(input clk, input [3:0] d, output reg [3:0] q);
+  always @(posedge clk) q <= d;
+endmodule
+""")
+    generic = eda.generic_map(eda.parse_verilog(str(counter_path)))
+    emitted_counter = tmp_path / "counter_generic.v"
+    eda.write_verilog(generic, str(emitted_counter))
+    reparsed_counter = eda.read_verilog(str(emitted_counter))
+    assert reparsed_counter.ports[-1].width == 4
+    assert sum(i.cell_type == "DFF" for i in reparsed_counter.instances) == 4
+    assert reparsed_counter.child_modules == []
+
+
+def test_verilog_netlist_round_trip_preserves_unpacked_array_ports(tmp_path):
+    source = tmp_path / "array.sv"
+    source.write_text("""
+module array_port(input logic [3:0] a [0:1],
+                  output logic [3:0] y [0:1]);
+  assign y[0] = a[0];
+  assign y[1] = a[1];
+endmodule
+""")
+    parsed = eda.parse_verilog(str(source))
+    assert parsed.ports[0].width == 8
+    assert parsed.ports[0].packed_width == 4
+    assert (parsed.ports[0].unpacked_left_index,
+            parsed.ports[0].unpacked_right_index) == (0, 1)
+    output = tmp_path / "array_out.sv"
+    eda.write_verilog(parsed, str(output))
+    reread = eda.read_verilog(str(output))
+    assert reread.ports[0].width == 8
+    assert reread.ports[0].packed_width == 4
+    assert (reread.ports[0].unpacked_left_index,
+            reread.ports[0].unpacked_right_index) == (0, 1)
+    json_path = tmp_path / "array.json"
+    eda.write_json(parsed, str(json_path))
+    from_json = eda.read_json(str(json_path))
+    assert from_json.ports[0].width == 8
+    assert from_json.ports[0].packed_width == 4
+    assert (from_json.ports[0].unpacked_left_index,
+            from_json.ports[0].unpacked_right_index) == (0, 1)
+
+
+def test_generic_map_preserves_packed_struct_array_port_shape(tmp_path):
+    source = tmp_path / "struct_array.sv"
+    source.write_text("""
+typedef struct packed {
+  logic [5:0] bits;
+} element_t;
+module struct_array(input element_t a [0:3],
+                    output element_t y [0:3]);
+endmodule
+""")
+    generic = eda.generic_map(eda.parse_verilog(str(source)))
+    assert generic.ports[0].width == 24
+    assert generic.ports[0].packed_width == 6
+    assert (generic.ports[0].unpacked_left_index,
+            generic.ports[0].unpacked_right_index) == (0, 3)
+
+    output = tmp_path / "struct_array_generic.sv"
+    eda.write_verilog(generic, str(output))
+    reread = eda.read_verilog(str(output))
+    assert reread.ports[0].width == 24
+    assert reread.ports[0].packed_width == 6
+    assert (reread.ports[0].unpacked_left_index,
+            reread.ports[0].unpacked_right_index) == (0, 3)
+
+
+def test_generic_map_flattens_multidimensional_packed_port_ranges(tmp_path):
+    source = tmp_path / "packed_multidim.sv"
+    source.write_text("""
+module packed_multidim(input logic [2:0][31:0] a,
+                       output logic [2:0][31:0] y);
+  assign y = a;
+endmodule
+""")
+    parsed = eda.parse_verilog(str(source))
+    assert parsed.ports[0].width == 96
+    assert (parsed.ports[0].left_index,
+            parsed.ports[0].right_index) == (95, 0)
+
+    generic = eda.generic_map(parsed)
+    assert generic.ports[0].width == 96
+    assert (generic.ports[0].left_index,
+            generic.ports[0].right_index) == (95, 0)
+
+    output = tmp_path / "packed_multidim_generic.sv"
+    eda.write_verilog(generic, str(output))
+    reread = eda.read_verilog(str(output))
+    assert reread.ports[0].width == 96
+    assert (reread.ports[0].left_index,
+            reread.ports[0].right_index) == (95, 0)
+
+
 def test_parse_file_and_write_json(tmp_path):
     verilog_path = tmp_path / "design.v"
     json_path = tmp_path / "design.json"
     verilog_path.write_text(VERILOG, encoding="utf-8")
 
-    module = map_verilog(verilog_path)
+    module = eda.generic_map(eda.parse_verilog(str(verilog_path)))
     eda.write_json(module, str(json_path))
     serialized = json.loads(json_path.read_text(encoding="utf-8"))
 
     assert serialized["format"] == "eda-netlist"
-    assert serialized["version"] == 1
+    assert serialized["version"] == 2
     assert serialized["modules"][0]["name"] == "logic_example"
     assert json.loads(eda.to_json(module)) == serialized
+    loaded = eda.read_json(str(json_path))
+    assert loaded.name == module.name
+    assert [(i.name, i.cell_type, [(c.pin, c.net) for c in i.connections])
+            for i in loaded.instances] == [
+        (i.name, i.cell_type, [(c.pin, c.net) for c in i.connections])
+        for i in module.instances
+    ]
 
 
 def test_parse_verilog_resolves_instances_to_bundled_cells(tmp_path):

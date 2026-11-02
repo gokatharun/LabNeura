@@ -117,20 +117,10 @@ std::size_t type_width(const sa::Type& type) {
 }
 
 std::string expression_source(const sa::Expression& expression,
-                              const slang::SourceManager& source_manager) {
-    const auto range = source_manager.getFullyOriginalRange(expression.sourceRange);
-    const auto start = range.start();
-    const auto end = range.end();
-    if (!start.valid() || !end.valid() || start.buffer() != end.buffer() ||
-        end.offset() < start.offset()) {
-        unsupported("could not determine source text for a module connection");
-    }
-
-    const auto source = source_manager.getSourceText(start.buffer());
-    if (end.offset() > source.size()) {
-        unsupported("module connection source range is out of bounds");
-    }
-    return std::string(source.substr(start.offset(), end.offset() - start.offset()));
+                              const slang::SourceManager& source_manager,
+                              const std::string& scope_prefix) {
+    return detail::verilog_expression_source(expression, source_manager,
+                                            scope_prefix);
 }
 
 class Synthesizer {
@@ -192,9 +182,16 @@ private:
         } else if (type.isIntegral()) {
             var.width = type_width(type);
             var.is_scalar = type.isScalar();
-            var.range = type.hasFixedRange()
-                            ? type.getFixedRange()
-                            : slang::ConstantRange{static_cast<int32_t>(var.width) - 1, 0};
+            if (type.isPackedArray() && type.hasFixedRange() &&
+                type.getFixedRange().width() != var.width) {
+                var.range = slang::ConstantRange{
+                    static_cast<int32_t>(var.width) - 1, 0};
+            } else {
+                var.range = type.hasFixedRange()
+                                ? type.getFixedRange()
+                                : slang::ConstantRange{
+                                      static_cast<int32_t>(var.width) - 1, 0};
+            }
         } else {
             unsupported("type of '" + var.name + "'");
         }
@@ -1687,6 +1684,7 @@ Module Synthesizer::run(const sa::InstanceSymbol& top, const std::string& top_na
     std::vector<Net> nets;
     std::vector<Output> outputs;
     std::map<Bit, std::string> input_names;
+    std::unordered_set<std::string> port_names;
     for (const auto* port_symbol : top.body.getPortList()) {
         if (port_symbol->kind != sa::SymbolKind::Port) continue;
         const auto& port = port_symbol->as<sa::PortSymbol>();
@@ -1696,7 +1694,43 @@ Module Synthesizer::run(const sa::InstanceSymbol& top, const std::string& top_na
             unsupported("inout port '" + std::string(port.name) + "'");
         }
         const bool is_input = port.direction == sa::ArgumentDirection::In;
-        ports.emplace_back(var.name, is_input ? PortDirection::Input : PortDirection::Output);
+        std::optional<std::int64_t> packed_left;
+        std::optional<std::int64_t> packed_right;
+        std::optional<std::int64_t> unpacked_left;
+        std::optional<std::int64_t> unpacked_right;
+        std::size_t packed_width = var.width;
+        if (var.is_array) {
+            packed_width = var.element_width;
+            unpacked_left = var.range.left;
+            unpacked_right = var.range.right;
+            const auto* element_type = var.symbol->getType().getArrayElementType();
+            if (element_type && element_type->isPackedArray()) {
+                const auto element_range = element_type->getFixedRange();
+                if (element_range.width() == var.element_width) {
+                    packed_left = element_range.left;
+                    packed_right = element_range.right;
+                } else {
+                    packed_left =
+                        static_cast<std::int64_t>(var.element_width - 1);
+                    packed_right = 0;
+                }
+            } else if (var.element_width > 1) {
+                packed_left = static_cast<std::int64_t>(var.element_width - 1);
+                packed_right = 0;
+            } else {
+                packed_left = 0;
+                packed_right = 0;
+            }
+        } else if (!var.is_scalar) {
+            packed_left = var.range.left;
+            packed_right = var.range.right;
+        }
+        ports.emplace_back(
+            var.name,
+            is_input ? PortDirection::Input : PortDirection::Output,
+            var.width, packed_left, packed_right, unpacked_left,
+            unpacked_right, packed_width);
+        port_names.insert(var.name);
         for (std::size_t i = 0; i < var.width; ++i) {
             const std::string name = bit_name(var, i);
             nets.emplace_back(name, is_input ? NetType::Input : NetType::Output);
@@ -1724,6 +1758,23 @@ Module Synthesizer::run(const sa::InstanceSymbol& top, const std::string& top_na
         run_assign(expression.left(), expression.right());
     }
     for (const auto* block : procedures_) run_procedure(*block);
+
+    if (preserve_hierarchy_) {
+        std::map<std::string, Var*> internal_vars;
+        for (auto& [symbol, var] : vars_) {
+            (void)symbol;
+            if (var.registered && !port_names.count(var.name)) {
+                internal_vars.emplace(var.name, &var);
+            }
+        }
+        for (const auto& [name, var] : internal_vars) {
+            for (std::size_t bit = 0; bit < var->width; ++bit) {
+                if (var->driven[bit]) {
+                    outputs.push_back({bit_name(*var, bit), var, bit});
+                }
+            }
+        }
+    }
 
     Rebuilder rebuild(graph_);
     std::vector<Bit> roots;
@@ -1847,6 +1898,53 @@ Module Synthesizer::run(const sa::InstanceSymbol& top, const std::string& top_na
         if (op == Op::Input || claimed[i]) continue;
         nets.emplace_back(net_name[i], NetType::Internal);
     }
+    if (preserve_hierarchy_) {
+        std::unordered_set<std::string> net_names;
+        for (const auto& net : nets) net_names.insert(net.get_name());
+        for (const auto& [symbol, var] : vars_) {
+            (void)symbol;
+            if (!var.registered || port_names.count(var.name) ||
+                !net_names.insert(var.name).second) {
+                continue;
+            }
+            std::optional<std::int64_t> packed_left;
+            std::optional<std::int64_t> packed_right;
+            std::optional<std::int64_t> unpacked_left;
+            std::optional<std::int64_t> unpacked_right;
+            std::size_t packed_width = var.width;
+            if (var.is_array) {
+                packed_width = var.element_width;
+                unpacked_left = var.range.left;
+                unpacked_right = var.range.right;
+                const auto* element_type =
+                    var.symbol->getType().getArrayElementType();
+                if (element_type && element_type->isPackedArray()) {
+                    const auto element_range = element_type->getFixedRange();
+                    if (element_range.width() == var.element_width) {
+                        packed_left = element_range.left;
+                        packed_right = element_range.right;
+                    } else {
+                        packed_left =
+                            static_cast<std::int64_t>(var.element_width - 1);
+                        packed_right = 0;
+                    }
+                } else if (var.element_width > 1) {
+                    packed_left =
+                        static_cast<std::int64_t>(var.element_width - 1);
+                    packed_right = 0;
+                } else {
+                    packed_left = 0;
+                    packed_right = 0;
+                }
+            } else if (!var.is_scalar) {
+                packed_left = var.range.left;
+                packed_right = var.range.right;
+            }
+            nets.emplace_back(var.name, NetType::Internal, var.width,
+                              packed_left, packed_right, unpacked_left,
+                              unpacked_right, packed_width);
+        }
+    }
     std::vector<Module> child_modules;
     if (preserve_hierarchy_) {
         for (const auto* child : instances_) {
@@ -1857,7 +1955,8 @@ Module Synthesizer::run(const sa::InstanceSymbol& top, const std::string& top_na
                 if (!connection->getExpression()) continue;
                 connections.emplace_back(
                     std::string(connection->port.name),
-                    expression_source(*connection->getExpression(), source_manager));
+                    expression_source(*connection->getExpression(),
+                                      source_manager, top_prefix_));
             }
             instances.emplace_back(
                 std::string(child->name),

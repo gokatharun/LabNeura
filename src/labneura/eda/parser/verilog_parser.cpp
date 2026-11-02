@@ -4,6 +4,7 @@
 #include "slang/ast/ASTSerializer.h"
 #include "slang/ast/Compilation.h"
 #include "slang/ast/expressions/AssignmentExpressions.h"
+#include "slang/ast/expressions/ConversionExpression.h"
 #include "slang/ast/expressions/LiteralExpressions.h"
 #include "slang/ast/expressions/MiscExpressions.h"
 #include "slang/ast/expressions/OperatorExpressions.h"
@@ -26,6 +27,7 @@
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
+#include <string_view>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -71,9 +73,200 @@ bool is_systemverilog(const std::filesystem::path& path) {
     return path.extension() == ".sv";
 }
 
-std::size_t declared_width(const slang::ast::Symbol& symbol) {
-    const auto* type = symbol.getDeclaredType();
-    return type ? static_cast<std::size_t>(type->getType().getBitWidth()) : 1;
+std::pair<std::optional<std::int64_t>, std::optional<std::int64_t>>
+declared_bounds(const slang::ast::Type& type) {
+    if (!type.isPackedArray()) return {};
+    const auto range = type.getFixedRange();
+    if (range.width() != static_cast<std::size_t>(type.getBitWidth())) {
+        const auto width = static_cast<std::int64_t>(type.getBitWidth());
+        return {width - 1, 0};
+    }
+    return {range.left, range.right};
+}
+
+struct DeclaredShape {
+    std::size_t width = 1;
+    std::size_t packed_width = 1;
+    std::optional<std::int64_t> packed_left;
+    std::optional<std::int64_t> packed_right;
+    std::optional<std::int64_t> unpacked_left;
+    std::optional<std::int64_t> unpacked_right;
+};
+
+DeclaredShape declared_shape(const slang::ast::Type& type) {
+    DeclaredShape shape;
+    if (type.isUnpackedArray()) {
+        if (!type.hasFixedRange() || !type.getArrayElementType()) {
+            throw std::runtime_error(
+                "netlist I/O requires fixed-size unpacked arrays");
+        }
+        const auto* element = type.getArrayElementType();
+        if (element->isUnpackedArray()) {
+            throw std::runtime_error(
+                "netlist I/O currently supports one unpacked array dimension");
+        }
+        const auto array_range = type.getFixedRange();
+        shape.packed_width = static_cast<std::size_t>(element->getBitWidth());
+        shape.width = array_range.width() * shape.packed_width;
+        const auto [left, right] = declared_bounds(*element);
+        shape.packed_left = left;
+        shape.packed_right = right;
+        shape.unpacked_left = array_range.left;
+        shape.unpacked_right = array_range.right;
+    } else {
+        shape.width = static_cast<std::size_t>(type.getBitWidth());
+        shape.packed_width = shape.width;
+        const auto [left, right] = declared_bounds(type);
+        shape.packed_left = left;
+        shape.packed_right = right;
+    }
+    return shape;
+}
+
+void collect_constant_selects(
+    const slang::ast::Expression& expression,
+    const slang::SourceManager& source_manager,
+    const slang::BufferID source_buffer, std::size_t source_offset,
+    const std::string& scope_prefix,
+    std::vector<std::pair<std::size_t, std::pair<std::size_t, std::string>>>&
+        replacements) {
+    using slang::ast::ExpressionKind;
+    const auto replace_source = [&](const slang::ast::Expression& source,
+                                    const std::string& value) {
+        const auto range = source_manager.getFullyOriginalRange(source.sourceRange);
+        const auto start = range.start();
+        const auto end = range.end();
+        if (!start.valid() || !end.valid() ||
+            start.buffer() != source_buffer || end.buffer() != source_buffer ||
+            end.offset() < start.offset()) {
+            return;
+        }
+        replacements.push_back(
+            {start.offset() - source_offset,
+             {end.offset() - source_offset, value}});
+    };
+    const auto replace_constant = [&](const slang::ast::Expression& selector) {
+        const auto range =
+            source_manager.getFullyOriginalRange(selector.sourceRange);
+        const auto start = range.start();
+        const auto end = range.end();
+        const auto* constant = selector.getConstant();
+        if (!start.valid() || !end.valid() || start.buffer() != source_buffer ||
+            end.buffer() != source_buffer || end.offset() < start.offset() ||
+            !constant || !constant->isInteger()) {
+            return false;
+        }
+        const auto value = constant->integer().as<std::int64_t>();
+        if (!value) return false;
+        replace_source(selector, std::to_string(*value));
+        return true;
+    };
+
+    switch (expression.kind) {
+        case ExpressionKind::NamedValue:
+        case ExpressionKind::HierarchicalValue: {
+            const auto& symbol =
+                expression.as<slang::ast::ValueExpressionBase>().symbol;
+            if (scope_prefix.empty() ||
+                symbol.kind == slang::ast::SymbolKind::Parameter ||
+                symbol.kind == slang::ast::SymbolKind::EnumValue) {
+                return;
+            }
+            std::string path = symbol.getHierarchicalPath();
+            if (path.rfind(scope_prefix, 0) == 0) {
+                path.erase(0, scope_prefix.size());
+                if (path != symbol.name) replace_source(expression, path);
+            }
+            return;
+        }
+        case ExpressionKind::ElementSelect: {
+            const auto& select =
+                expression.as<slang::ast::ElementSelectExpression>();
+            collect_constant_selects(select.value(), source_manager,
+                                     source_buffer, source_offset, scope_prefix,
+                                     replacements);
+            if (!replace_constant(select.selector())) {
+                collect_constant_selects(select.selector(), source_manager,
+                                         source_buffer, source_offset, scope_prefix,
+                                         replacements);
+            }
+            return;
+        }
+        case ExpressionKind::RangeSelect: {
+            const auto& select =
+                expression.as<slang::ast::RangeSelectExpression>();
+            collect_constant_selects(select.value(), source_manager,
+                                     source_buffer, source_offset, scope_prefix,
+                                     replacements);
+            if (!replace_constant(select.left())) {
+                collect_constant_selects(select.left(), source_manager,
+                                         source_buffer, source_offset, scope_prefix,
+                                         replacements);
+            }
+            if (!replace_constant(select.right())) {
+                collect_constant_selects(select.right(), source_manager,
+                                         source_buffer, source_offset, scope_prefix,
+                                         replacements);
+            }
+            return;
+        }
+        case ExpressionKind::MemberAccess:
+            collect_constant_selects(
+                expression.as<slang::ast::MemberAccessExpression>().value(),
+                source_manager, source_buffer, source_offset, scope_prefix,
+                replacements);
+            return;
+        case ExpressionKind::UnaryOp:
+            collect_constant_selects(
+                expression.as<slang::ast::UnaryExpression>().operand(),
+                source_manager, source_buffer, source_offset, scope_prefix,
+                replacements);
+            return;
+        case ExpressionKind::BinaryOp: {
+            const auto& binary =
+                expression.as<slang::ast::BinaryExpression>();
+            collect_constant_selects(binary.left(), source_manager,
+                                     source_buffer, source_offset, scope_prefix,
+                                     replacements);
+            collect_constant_selects(binary.right(), source_manager,
+                                     source_buffer, source_offset, scope_prefix,
+                                     replacements);
+            return;
+        }
+        case ExpressionKind::ConditionalOp: {
+            const auto& conditional =
+                expression.as<slang::ast::ConditionalExpression>();
+            for (const auto& condition : conditional.conditions) {
+                collect_constant_selects(*condition.expr, source_manager,
+                                         source_buffer, source_offset, scope_prefix,
+                                         replacements);
+            }
+            collect_constant_selects(conditional.left(), source_manager,
+                                     source_buffer, source_offset, scope_prefix,
+                                     replacements);
+            collect_constant_selects(conditional.right(), source_manager,
+                                     source_buffer, source_offset, scope_prefix,
+                                     replacements);
+            return;
+        }
+        case ExpressionKind::Concatenation:
+            for (const auto* operand :
+                 expression.as<slang::ast::ConcatenationExpression>()
+                     .operands()) {
+                collect_constant_selects(*operand, source_manager,
+                                         source_buffer, source_offset, scope_prefix,
+                                         replacements);
+            }
+            return;
+        case ExpressionKind::Conversion:
+            collect_constant_selects(
+                expression.as<slang::ast::ConversionExpression>().operand(),
+                source_manager, source_buffer, source_offset, scope_prefix,
+                replacements);
+            return;
+        default:
+            return;
+    }
 }
 
 std::string trim(const std::string& text) {
@@ -104,39 +297,65 @@ std::string source_range_text(const slang::SourceRange& macro_range,
 }
 
 std::string expression_source(const slang::ast::Expression& expression,
-                              const slang::SourceManager& source_manager) {
-    return source_range_text(expression.sourceRange, source_manager);
+                              const slang::SourceManager& source_manager,
+                              const std::string& scope_prefix = {}) {
+    auto source = source_range_text(expression.sourceRange, source_manager);
+    const auto range =
+        source_manager.getFullyOriginalRange(expression.sourceRange);
+    const auto start = range.start();
+    const auto end = range.end();
+    if (!start.valid() || !end.valid() || start.buffer() != end.buffer() ||
+        end.offset() < start.offset()) {
+        return source;
+    }
+    std::vector<std::pair<
+        std::size_t, std::pair<std::size_t, std::string>>> replacements;
+    collect_constant_selects(expression, source_manager, start.buffer(),
+                             start.offset(), scope_prefix, replacements);
+    std::sort(replacements.rbegin(), replacements.rend());
+    for (const auto& [begin, replacement] : replacements) {
+        const auto& [finish, value] = replacement;
+        if (finish <= source.size() && begin <= finish) {
+            source.replace(begin, finish - begin, value);
+        }
+    }
+    return trim(source);
 }
 
 std::vector<PinConnection> module_port_connections(
     const slang::ast::InstanceSymbol& instance,
-    const slang::SourceManager& source_manager) {
+    const slang::SourceManager& source_manager,
+    const std::string& scope_prefix) {
     std::vector<PinConnection> connections;
     for (const auto* connection : instance.getPortConnections()) {
         if (!connection->getExpression()) continue;
         connections.emplace_back(
             std::string(connection->port.name),
-            expression_source(*connection->getExpression(), source_manager));
+            expression_source(*connection->getExpression(), source_manager,
+                              scope_prefix));
     }
     return connections;
 }
 
 std::vector<PinConnection> parsed_primitive_connections(
     const slang::ast::PrimitiveInstanceSymbol& instance,
-    const slang::SourceManager& source_manager) {
+    const slang::SourceManager& source_manager,
+    const std::string& scope_prefix) {
     const auto expressions = instance.getPortConnections();
     if (expressions.empty()) return {};
 
     std::vector<PinConnection> connections;
     connections.reserve(expressions.size());
     connections.emplace_back(
-        "Y", expression_source(*expressions.front(), source_manager));
+        "Y", expression_source(*expressions.front(), source_manager,
+                               scope_prefix));
     for (std::size_t i = 1; i < expressions.size(); ++i) {
         const auto input_name =
             i <= 26 ? std::string(1, static_cast<char>('A' + i - 1))
                     : "IN" + std::to_string(i);
         connections.emplace_back(
-            input_name, expression_source(*expressions[i], source_manager));
+            input_name,
+            expression_source(*expressions[i], source_manager, scope_prefix));
     }
     return connections;
 }
@@ -264,6 +483,8 @@ Module summarize_module(const slang::ast::InstanceSymbol& instance,
     std::vector<Module> child_modules;
     std::vector<ContinuousAssignment> assignments;
     std::unordered_set<std::string> port_names;
+    const std::string scope_prefix =
+        std::string(instance.getHierarchicalPath()) + ".";
 
     for (const auto* port_symbol : instance.body.getPortList()) {
         if (port_symbol->kind != slang::ast::SymbolKind::Port) continue;
@@ -276,28 +497,41 @@ Module summarize_module(const slang::ast::InstanceSymbol& instance,
         } else if (port.direction == slang::ast::ArgumentDirection::Out) {
             direction = PortDirection::Output;
         }
-        const auto width = static_cast<std::size_t>(port.getType().getBitWidth());
-        ports.emplace_back(port_name, direction, width);
+        const auto shape = declared_shape(port.getType());
+        ports.emplace_back(port_name, direction, shape.width,
+                           shape.packed_left, shape.packed_right,
+                           shape.unpacked_left, shape.unpacked_right,
+                           shape.packed_width);
         const auto net_type =
             direction == PortDirection::Input
                 ? NetType::Input
                 : direction == PortDirection::Output ? NetType::Output
                                                      : NetType::InOut;
-        nets.emplace_back(port_name, net_type, width);
+        nets.emplace_back(port_name, net_type, shape.width,
+                          shape.packed_left, shape.packed_right,
+                          shape.unpacked_left, shape.unpacked_right,
+                          shape.packed_width);
     }
 
     for (const auto& member : instance.body.members()) {
         if ((member.kind == slang::ast::SymbolKind::Net ||
              member.kind == slang::ast::SymbolKind::Variable) &&
             port_names.count(std::string(member.name)) == 0) {
+             const auto* declared_type = member.getDeclaredType();
+             const auto shape = declared_type
+                                    ? declared_shape(declared_type->getType())
+                                    : DeclaredShape{};
              nets.emplace_back(std::string(member.name), NetType::Internal,
-                               declared_width(member));
+                               shape.width, shape.packed_left,
+                               shape.packed_right, shape.unpacked_left,
+                               shape.unpacked_right, shape.packed_width);
         } else if (member.kind == slang::ast::SymbolKind::Instance) {
             const auto& child = member.as<slang::ast::InstanceSymbol>();
             const std::string cell_type(child.getDefinition().name);
             instances.emplace_back(
                 std::string(child.name), cell_type,
-                module_port_connections(child, source_manager), std::nullopt,
+                module_port_connections(child, source_manager, scope_prefix),
+                std::nullopt,
                 std::map<std::string, std::string>{});
             if (preserve_hierarchy && child.isModule()) {
                 child_modules.push_back(summarize_module(
@@ -319,7 +553,8 @@ Module summarize_module(const slang::ast::InstanceSymbol& instance,
             }
             instances.emplace_back(
                 std::string(child.name), cell_type,
-                parsed_primitive_connections(child, source_manager),
+                parsed_primitive_connections(child, source_manager,
+                                             scope_prefix),
                 std::nullopt, std::map<std::string, std::string>{},
                 child.primitiveType.primitiveKind ==
                     slang::ast::PrimitiveSymbol::UserDefined,
@@ -353,7 +588,7 @@ Module summarize_module(const slang::ast::InstanceSymbol& instance,
         const std::string cell_type(child.getDefinition().name);
         instances.emplace_back(
             std::string(child.name), cell_type,
-            module_port_connections(child, source_manager));
+            module_port_connections(child, source_manager, scope_prefix));
         if (preserve_hierarchy && child.isModule()) {
             child_modules.push_back(summarize_module(
                 child, source_manager, false, true, std::string(child.name)));
@@ -368,6 +603,13 @@ Module summarize_module(const slang::ast::InstanceSymbol& instance,
 }
 
 }  // namespace
+
+std::string detail::verilog_expression_source(
+    const slang::ast::Expression& expression,
+    const slang::SourceManager& source_manager,
+    const std::string& scope_prefix) {
+    return expression_source(expression, source_manager, scope_prefix);
+}
 
 Module parse_verilog(const std::string& path) {
     const std::filesystem::path source_path(path);
@@ -414,6 +656,65 @@ Module parse_verilog(const std::string& path) {
     };
     retain_behavioral_context(retain_behavioral_context, module);
 
+    return module;
+}
+
+Module read_verilog(const std::string& path) {
+    auto module = parse_verilog(path);
+    const auto normalize = [&](const auto& self, Module& current) -> void {
+        std::unordered_map<std::string, std::string> cell_types;
+        std::vector<Module> children;
+        children.reserve(current.child_modules_.size());
+        for (auto& child : current.child_modules_) {
+            if (child.get_name().rfind("__labneura_cell__", 0) == 0) {
+                static constexpr char digits[] = "0123456789abcdef";
+                constexpr std::string_view prefix = "__labneura_cell__";
+                const std::string_view encoded(child.get_name().data() +
+                                                   prefix.size(),
+                                               child.get_name().size() -
+                                                   prefix.size());
+                std::string type;
+                if (encoded.size() % 2 != 0) {
+                    throw std::runtime_error(
+                        "invalid internal black-box name in Verilog netlist");
+                }
+                for (std::size_t i = 0; i < encoded.size(); i += 2) {
+                    const auto high = std::string_view(digits).find(encoded[i]);
+                    const auto low = std::string_view(digits).find(encoded[i + 1]);
+                    if (high == std::string_view::npos ||
+                        low == std::string_view::npos) {
+                        throw std::runtime_error(
+                            "invalid internal black-box name in Verilog netlist");
+                    }
+                    type.push_back(static_cast<char>((high << 4) | low));
+                }
+                cell_types[child.get_hierarchy_instance_name()] = std::move(type);
+                continue;
+            }
+            self(self, child);
+            children.push_back(child);
+        }
+
+        std::vector<Instance> instances;
+        instances.reserve(current.instances_.size());
+        for (const auto& instance : current.instances_) {
+            const auto cell = cell_types.find(instance.get_name());
+            instances.emplace_back(
+                instance.get_name(),
+                cell == cell_types.end() ? instance.get_cell_type() : cell->second,
+                instance.get_connections(), instance.get_cell(),
+                instance.get_parameters(), instance.is_user_defined_primitive(),
+                instance.get_primitive_table(), instance.is_sequential_primitive());
+        }
+        Module normalized(
+            current.get_name(), current.get_ports(), current.get_nets(),
+            std::move(instances), current.get_assignments(),
+            current.is_behavioral(), current.get_hierarchy_instance_name(),
+            std::move(children));
+        normalized.parsed_context_ = current.parsed_context_;
+        current = std::move(normalized);
+    };
+    normalize(normalize, module);
     return module;
 }
 

@@ -124,8 +124,19 @@ for instance in module.instances:
         print(connection.pin, "->", connection.net)
 
 eda.write_json(module, "logic_example.json")
+module_from_json = eda.read_json("logic_example.json")
+eda.write_verilog(module, "logic_example_netlist.v")
+module_from_verilog = eda.read_verilog("logic_example_netlist.v")
 module.dump_graph("logic_example.dot")  # Graphviz: dot -Tsvg logic_example.dot
 ```
+
+The JSON reader/writer round-trips parsed and generic-mapped module trees,
+including hierarchy, port/net widths, connections, parameters, and expression
+trees. The structural Verilog writer emits child module definitions and
+black-box declarations for referenced cells; `read_verilog` parses that
+structural file back into a `Module`. Behavioral RTL must be generic-mapped
+before Verilog writing because the parsed model does not retain procedural
+block bodies.
 
 `parse_verilog` accepts either a Verilog file or a directory. For a file, it
 returns a `Module`; for a directory, it recursively reads `.v` and `.sv` files,

@@ -82,8 +82,9 @@ overrides, the project overload preserves module-instance boundaries in
 `child_modules` and recursively lowers each module, including behavioral
 children. `tech_map` and `fpga_map` recursively map these child modules while
 retaining their hierarchy and instance links. Parameter overrides still use
-project-wide specialized elaboration. The result uses logical cells rather
-than a particular vendor library.
+project-wide specialized elaboration and preserve active, elaborated child
+instances. The result uses logical cells rather than a particular vendor
+library.
 
 ### Structural/continuous-assignment path
 
@@ -220,7 +221,31 @@ does not claim a globally minimum LUT count or routed timing.
 
 ## 6. Exports and inspection
 
-- `to_json` / `write_json`: serialize the LabNeura netlist model.
+- `to_json` / `write_json` and `read_json`: write version 2 and read version 1
+  or 2 parsed/generic-mapped `Module` trees using the versioned `eda-netlist`
+  JSON format.
+  Ports/nets include widths and kinds; module-instance boundaries, connections,
+  parameters, UDP metadata, and expression trees are retained. The reader
+  validates the format/version and rejects malformed input. Technology-mapped
+  cell metadata is not yet supported by this JSON format.
+- `to_verilog` / `write_verilog`: write structural Verilog for parsed
+  structural netlists or generic-mapped netlists. Child modules are emitted
+  recursively with unique specialized names so distinct elaborated instances
+  do not collide. Generic/technology library cells remain cell references and
+  require their corresponding cell models when compiling the output.
+- `read_verilog`: read a structural Verilog file into a `Module` through the
+  Slang parser. The reader returns the parsed structural summary and hierarchy;
+  it does not perform generic mapping automatically.
+- Netlist Verilog I/O preserves fixed-size unpacked array ports and nets with
+  one unpacked dimension. Multidimensional packed values are represented as an
+  equivalent flat packed vector because the netlist model stores one packed
+  range. Constant selects in instance connections are elaborated, and
+  generated-scope signal names are emitted as escaped identifiers so the
+  resulting hierarchy can be parsed independently of its source scopes.
+- Behavioral procedural blocks cannot be written as structural Verilog from
+  the current parsed `Module` model; run `generic_map` first. Unsupported UDP
+  declarations and cell metadata fail explicitly rather than being silently
+  discarded.
 - `to_dot` / `write_dot`: draw ports, cells, and driver-to-sink edges for
   Graphviz.
 - `to_blif` / `write_blif`: output `.names` truth tables for LUTs and ties,
@@ -252,4 +277,5 @@ produce a bitstream.
 | FPGA LUT mapping | [`fpga_mapping.cpp`](../src/labneura/eda/mapping/fpga/fpga_mapping.cpp) |
 | Default FPGA model | [`fpga_library.cpp`](../src/labneura/eda/mapping/fpga/fpga_library.cpp) |
 | BLIF output | [`netlist_blif.cpp`](../src/labneura/eda/netlist/netlist_blif.cpp) |
+| JSON and Verilog netlist I/O | [`netlist_json.cpp`](../src/labneura/eda/netlist/netlist_json.cpp), [`netlist_verilog.cpp`](../src/labneura/eda/netlist/netlist_verilog.cpp) |
 | Tests | [`test_eda.py`](../tests/test_eda.py), [`test_eda_fpga.py`](../tests/test_eda_fpga.py), [`test_eda_graph.py`](../tests/test_eda_graph.py) |
