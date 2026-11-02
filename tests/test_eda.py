@@ -1125,13 +1125,59 @@ def test_generic_and_tech_map_accept_a_project_with_top_and_parameters(tmp_path)
         source.unlink()
     library = eda.parse_liberty(str(Path(__file__).parent.parent / "assets" /
                                     "sky130_fd_sc_hd__tt_025C_1v80.lib"))
-    assert sum(i.cell_type == "DFF" for i in eda.generic_map(project, "top").instances) == 2
+    generic_default = eda.generic_map(project, "top")
+    assert [child.hierarchy_instance_name for child in generic_default.child_modules] == [
+        "u"
+    ]
+    assert generic_default.instances[0].cell_type == "leaf"
+    assert sum(
+        instance.cell_type == "DFF"
+        for instance in generic_default.child_modules[0].instances
+    ) == 2
+    technology_default = eda.tech_map(generic_default, library)
+    fpga_default = eda.fpga_map(generic_default, 4)
+    for mapped in (technology_default, fpga_default):
+        assert [child.hierarchy_instance_name for child in mapped.child_modules] == [
+            "u"
+        ]
+        assert mapped.instances[0].cell_type == "leaf"
+        assert mapped.child_modules[0].instances
     generic = eda.generic_map(project, "top", {"W": "5"})
-    assert sum(i.cell_type == "DFF" for i in generic.instances) == 5
+    assert any(instance.cell_type == "leaf" for instance in generic.instances)
+    assert sum(
+        i.cell_type == "DFF"
+        for i in generic.child_modules[0].instances
+    ) == 5
     mapped = eda.tech_map(project, library, "top", {"W": "5"})
-    assert [i.cell_type for i in mapped.instances].count("sky130_fd_sc_hd__dfxtp_1") == 5
+    assert [i.cell_type for i in mapped.child_modules[0].instances].count(
+        "sky130_fd_sc_hd__dfxtp_1"
+    ) == 5
     with pytest.raises(RuntimeError, match="not found"):
         eda.generic_map(project, "missing")
+
+
+def test_generic_map_preserves_parameterized_generate_hierarchy(tmp_path):
+    (tmp_path / "design.v").write_text("""
+module leaf(input a, output y);
+  assign y = a;
+endmodule
+module top #(parameter ENABLE_CHILD = 0)(input a, output y);
+  if (ENABLE_CHILD) begin : gen
+    leaf u(.a(a), .y(y));
+  end else begin : direct
+    assign y = a;
+  end
+endmodule
+""")
+    project = eda.parse_verilog(str(tmp_path))
+
+    generic = eda.generic_map(project, "top", {"ENABLE_CHILD": "1"})
+
+    assert len(generic.child_modules) == 1
+    child = generic.child_modules[0]
+    assert child.name == "leaf"
+    assert child.hierarchy_instance_name == "u"
+    assert any(instance.cell_type == "leaf" for instance in generic.instances)
 
 
 def test_module_dump_graph_emits_dot(tmp_path):

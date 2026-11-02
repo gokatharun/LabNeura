@@ -528,9 +528,16 @@ Module tech_map(const Module& generic_module,
         instances.emplace_back(instance.get_name(), cell->get_name(),
                                std::move(connections), *cell);
     }
+    std::vector<Module> child_modules;
+    child_modules.reserve(generic_module.get_child_modules().size());
+    for (const auto& child : generic_module.get_child_modules()) {
+        child_modules.push_back(tech_map(child, cell_library));
+    }
     return Module(generic_module.get_name(), generic_module.get_ports(),
                   generic_module.get_nets(), std::move(instances),
-                  generic_module.get_assignments());
+                  generic_module.get_assignments(), generic_module.is_behavioral(),
+                  generic_module.get_hierarchy_instance_name(),
+                  std::move(child_modules));
 }
 
 Module tech_map(const Project& project, const StandardCellLibrary& cell_library,

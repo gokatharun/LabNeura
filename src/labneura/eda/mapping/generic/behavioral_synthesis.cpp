@@ -116,12 +116,30 @@ std::size_t type_width(const sa::Type& type) {
     return type.getBitWidth();
 }
 
+std::string expression_source(const sa::Expression& expression,
+                              const slang::SourceManager& source_manager) {
+    const auto range = source_manager.getFullyOriginalRange(expression.sourceRange);
+    const auto start = range.start();
+    const auto end = range.end();
+    if (!start.valid() || !end.valid() || start.buffer() != end.buffer() ||
+        end.offset() < start.offset()) {
+        unsupported("could not determine source text for a module connection");
+    }
+
+    const auto source = source_manager.getSourceText(start.buffer());
+    if (end.offset() > source.size()) {
+        unsupported("module connection source range is out of bounds");
+    }
+    return std::string(source.substr(start.offset(), end.offset() - start.offset()));
+}
+
 class Synthesizer {
 public:
     Synthesizer() : ops_(graph_) {}
 
     Module run(const sa::InstanceSymbol& top, const std::string& top_name,
-               bool preserve_hierarchy);
+               bool preserve_hierarchy,
+               const slang::SourceManager& source_manager);
 
 private:
     BitGraph graph_;
@@ -1658,7 +1676,8 @@ struct Rebuilder {
 };
 
 Module Synthesizer::run(const sa::InstanceSymbol& top, const std::string& top_name,
-                        bool preserve_hierarchy) {
+                        bool preserve_hierarchy,
+                        const slang::SourceManager& source_manager) {
     preserve_hierarchy_ = preserve_hierarchy;
     top_prefix_ = top_name + ".";
     anchor_ = &top.body;
@@ -1828,8 +1847,38 @@ Module Synthesizer::run(const sa::InstanceSymbol& top, const std::string& top_na
         if (op == Op::Input || claimed[i]) continue;
         nets.emplace_back(net_name[i], NetType::Internal);
     }
-    return Module(std::string(top.getDefinition().name), std::move(ports), std::move(nets),
-                  std::move(instances), {});
+    std::vector<Module> child_modules;
+    if (preserve_hierarchy_) {
+        for (const auto* child : instances_) {
+            if (!child->isModule()) continue;
+
+            std::vector<PinConnection> connections;
+            for (const auto* connection : child->getPortConnections()) {
+                if (!connection->getExpression()) continue;
+                connections.emplace_back(
+                    std::string(connection->port.name),
+                    expression_source(*connection->getExpression(), source_manager));
+            }
+            instances.emplace_back(
+                std::string(child->name),
+                std::string(child->getDefinition().name),
+                std::move(connections));
+
+            Synthesizer child_synthesizer;
+            auto mapped_child = child_synthesizer.run(
+                *child, std::string(child->getHierarchicalPath()), true,
+                source_manager);
+            child_modules.emplace_back(
+                mapped_child.get_name(), mapped_child.get_ports(),
+                mapped_child.get_nets(), mapped_child.get_instances(),
+                mapped_child.get_assignments(), mapped_child.is_behavioral(),
+                std::string(child->name), mapped_child.get_child_modules());
+        }
+    }
+
+    return Module(std::string(top.getDefinition().name), std::move(ports),
+                  std::move(nets), std::move(instances), {},
+                  false, {}, std::move(child_modules));
 }
 
 }  // namespace
@@ -1858,15 +1907,56 @@ Module detail::lower_behavioral_rtl(
     } restore_options{driver, driver.options.topModules,
                       driver.options.paramOverrides};
     slang::ast::Compilation* compilation = context->compilation.get();
-    const auto has_top = [&](slang::ast::Compilation& candidate) {
+    const auto find_instance = [&](slang::ast::Compilation& candidate) {
+        const slang::ast::InstanceSymbol* found = nullptr;
+        const auto search_scope = [&](const auto& self,
+                                      const slang::ast::Scope& scope) -> void {
+            for (const auto& member : scope.members()) {
+                switch (member.kind) {
+                    case slang::ast::SymbolKind::Instance: {
+                        const auto& instance =
+                            member.as<slang::ast::InstanceSymbol>();
+                        if (instance.getDefinition().name == top) {
+                            found = &instance;
+                            return;
+                        }
+                        if (instance.isModule()) self(self, instance.body);
+                        break;
+                    }
+                    case slang::ast::SymbolKind::GenerateBlock: {
+                        const auto& block =
+                            member.as<slang::ast::GenerateBlockSymbol>();
+                        if (!block.isUninstantiated) self(self, block);
+                        break;
+                    }
+                    case slang::ast::SymbolKind::GenerateBlockArray: {
+                        const auto& array =
+                            member.as<slang::ast::GenerateBlockArraySymbol>();
+                        for (const auto* entry : array.entries) {
+                            if (!entry->isUninstantiated) self(self, *entry);
+                            if (found) return;
+                        }
+                        break;
+                    }
+                    default:
+                        break;
+                }
+                if (found) return;
+            }
+        };
         for (const auto* instance : candidate.getRoot().topInstances) {
-            if (instance->getDefinition().name == top) return true;
+            if (instance->getDefinition().name == top) {
+                found = instance;
+                break;
+            }
+            if (instance->isModule()) search_scope(search_scope, instance->body);
+            if (found) break;
         }
-        return false;
+        return found;
     };
 
     std::unique_ptr<slang::ast::Compilation> specialized_compilation;
-    if (!parameters.empty() || !has_top(*compilation)) {
+    if (!parameters.empty()) {
         restore_options.active = true;
         driver.options.topModules = {top};
         driver.options.paramOverrides.clear();
@@ -1883,20 +1973,15 @@ Module detail::lower_behavioral_rtl(
         compilation = specialized_compilation.get();
     }
 
-    const slang::ast::InstanceSymbol* selected_top = nullptr;
-    for (const auto* candidate : compilation->getRoot().topInstances) {
-        if (candidate->getDefinition().name == top) {
-            selected_top = candidate;
-            break;
-        }
-    }
+    const auto* selected_top = find_instance(*compilation);
     if (!selected_top) {
         throw std::runtime_error("top module '" + top + "' not found in parsed design");
     }
 
     Synthesizer synthesizer;
-    return synthesizer.run(*selected_top, std::string(selected_top->name),
-                           preserve_hierarchy);
+    return synthesizer.run(
+        *selected_top, std::string(selected_top->getHierarchicalPath()),
+        preserve_hierarchy, driver.sourceManager);
 }
 
 }  // namespace labneura::eda

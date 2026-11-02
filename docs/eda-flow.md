@@ -77,8 +77,13 @@ Unsupported lowering fails explicitly.
 ## 3. Generic mapping: RTL to technology-independent cells
 
 Call `generic_map(rtl_module)` for a parsed module, or
-`generic_map(project, top, parameters)` for a project. The result uses logical
-cells rather than a particular vendor library.
+`generic_map(project, top, parameters)` for a project. With no parameter
+overrides, the project overload preserves module-instance boundaries in
+`child_modules` and recursively lowers each module, including behavioral
+children. `tech_map` and `fpga_map` recursively map these child modules while
+retaining their hierarchy and instance links. Parameter overrides still use
+project-wide specialized elaboration. The result uses logical cells rather
+than a particular vendor library.
 
 ### Structural/continuous-assignment path
 
@@ -113,11 +118,13 @@ as gates.
 
 ### Behavioral path
 
-When a module has procedural blocks, or a project contains hierarchy or
-parameter overrides, `generic_map` re-elaborates the source through slang and
-uses the behavioral synthesizer. This path traverses the elaborated hierarchy,
-handles generated blocks that exist after elaboration, expands supported
-arrays/words into individual bits, and creates a bit-level Boolean graph.
+When a module has procedural blocks, or a project uses parameter overrides,
+`generic_map` re-elaborates the source through slang and uses the behavioral
+synthesizer. Behavioral project modules are lowered recursively while
+preserving their module-instance boundaries when no parameter overrides are
+specified. The synthesis path handles generated blocks that exist after
+elaboration, expands supported arrays/words into individual bits, and creates
+a bit-level Boolean graph.
 
 Procedural `if` and `case` branches are modeled as muxes between possible
 values. A clocked process creates D flip-flops; asynchronous reset/set controls

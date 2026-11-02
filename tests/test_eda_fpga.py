@@ -401,10 +401,20 @@ def test_project_overload_with_top_and_lut_size():
 def test_ibex_core_maps_and_matches_generic():
     project = eda.parse_verilog(str(IBEX))
     generic = eda.generic_map(project, "ibex_core")
+    assert generic.child_modules
     mapped = eda.fpga_map(generic, 6)
-    seq = sum(v for t, v in counts(generic).items() if t.startswith("DFF"))
-    assert sum(v for t, v in counts(mapped).items() if t.startswith("DFF")) == seq
-    assert len(mapped.instances) < len(generic.instances) // 2
+
+    def hierarchy_counts(module):
+        result = Counter(i.cell_type for i in module.instances)
+        for child in module.child_modules:
+            result.update(hierarchy_counts(child))
+        return result
+
+    generic_counts = hierarchy_counts(generic)
+    mapped_counts = hierarchy_counts(mapped)
+    seq = sum(v for t, v in generic_counts.items() if t.startswith("DFF"))
+    assert sum(v for t, v in mapped_counts.items() if t.startswith("DFF")) == seq
+    assert sum(mapped_counts.values()) < sum(generic_counts.values()) // 2
     assert_equivalent(generic, mapped, vectors=3)
 
 

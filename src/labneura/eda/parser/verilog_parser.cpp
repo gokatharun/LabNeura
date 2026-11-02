@@ -224,6 +224,34 @@ Expression lower_expression(const slang::ast::Expression& expression,
     }
 }
 
+template <typename Callback>
+void visit_generate_instances(const slang::ast::Scope& scope,
+                              Callback&& callback) {
+    const auto visit_scope = [&](const auto& self,
+                                 const slang::ast::Scope& current,
+                                 bool inside_generate) -> void {
+        for (const auto& member : current.members()) {
+            if (member.kind == slang::ast::SymbolKind::Instance) {
+                if (inside_generate) {
+                    callback(member.as<slang::ast::InstanceSymbol>());
+                }
+            } else if (member.kind == slang::ast::SymbolKind::GenerateBlock) {
+                const auto& block =
+                    member.as<slang::ast::GenerateBlockSymbol>();
+                if (!block.isUninstantiated) self(self, block, true);
+            } else if (member.kind ==
+                       slang::ast::SymbolKind::GenerateBlockArray) {
+                const auto& array =
+                    member.as<slang::ast::GenerateBlockArraySymbol>();
+                for (const auto* entry : array.entries) {
+                    if (!entry->isUninstantiated) self(self, *entry, true);
+                }
+            }
+        }
+    };
+    visit_scope(visit_scope, scope, false);
+}
+
 Module summarize_module(const slang::ast::InstanceSymbol& instance,
                        const slang::SourceManager& source_manager,
                        bool project_summary = false,
@@ -321,6 +349,17 @@ Module summarize_module(const slang::ast::InstanceSymbol& instance,
         }
     }
 
+    visit_generate_instances(instance.body, [&](const auto& child) {
+        const std::string cell_type(child.getDefinition().name);
+        instances.emplace_back(
+            std::string(child.name), cell_type,
+            module_port_connections(child, source_manager));
+        if (preserve_hierarchy && child.isModule()) {
+            child_modules.push_back(summarize_module(
+                child, source_manager, false, true, std::string(child.name)));
+        }
+    });
+
     return Module(std::string(instance.getDefinition().name), std::move(ports),
                   std::move(nets), std::move(instances),
                   std::move(assignments), behavioral,
@@ -370,7 +409,7 @@ Module parse_verilog(const std::string& path) {
     module.parsed_context_ = parsed_context;
     const auto retain_behavioral_context =
         [&](const auto& self, Module& current) -> void {
-        if (current.is_behavioral()) current.parsed_context_ = parsed_context;
+        current.parsed_context_ = parsed_context;
         for (auto& child : current.child_modules_) self(self, child);
     };
     retain_behavioral_context(retain_behavioral_context, module);
@@ -455,9 +494,7 @@ Project parse_verilog_directory(const std::string& directory) {
         const std::string module_name(instance.getDefinition().name);
         if (module_names.insert(module_name).second) {
             auto module = summarize_module(instance, driver.sourceManager, true);
-            if (module.is_behavioral()) {
-                module.parsed_context_ = project.parsed_context_;
-            }
+            module.parsed_context_ = project.parsed_context_;
             modules.push_back(std::move(module));
 
             for (const auto& member : instance.body.members()) {
@@ -465,6 +502,9 @@ Project parse_verilog_directory(const std::string& directory) {
                     self(self, member.as<slang::ast::InstanceSymbol>());
                 }
             }
+            visit_generate_instances(instance.body, [&](const auto& child) {
+                self(self, child);
+            });
         }
     };
     for (const auto* top : root_symbol.topInstances) {

@@ -428,23 +428,22 @@ Module generic_map(const Module& rtl_module) {
         }
 
         Module mapped;
-        if (source.is_behavioral()) {
+        const bool requires_behavioral_lowering =
+            source.is_behavioral() ||
+            std::any_of(source.get_assignments().begin(),
+                        source.get_assignments().end(),
+                        [](const ContinuousAssignment& assignment) {
+                            return !is_identifier(
+                                assignment.get_lhs_expression());
+                        });
+        if (requires_behavioral_lowering) {
             mapped = detail::lower_behavioral_rtl(
                 source.parsed_context_, source.get_name(), {}, true);
-            auto instances = mapped.get_instances();
-            for (const auto& instance : source.get_instances()) {
-                const bool is_hierarchical = std::any_of(
-                    child_modules.begin(), child_modules.end(),
-                    [&](const Module& child) {
-                        return child.get_name() == instance.get_cell_type();
-                    });
-                if (is_hierarchical) instances.push_back(instance);
-            }
             mapped = Module(mapped.get_name(), mapped.get_ports(),
-                            mapped.get_nets(), std::move(instances),
-                            mapped.get_assignments(), false,
+                            mapped.get_nets(), mapped.get_instances(),
+                            mapped.get_assignments(), mapped.is_behavioral(),
                             source.get_hierarchy_instance_name(),
-                            std::move(child_modules));
+                            mapped.get_child_modules());
         } else {
             GenericMapper mapper(source);
             std::vector<ContinuousAssignment> remaining_assignments;
@@ -608,8 +607,42 @@ Module generic_map(const Project& project, const std::string& top,
         throw std::runtime_error("top module '" + top_name + "' not found in project");
     }
 
-    // Everything reachable from the top is lowered together; purely structural
-    // flat modules keep the lightweight assignment-based mapping.
+    if (parameters.empty()) {
+        std::unordered_set<std::string> active_modules;
+        const auto build_hierarchy =
+            [&](const auto& self, const Module& source,
+                const std::string& instance_name) -> Module {
+            if (!active_modules.insert(source.get_name()).second) {
+                throw std::runtime_error(
+                    "recursive module hierarchy detected at '" +
+                    source.get_name() + "'");
+            }
+
+            std::vector<Module> children;
+            for (const auto& instance : source.get_instances()) {
+                const auto child = by_name.find(instance.get_cell_type());
+                if (child != by_name.end()) {
+                    children.push_back(
+                        self(self, *child->second, instance.get_name()));
+                }
+            }
+
+            active_modules.erase(source.get_name());
+            Module hierarchy_node(
+                source.get_name(), source.get_ports(), source.get_nets(),
+                source.get_instances(), source.get_assignments(),
+                source.is_behavioral(), instance_name, std::move(children));
+            hierarchy_node.parsed_context_ = source.parsed_context_;
+            return hierarchy_node;
+        };
+        auto hierarchy =
+            build_hierarchy(build_hierarchy, *top_module->second, {});
+        hierarchy.parsed_context_ = project.parsed_context_;
+        return generic_map(hierarchy);
+    }
+
+    // Parameter overrides use project-wide elaboration so the specialized
+    // design reflects the selected top-level values.
     bool needs_lowering = !parameters.empty();
     std::vector<const Module*> pending{top_module->second};
     std::unordered_set<std::string> visited;
@@ -626,7 +659,8 @@ Module generic_map(const Project& project, const std::string& top,
         }
     }
     if (!needs_lowering) return generic_map(*top_module->second);
-    return detail::lower_behavioral_rtl(project.parsed_context_, top_name, parameters);
+    return detail::lower_behavioral_rtl(project.parsed_context_, top_name,
+                                        parameters, true);
 }
 
 }  // namespace labneura::eda

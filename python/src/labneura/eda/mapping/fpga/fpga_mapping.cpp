@@ -489,7 +489,17 @@ Module fpga_map(const Module& generic_module, std::size_t lut_size,
         throw std::invalid_argument(
             "fpga_map needs a generic netlist; run generic_map first");
     }
-    return Mapper(generic_module, lut_size, library).run();
+    auto mapped = Mapper(generic_module, lut_size, library).run();
+    std::vector<Module> child_modules;
+    child_modules.reserve(generic_module.get_child_modules().size());
+    for (const auto& child : generic_module.get_child_modules()) {
+        child_modules.push_back(fpga_map(child, lut_size, library));
+    }
+    return Module(mapped.get_name(), mapped.get_ports(), mapped.get_nets(),
+                  mapped.get_instances(), mapped.get_assignments(),
+                  mapped.is_behavioral(),
+                  generic_module.get_hierarchy_instance_name(),
+                  std::move(child_modules));
 }
 
 Module fpga_map(const Project& project, const std::string& top,

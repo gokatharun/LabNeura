@@ -165,7 +165,9 @@ unsupported or unspecified logic values are rejected explicitly.
 Modules with `always` blocks are flagged by `parse_verilog` (`is_behavioral`)
 and lowered by `generic_map` (flops, latches, muxes, arithmetic, function/task
 inlining). Both `generic_map` and `tech_map` also accept a whole project and a
-top module, flattening the hierarchy below it:
+top module. `generic_map(project, top)` preserves the module hierarchy in
+`child_modules` while recursively lowering each module; technology and FPGA
+mapping retain and map the same child-module tree.
 
 ```python
 project = eda.parse_verilog("examples/verilog/picorv32")
