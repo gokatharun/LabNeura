@@ -37,7 +37,6 @@ ifneq (,$(VENV_PYTHON))
 endif
 PIP = $(PYTHON) -m pip
 TWINE = $(PYTHON) -m twine
-PIP_CONFIG_SETTINGS ?=
 # Older pip versions copy local projects to a temporary directory, preventing
 # scikit-build-core from reusing its configured CMake build directory.
 PIP_IN_TREE_BUILD := $(shell $(PYTHON) -c \
@@ -106,7 +105,7 @@ sync-src:
 
 .PHONY: install
 install: sync-src
-	$(PIP) install $(PIP_IN_TREE_BUILD) $(PIP_CONFIG_SETTINGS) . --no-cache-dir
+	$(PIP) install $(PIP_IN_TREE_BUILD) . --no-cache-dir
 
 # --------------------------------------
 # Smoke test
@@ -144,8 +143,8 @@ else
 	set -e; \
 	export LABNEURA_COVERAGE=1; \
 	export LLVM_PROFILE_FILE=labneura.profraw; \
-	$(MAKE) clean install test \
-		PIP_CONFIG_SETTINGS='--config-settings=cmake.define.LABNEURA_ENABLE_COVERAGE=ON'; \
+	export CMAKE_ARGS="-DLABNEURA_ENABLE_COVERAGE=ON"; \
+	$(MAKE) clean install test; \
 	$(LLVM_PROFDATA) merge -sparse labneura.profraw -o labneura.profdata; \
 	SO_PATH=`$(PYTHON) -c "import $(MODULE_NAME); import os; print(os.path.abspath($(MODULE_NAME).__file__))"`; \
 	$(LLVM_COV) show $$SO_PATH \
