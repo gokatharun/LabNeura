@@ -67,9 +67,8 @@ C++20 compiler; GCC 13 or newer is required when using GCC. Older GCC versions
 fail early with a message explaining how to install a wheel or select a newer
 compiler.
 
-GitHub Releases build and publish wheels for Linux x86_64, macOS Intel, and
-Apple Silicon across Python 3.8–3.13. Pull requests also build and test the
-source package with GCC 13.
+GitHub Actions automation is currently disabled. Build and publish packages
+manually using the commands in the [Publishing Checklist](docs/PUBLISHING_CHECKLIST.md).
 
 ## 🎯 Quick Start
 
@@ -464,11 +463,8 @@ CPU feature detection uses:
 - **GitHub**: https://github.com/gokatharun/LabNeura
 
 ### CI/CD Pipeline
-GitHub Actions workflow automates:
-1. Build distribution packages
-2. Run test suite
-3. Publish to TestPyPI (manual trigger)
-4. Publish to PyPI (on release tags)
+GitHub Actions workflows are currently disabled. Builds, tests, and package
+publishing must be run manually; automation may be reintroduced later.
 
 ## 📝 License
 

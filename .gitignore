@@ -23,6 +23,12 @@ coverage_html
 coverage_html/*
 .DS_Store
 
+# Generated netlist graph and rendered image outputs
+*.dot
+*.png
+*.jpg
+*.jpeg
+
 # Ignore profiling data files
 labneura.profdata
 labneura.profraw
