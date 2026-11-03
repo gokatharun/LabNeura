@@ -135,7 +135,6 @@ jobs:
               done
             } >> "$GITHUB_STEP_SUMMARY"
           fi
-
           echo "exit_code=$build_status" >> "$GITHUB_OUTPUT"
 
       - name: Upload built packages

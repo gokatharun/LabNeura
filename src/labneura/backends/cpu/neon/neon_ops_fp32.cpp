@@ -6,6 +6,7 @@
 #include "labneura/types.hpp"
 #include <arm_neon.h>
 #include <algorithm>
+#include <cstring>
 #include <stdexcept>
 
 namespace labneura {
