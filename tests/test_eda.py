@@ -524,6 +524,126 @@ def test_parse_verilog_reads_ansi_ports_and_assignments():
     assert serialized_module["instances"] == []
 
 
+def test_parse_verilog_collects_generate_block_continuous_assignments(tmp_path):
+    verilog_path = tmp_path / "generated_assignment.v"
+    verilog_path.write_text(
+        """
+        module top(input wire a, b, output wire y);
+            generate
+                if (1) begin : generated
+                    assign y = a ^ b;
+                end
+            endgenerate
+        endmodule
+        """,
+        encoding="utf-8",
+    )
+
+    parsed = eda.parse_verilog(str(verilog_path))
+
+    assert len(parsed.assignments) == 1
+    assert (parsed.assignments[0].lhs, parsed.assignments[0].rhs) == (
+        "y",
+        "a ^ b",
+    )
+    generic = eda.generic_map(parsed)
+    assert generic.assignments == []
+    assert [(instance.cell_type, {
+        connection.pin: connection.net for connection in instance.connections
+    }) for instance in generic.instances] == [
+        ("XOR2", {"A": "a", "B": "b", "Y": "y"})
+    ]
+
+    project = eda.parse_verilog(str(tmp_path))
+    project_generic = eda.generic_map(project, "top")
+    assert [instance.cell_type for instance in project_generic.instances] == [
+        "XOR2"
+    ]
+
+
+def test_parse_verilog_ignores_uninstantiated_generate_branch_assignments(tmp_path):
+    source = tmp_path / "conditional_generate.sv"
+    source.write_text(
+        """
+        module top(input logic a, b, output logic y);
+            if (1) begin : selected
+                assign y = a;
+            end else begin : unselected
+                assign y = b;
+            end
+        endmodule
+        """,
+        encoding="utf-8",
+    )
+
+    parsed = eda.parse_verilog(str(source))
+
+    assert [(assignment.lhs, assignment.rhs)
+            for assignment in parsed.assignments] == [("y", "a")]
+
+
+def test_generic_map_lowers_generate_loop_continuous_assignments(tmp_path):
+    verilog_path = tmp_path / "generated_loop_assignment.sv"
+    verilog_path.write_text(
+        """
+        module top(input logic [3:0] a, b, output logic [3:0] y);
+            for (genvar i = 0; i < 4; i++) begin : generated
+                assign y[i] = a[i] ^ b[i];
+            end
+        endmodule
+        """,
+        encoding="utf-8",
+    )
+
+    parsed = eda.parse_verilog(str(verilog_path))
+
+    assert len(parsed.assignments) == 4
+    assert {assignment.lhs for assignment in parsed.assignments} == {
+        f"y[{bit}]" for bit in range(4)
+    }
+    generic = eda.generic_map(parsed)
+    assert [instance.cell_type for instance in generic.instances] == [
+        "XOR2",
+        "XOR2",
+        "XOR2",
+        "XOR2",
+    ]
+
+
+def test_generate_assignments_are_preserved_with_process_blocks(tmp_path):
+    source = tmp_path / "generate_process.sv"
+    source.write_text(
+        """
+        module generate_process(
+            input logic clk, rst,
+            input logic [3:0] a, b,
+            output logic [3:0] q
+        );
+            wire [3:0] xor_bits;
+            for (genvar i = 0; i < 4; i++) begin : gen_xor
+                assign xor_bits[i] = a[i] ^ b[i];
+            end
+            always_ff @(posedge clk or posedge rst) begin
+                if (rst) q <= 4'b0000;
+                else q <= xor_bits;
+            end
+        endmodule
+        """,
+        encoding="utf-8",
+    )
+
+    parsed = eda.parse_verilog(str(source))
+
+    assert parsed.is_behavioral
+    assert len(parsed.assignments) == 4
+    generic = eda.generic_map(parsed)
+    assert generic.assignments == []
+    assert sum(instance.cell_type == "XOR2"
+               for instance in generic.instances) == 4
+    assert sum(instance.cell_type == "DFFR"
+               for instance in generic.instances) == 4
+
+
 def test_staged_mapping_accepts_an_explicit_liberty_library(tmp_path):
     verilog_path = tmp_path / "custom_library.v"
     liberty_path = tmp_path / "custom_library.lib"
@@ -715,6 +835,223 @@ def test_generic_map_uses_library_independent_multi_input_cells():
     assert [instance.cell_type for instance in module.instances].count("OR3") == 1
 
 
+@pytest.mark.parametrize(
+    ("operator", "cell_type"),
+    [("&", "AND2"), ("|", "OR2"), ("^", "XOR2")],
+)
+def test_generic_map_lowers_vector_bitwise_assignments_per_bit(
+    tmp_path, operator, cell_type
+):
+    verilog_path = tmp_path / "vector_assignment.v"
+    verilog_path.write_text(
+        f"""
+        module top(input wire [7:4] a, b, output wire [7:4] y);
+            assign y = a {operator} b;
+        endmodule
+        """,
+        encoding="utf-8",
+    )
+
+    generic = eda.generic_map(eda.parse_verilog(str(verilog_path)))
+
+    assert generic.assignments == []
+    assert len(generic.instances) == 4
+    assert [
+        (instance.cell_type, {
+            connection.pin: connection.net
+            for connection in instance.connections
+        })
+        for instance in generic.instances
+    ] == [
+        (cell_type, {"A": f"a[{bit}]", "B": f"b[{bit}]", "Y": f"y[{bit}]"})
+        for bit in range(4, 8)
+    ]
+
+
+def test_generic_map_truncates_wider_vector_assignment_to_low_bits(tmp_path):
+    verilog_path = tmp_path / "vector_truncation.v"
+    verilog_path.write_text(
+        """
+        module top(input wire [3:0] a, b, output wire [2:0] y);
+            assign y = a ^ b;
+        endmodule
+        """,
+        encoding="utf-8",
+    )
+
+    generic = eda.generic_map(eda.parse_verilog(str(verilog_path)))
+
+    assert [
+        {connection.pin: connection.net for connection in instance.connections}
+        for instance in generic.instances
+    ] == [
+        {"A": f"a[{bit}]", "B": f"b[{bit}]", "Y": f"y[{bit}]"}
+        for bit in range(3)
+    ]
+
+
+def test_generic_map_lowers_nested_vector_boolean_and_mux_expressions(tmp_path):
+    source = tmp_path / "nested_vector_expressions.sv"
+    source.write_text(
+        """
+        module top(
+            input logic select,
+            input logic [3:0] a, b, c,
+            output logic [3:0] y, z
+        );
+            assign y = (a & b) ^ c;
+            assign z = select ? a : b;
+        endmodule
+        """,
+        encoding="utf-8",
+    )
+
+    generic = eda.generic_map(eda.parse_verilog(str(source)))
+
+    assert sum(instance.cell_type == "AND2"
+               for instance in generic.instances) == 4
+    assert sum(instance.cell_type == "XOR2"
+               for instance in generic.instances) == 4
+    muxes = [
+        {connection.pin: connection.net for connection in instance.connections}
+        for instance in generic.instances
+        if instance.cell_type == "MUX2"
+    ]
+    assert muxes == [
+        {
+            "S": "select",
+            "A1": f"a[{bit}]",
+            "A0": f"b[{bit}]",
+            "Y": f"z[{bit}]",
+        }
+        for bit in range(4)
+    ]
+
+
+def test_generic_map_lowers_vector_inversion_and_constants_per_bit(tmp_path):
+    verilog_path = tmp_path / "vector_unary_constants.v"
+    verilog_path.write_text(
+        """
+        module top(input wire [3:0] a,
+                   output wire [3:0] inverted,
+                   output wire [3:0] constant);
+            assign inverted = ~a;
+            assign constant = 4'b1010;
+        endmodule
+        """,
+        encoding="utf-8",
+    )
+
+    generic = eda.generic_map(eda.parse_verilog(str(verilog_path)))
+
+    inverters = [
+        {connection.pin: connection.net for connection in instance.connections}
+        for instance in generic.instances
+        if instance.cell_type == "INV"
+    ]
+    assert inverters == [
+        {"A": f"a[{bit}]", "Y": f"inverted[{bit}]"} for bit in range(4)
+    ]
+    ties = {
+        connection.net
+        for instance in generic.instances
+        if instance.cell_type == "TIEHI"
+        for connection in instance.connections
+    }
+    lows = {
+        connection.net
+        for instance in generic.instances
+        if instance.cell_type == "TIELO"
+        for connection in instance.connections
+    }
+    assert ties == {"constant[1]", "constant[3]"}
+    assert lows == {"constant[0]", "constant[2]"}
+
+
+@pytest.mark.parametrize(
+    ("literal", "high_bits"),
+    [("4'hA", {1, 3}), ("4'o12", {1, 3})],
+)
+def test_generic_map_lowers_hex_and_octal_vector_constants(
+    tmp_path, literal, high_bits
+):
+    source = tmp_path / "based_vector_constant.v"
+    source.write_text(
+        f"module top(output wire [3:0] y); assign y = {literal}; endmodule",
+        encoding="utf-8",
+    )
+
+    generic = eda.generic_map(eda.parse_verilog(str(source)))
+    high_ties = {
+        int(connection.net.split("[")[1][:-1])
+        for instance in generic.instances
+        if instance.cell_type == "TIEHI"
+        for connection in instance.connections
+    }
+
+    assert high_ties == high_bits
+
+
+def test_generic_map_rejects_vector_xz_constants(tmp_path):
+    source = tmp_path / "unknown_vector_constant.v"
+    source.write_text(
+        "module top(output wire [3:0] y); assign y = 4'b10x1; endmodule",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RuntimeError, match="vector X/Z constants"):
+        eda.generic_map(eda.parse_verilog(str(source)))
+
+
+def test_generic_map_rejects_vector_zero_extension_until_supported(tmp_path):
+    source = tmp_path / "vector_extension.v"
+    source.write_text(
+        "module top(input wire [1:0] a, output wire [3:0] y); "
+        "assign y = a; endmodule",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RuntimeError, match="does not support vector sign or zero extension"):
+        eda.generic_map(eda.parse_verilog(str(source)))
+
+
+def test_generic_map_rejects_mismatched_vector_gate_widths(tmp_path):
+    source = tmp_path / "mismatched_vector_gate.v"
+    source.write_text(
+        """
+        module top(input wire [3:0] a, input wire [1:0] b,
+                   output wire [3:0] y);
+            and u_and(y, a, b);
+        endmodule
+        """,
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RuntimeError, match="mismatched vector connections"):
+        eda.generic_map(eda.parse_verilog(str(source)))
+
+
+def test_generic_map_expands_vector_gate_primitives_per_bit(tmp_path):
+    verilog_path = tmp_path / "vector_primitive.v"
+    verilog_path.write_text(
+        """
+        module top(input wire [3:0] a, b, output wire [3:0] y);
+            and u_and(y, a, b);
+        endmodule
+        """,
+        encoding="utf-8",
+    )
+
+    generic = eda.generic_map(eda.parse_verilog(str(verilog_path)))
+
+    assert [(instance.cell_type, {
+        connection.pin: connection.net for connection in instance.connections
+    }) for instance in generic.instances] == [
+        ("AND2", {"Y": f"y[{bit}]", "A": f"a[{bit}]", "B": f"b[{bit}]"})
+        for bit in range(4)
+    ]
+
+
 def test_generic_map_renames_all_boolean_gate_primitives(tmp_path):
     verilog_path = tmp_path / "boolean_gate_primitives.v"
     verilog_path.write_text(
@@ -804,6 +1141,7 @@ def test_tech_map_matches_liberty_logic_by_function_and_pin_names(tmp_path):
         ("rtranif0", "y, a, b"),
         ("rtranif1", "y, a, b"),
         ("cmos", "y, a, b, c"),
+        ("rcmos", "y, a, b, c"),
         ("nmos", "y, a, b"),
         ("pmos", "y, a, b"),
         ("rnmos", "y, a, b"),
@@ -1182,6 +1520,18 @@ def test_parse_verilog_directory_reports_syntax_errors(tmp_path):
 
     with pytest.raises(RuntimeError, match="slang failed to parse|compile"):
         eda.parse_verilog(str(project_dir))
+
+
+def test_parse_verilog_reports_semantic_compilation_errors(tmp_path):
+    source = tmp_path / "unknown_module.v"
+    source.write_text(
+        "module top(input a, output y); "
+        "missing_cell u(.a(a), .y(y)); endmodule",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RuntimeError, match="slang failed to compile"):
+        eda.parse_verilog(str(source))
 
 
 def test_tensor_supports_two_dimensions():

@@ -59,6 +59,48 @@ std::optional<bool> literal_value(const Expression& expression) {
                       1) != 0;
 }
 
+bool literal_bit_value(const Expression& expression, std::size_t bit) {
+    std::string source;
+    for (const char character : expression.get_source()) {
+        if (character != '_' && !std::isspace(
+                                    static_cast<unsigned char>(character))) {
+            source.push_back(character);
+        }
+    }
+    if (source.find_first_of("xXzZ?") != std::string::npos) {
+        throw std::runtime_error(
+            "vector X/Z constants cannot be mapped to generic tie cells");
+    }
+    const auto apostrophe = source.find('\'');
+    std::size_t base = 10;
+    std::string digits = source;
+    if (apostrophe != std::string::npos) {
+        const auto base_position =
+            source.find_first_of("bBoOdDhH", apostrophe + 1);
+        if (base_position == std::string::npos) {
+            throw std::runtime_error(
+                "unsupported vector constant in generic mapping");
+        }
+        switch (static_cast<char>(std::tolower(
+            static_cast<unsigned char>(source[base_position])))) {
+            case 'b': base = 2; break;
+            case 'o': base = 8; break;
+            case 'd': base = 10; break;
+            case 'h': base = 16; break;
+            default:
+                throw std::runtime_error(
+                    "unsupported vector constant in generic mapping");
+        }
+        digits = source.substr(base_position + 1);
+    }
+    if (digits.empty()) {
+        throw std::runtime_error("unsupported vector constant in generic mapping");
+    }
+    const auto value = std::stoull(digits, nullptr, static_cast<int>(base));
+    return bit < sizeof(value) * 8 &&
+           (value & (std::uint64_t{1} << bit)) != 0;
+}
+
 std::string pin_name(std::size_t index) {
     if (index >= 26) {
         throw std::runtime_error(
@@ -114,20 +156,34 @@ std::optional<std::string> generic_type_for_primitive(
 bool is_switch_level_primitive(const std::string& cell_type) {
     return cell_type == "cmos" || cell_type == "nmos" ||
            cell_type == "pmos" || cell_type == "rnmos" ||
-           cell_type == "rpmos" || cell_type == "tran" ||
+           cell_type == "rpmos" || cell_type == "rcmos" ||
+           cell_type == "tran" ||
            cell_type == "rtran" || cell_type == "tranif0" ||
            cell_type == "tranif1" || cell_type == "rtranif0" ||
            cell_type == "rtranif1";
 }
 
 struct GenericMapper {
+    struct NetShape {
+        std::size_t width;
+        std::optional<std::int64_t> left;
+        std::optional<std::int64_t> right;
+    };
+
     std::vector<Net> nets;
     std::vector<Instance> instances;
     std::unordered_set<std::string> used_names;
+    std::unordered_map<std::string, NetShape> net_shapes;
     std::size_t next_index = 0;
 
     explicit GenericMapper(const Module& module) {
-        for (const auto& net : module.get_nets()) used_names.insert(net.get_name());
+        for (const auto& net : module.get_nets()) {
+            used_names.insert(net.get_name());
+            net_shapes.emplace(
+                net.get_name(),
+                NetShape{net.get_width(), net.get_left_index(),
+                         net.get_right_index()});
+        }
         for (const auto& instance : module.get_instances()) {
             used_names.insert(instance.get_name());
         }
@@ -139,6 +195,161 @@ struct GenericMapper {
             name = prefix + std::to_string(next_index++);
         } while (!used_names.insert(name).second);
         return name;
+    }
+
+    std::size_t net_width(const std::string& name) const {
+        const auto net = net_shapes.find(name);
+        return net == net_shapes.end() ? 1 : net->second.width;
+    }
+
+    std::string bit_reference(const std::string& name, std::size_t width,
+                              std::size_t bit) const {
+        if (width == 1) return name;
+        const auto net = net_shapes.find(name);
+        if (net == net_shapes.end() || net->second.width != width ||
+            !net->second.left || !net->second.right) {
+            throw std::runtime_error(
+                "generic mapping cannot resolve vector bit '" + name + "'");
+        }
+        const auto index =
+            *net->second.left > *net->second.right
+                ? *net->second.right + static_cast<std::int64_t>(bit)
+                : *net->second.right - static_cast<std::int64_t>(bit);
+        return name + "[" + std::to_string(index) + "]";
+    }
+
+    std::string lower_vector_operand(const Expression& expression,
+                                     std::size_t bit, std::size_t width) {
+        if (is_identifier(expression)) {
+            if (expression.get_width() != width) {
+                throw std::runtime_error(
+                    "generic mapping does not support vector operands with "
+                    "different widths");
+            }
+            return bit_reference(expression.get_source(), width, bit);
+        }
+        if (expression.get_kind() == ExpressionKind::BitSelect &&
+            expression.get_width() == 1 && width == 1) {
+            return expression.get_source();
+        }
+        if (expression.get_width() != width) {
+            throw std::runtime_error(
+                "generic mapping does not support vector operands with "
+                "different widths");
+        }
+
+        const auto temporary = unique_name("__generic_net");
+        nets.emplace_back(temporary, NetType::Internal);
+        lower_vector_bit(expression, bit, temporary, width);
+        return temporary;
+    }
+
+    void lower_vector_bit(const Expression& expression, std::size_t bit,
+                          const std::string& destination,
+                          std::size_t width) {
+        if (expression.get_width() != width) {
+            throw std::runtime_error(
+                "generic mapping does not support vector expressions with "
+                "different widths");
+        }
+        if (expression.get_kind() == ExpressionKind::Literal) {
+            add_cell(literal_bit_value(expression, bit) ? "TIEHI" : "TIELO",
+                     {}, destination);
+            return;
+        }
+        if (expression.get_kind() == ExpressionKind::Opaque &&
+            expression.get_value() == "implicit_conversion" &&
+            expression.get_operands().size() == 1) {
+            const auto& operand = expression.get_operands().front();
+            if (operand.get_width() < width) {
+                throw std::runtime_error(
+                    "generic mapping does not support vector sign or zero extension");
+            }
+            lower_vector_bit(operand, bit, destination, operand.get_width());
+            return;
+        }
+        const auto& operands = expression.get_operands();
+        if (expression.get_kind() == ExpressionKind::Binary &&
+            (expression.get_value() == "&" || expression.get_value() == "|" ||
+             expression.get_value() == "^") &&
+            operands.size() == 2) {
+            const auto left = lower_vector_operand(operands[0], bit, width);
+            const auto right = lower_vector_operand(operands[1], bit, width);
+            add_cell(generic_type_for_operator(expression.get_value(), 2),
+                     {{"A", left}, {"B", right}}, destination);
+            return;
+        }
+        if (expression.get_kind() == ExpressionKind::Unary &&
+            expression.get_value() == "~" && operands.size() == 1) {
+            const auto operand =
+                lower_vector_operand(operands.front(), bit, width);
+            add_cell("INV", {{"A", operand}}, destination);
+            return;
+        }
+        if (expression.get_kind() == ExpressionKind::Conditional &&
+            operands.size() == 3 && operands[0].get_width() == 1) {
+            const auto select_name = unique_name("__generic_net");
+            const auto select =
+                lower(operands[0], select_name);
+            if (!select) {
+                throw std::runtime_error(
+                    "conditional vector select has no supported generic mapping");
+            }
+            if (*select == select_name) {
+                nets.emplace_back(*select, NetType::Internal);
+            }
+            const auto when_true =
+                lower_vector_operand(operands[1], bit, width);
+            const auto when_false =
+                lower_vector_operand(operands[2], bit, width);
+            add_cell("MUX2",
+                     {{"S", *select}, {"A1", when_true},
+                      {"A0", when_false}},
+                     destination);
+            return;
+        }
+        throw std::runtime_error(
+            "vector expression '" + expression.get_source() +
+            "' has no supported generic mapping");
+    }
+
+    void lower_vector_assignment(const Expression& expression,
+                                 const std::string& destination,
+                                 std::size_t output_width) {
+        const auto expression_width = expression.get_width();
+        if (expression_width == 0 || output_width == 0 ||
+            expression_width < output_width) {
+            throw std::runtime_error(
+                "generic mapping does not support mismatched vector assignment widths");
+        }
+
+        const auto bits = output_width;
+        for (std::size_t bit = 0; bit < bits; ++bit) {
+            const auto target = output_width == 1
+                                    ? destination
+                                    : bit_reference(destination, output_width,
+                                                    bit);
+            if (expression_width > 1 &&
+                !is_identifier(expression)) {
+                lower_vector_bit(expression, bit, target, expression_width);
+                continue;
+            }
+
+            const auto source =
+                expression_width == 1
+                    ? lower(expression, target)
+                    : std::optional<std::string>(
+                          bit_reference(expression.get_source(),
+                                        expression_width, bit));
+            if (!source) {
+                throw std::runtime_error(
+                    "continuous assignment '" + expression.get_source() +
+                    "' has no supported generic mapping");
+            }
+            if (*source != target) {
+                add_cell("BUF", {{"A", *source}}, target);
+            }
+        }
     }
 
     void add_cell(std::string type, std::vector<PinConnection> connections,
@@ -166,7 +377,20 @@ struct GenericMapper {
         std::vector<std::string> input_nets;
         input_nets.reserve(connections.size());
         for (const auto& connection : connections) {
-            if (connection.get_pin() != "Y") {
+            if (connection.get_pin() == "Y") {
+                if (net_width(connection.get_net()) != 1) {
+                    throw std::runtime_error(
+                        "generic mapping does not support vector user-defined "
+                        "primitive '" +
+                        instance.get_cell_type() + "'");
+                }
+            } else {
+                if (net_width(connection.get_net()) != 1) {
+                    throw std::runtime_error(
+                        "generic mapping does not support vector user-defined "
+                        "primitive '" +
+                        instance.get_cell_type() + "'");
+                }
                 input_nets.push_back(connection.get_net());
             }
         }
@@ -315,6 +539,21 @@ struct GenericMapper {
 
     std::optional<std::string> lower(const Expression& expression,
                                      const std::string& destination) {
+        if (expression.get_kind() == ExpressionKind::Opaque &&
+            expression.get_value() == "implicit_conversion" &&
+            expression.get_operands().size() == 1) {
+            const auto& operand = expression.get_operands().front();
+            if (operand.get_width() == 1 ||
+                operand.get_kind() == ExpressionKind::Literal) {
+                return lower(operand, destination);
+            }
+            const auto signal =
+                lower_vector_operand(operand, 0, operand.get_width());
+            if (signal != destination) {
+                add_cell("BUF", {{"A", signal}}, destination);
+            }
+            return destination;
+        }
         if (is_identifier(expression)) return expression.get_source();
         if (expression.get_kind() == ExpressionKind::BitSelect &&
             expression.get_operands().size() == 2) {
@@ -371,6 +610,14 @@ struct GenericMapper {
                 return std::nullopt;
             }
             if (operands.size() < 2) return std::nullopt;
+            if ((expression.get_value() == "&&" ||
+                 expression.get_value() == "||") &&
+                std::any_of(operands.begin(), operands.end(),
+                            [](const Expression* operand) {
+                                return operand->get_width() != 1;
+                            })) {
+                return std::nullopt;
+            }
             std::vector<PinConnection> connections;
             for (std::size_t i = 0; i < operands.size(); ++i) {
                 const auto signal = lower(*operands[i], unique_name("__generic_net"));
@@ -390,6 +637,9 @@ struct GenericMapper {
             (expression.get_value() == "~" || expression.get_value() == "!") &&
             expression.get_operands().size() == 1) {
             const auto& operand = expression.get_operands().front();
+            if (expression.get_value() == "!" && operand.get_width() != 1) {
+                return std::nullopt;
+            }
             const auto signal = lower(operand, unique_name("__generic_net"));
             if (!signal) return std::nullopt;
             if (!is_identifier(operand)) nets.emplace_back(*signal, NetType::Internal);
@@ -399,6 +649,12 @@ struct GenericMapper {
         if (expression.get_kind() == ExpressionKind::Conditional &&
             expression.get_operands().size() == 3) {
             const auto& operands = expression.get_operands();
+            if (std::any_of(operands.begin(), operands.end(),
+                            [](const Expression& operand) {
+                                return operand.get_width() != 1;
+                            })) {
+                return std::nullopt;
+            }
             std::vector<std::string> signals;
             for (const auto& operand : operands) {
                 const auto signal = lower(operand, unique_name("__generic_net"));
@@ -455,8 +711,14 @@ Module generic_map(const Module& rtl_module) {
                         "generic mapping currently requires scalar identifier assignment targets: " +
                         assignment.get_lhs());
                 }
+                const auto& rhs = assignment.get_rhs_expression();
+                if (lhs.get_width() > 1 || rhs.get_width() > 1) {
+                    mapper.lower_vector_assignment(rhs, lhs.get_source(),
+                                                   lhs.get_width());
+                    continue;
+                }
                 const auto result =
-                    mapper.lower(assignment.get_rhs_expression(), lhs.get_source());
+                    mapper.lower(rhs, lhs.get_source());
                 if (!result) {
                     throw std::runtime_error("continuous assignment '" +
                                              assignment.get_lhs() + " = " +
@@ -526,6 +788,14 @@ Module generic_map(const Module& rtl_module) {
                             "primitive gate '" + cell_type +
                             "' has invalid connections");
                     }
+                    if (mapper.net_width(output->get_net()) != 1 ||
+                        mapper.net_width(data->get_net()) != 1 ||
+                        mapper.net_width(enable->get_net()) != 1) {
+                        throw std::runtime_error(
+                            "generic mapping does not support vector "
+                            "tri-state primitive '" +
+                            cell_type + "'");
+                    }
 
                     std::string data_net = data->get_net();
                     std::string enable_net = enable->get_net();
@@ -553,6 +823,56 @@ Module generic_map(const Module& rtl_module) {
                 const auto generic_type = generic_type_for_primitive(
                     cell_type, input_count);
                 if (generic_type) {
+                    const auto& connections = instance.get_connections();
+                    const auto output = std::find_if(
+                        connections.begin(), connections.end(),
+                        [](const PinConnection& connection) {
+                            return connection.get_pin() == "Y";
+                        });
+                    if (output == connections.end()) {
+                        throw std::runtime_error(
+                            "primitive gate '" + cell_type +
+                            "' has no output connection");
+                    }
+                    const auto output_width =
+                        mapper.net_width(output->get_net());
+                    for (const auto& connection : connections) {
+                        const auto connection_width =
+                            mapper.net_width(connection.get_net());
+                        if (connection_width != output_width) {
+                            throw std::runtime_error(
+                                "generic mapping does not support mismatched "
+                                "vector connections on primitive gate '" +
+                                cell_type + "'");
+                        }
+                    }
+                    if (output_width > 1) {
+                        std::vector<Instance> bit_instances;
+                        bit_instances.reserve(output_width);
+                        for (std::size_t bit = 0; bit < output_width; ++bit) {
+                            std::vector<PinConnection> bit_connections;
+                            bit_connections.reserve(connections.size());
+                            for (const auto& connection : connections) {
+                                bit_connections.emplace_back(
+                                    connection.get_pin(),
+                                    mapper.bit_reference(connection.get_net(),
+                                                         output_width, bit));
+                            }
+                            bit_instances.emplace_back(
+                                mapper.unique_name(instance.get_name() +
+                                                   "__bit"),
+                                *generic_type, std::move(bit_connections));
+                        }
+                        instances.erase(instances.begin() +
+                                        static_cast<std::ptrdiff_t>(index));
+                        instances.insert(
+                            instances.begin() +
+                                static_cast<std::ptrdiff_t>(index),
+                            std::make_move_iterator(bit_instances.begin()),
+                            std::make_move_iterator(bit_instances.end()));
+                        index += output_width;
+                        continue;
+                    }
                     instance = Instance(instance.get_name(),
                                         *generic_type,
                                         instance.get_connections());

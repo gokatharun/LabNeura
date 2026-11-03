@@ -19,12 +19,19 @@ jobs:
           - os: ubuntu-latest
             platform: linux
             arch: x86_64
+            linux_arch: x86_64
+          - os: ubuntu-24.04-arm
+            platform: linux-arm64
+            arch: arm64
+            linux_arch: aarch64
           - os: macos-15-intel
             platform: macos-intel
             arch: x86_64
+            linux_arch: ""
           - os: macos-latest
             platform: macos-arm64
             arch: arm64
+            linux_arch: ""
 
     steps:
       - name: Checkout repository
@@ -46,26 +53,59 @@ jobs:
           python -m build --sdist --outdir wheelhouse
 
       - name: Build platform wheels
+        id: wheel-build
+        shell: bash
         env:
           CIBW_BUILD: cp38-* cp39-* cp310-* cp311-* cp312-* cp313-*
-          CIBW_ARCHS_LINUX: x86_64
+          CIBW_ARCHS_LINUX: ${{ matrix.linux_arch }}
           CIBW_ARCHS_MACOS: ${{ matrix.arch }}
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
+          CIBW_MANYLINUX_AARCH64_IMAGE: manylinux_2_28
           CIBW_ENVIRONMENT_MACOS: MACOSX_DEPLOYMENT_TARGET=11.0
           CIBW_TEST_COMMAND: python -c "import labneura"
         run: |
-          python -m cibuildwheel --output-dir wheelhouse
+          set +e
+          set -o pipefail
+          python -m cibuildwheel --output-dir wheelhouse 2>&1 | tee cibuildwheel.log
+          build_status=${PIPESTATUS[0]}
+          set -e
+
+          if [ "$build_status" -eq 0 ]; then
+            echo "Wheel build succeeded for ${{ matrix.platform }}."
+            echo "### ${{ matrix.platform }} wheel build: succeeded" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning title=Wheel build failed::${{ matrix.platform }} wheel build exited with status $build_status; publishing any wheels that completed."
+            {
+              echo "### ${{ matrix.platform }} wheel build: partial or failed"
+              echo "cibuildwheel exited with status $build_status. Any completed distributions will still be uploaded and published."
+              echo
+              echo "#### Build diagnostics"
+              echo '```text'
+              grep -Ei 'error|failed|failure' cibuildwheel.log | tail -n 60 || tail -n 60 cibuildwheel.log
+              echo '```'
+              echo
+              echo "#### Distributions produced"
+              for file in wheelhouse/*; do
+                if [ -f "$file" ]; then basename "$file"; fi
+              done
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          echo "exit_code=$build_status" >> "$GITHUB_OUTPUT"
 
       - name: Upload built packages
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: packages-${{ matrix.platform }}
           path: wheelhouse/*
+          if-no-files-found: ignore
 
   publish:
     name: Publish distributions
     runs-on: ubuntu-latest
     needs: build
+    if: always() && !cancelled()
     steps:
       - name: Download built packages
         uses: actions/download-artifact@v4
@@ -73,12 +113,28 @@ jobs:
           pattern: packages-*
           path: dist
           merge-multiple: true
+          if-no-artifact-found: ignore
 
       - name: Install publishing tools
         run: python -m pip install --upgrade twine
 
       - name: Check distribution metadata
-        run: python -m twine check dist/*
+        shell: bash
+        run: |
+          shopt -s nullglob
+          distributions=(dist/*)
+          if [ "${#distributions[@]}" -eq 0 ]; then
+            echo "::error::No distributions were built successfully; nothing can be published."
+            exit 1
+          fi
+
+          python -m twine check "${distributions[@]}"
+          {
+            echo "### Distributions queued for publishing"
+            for distribution in "${distributions[@]}"; do
+              basename "$distribution"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Publish to PyPI
         if: github.event_name == 'release'

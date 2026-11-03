@@ -437,6 +437,21 @@ Expression lower_expression(const slang::ast::Expression& expression,
             return {labneura::eda::ExpressionKind::Concatenation, "", source,
                     std::move(operands), expression.type->getBitWidth()};
         }
+        case ExpressionKind::Conversion: {
+            auto operand = lower_expression(
+                expression.as<slang::ast::ConversionExpression>().operand(),
+                source_manager);
+            const auto width = expression.type->getBitWidth();
+            if (width == operand.get_width()) return operand;
+            if (operand.get_kind() ==
+                    labneura::eda::ExpressionKind::Literal &&
+                width == 1) {
+                return {operand.get_kind(), operand.get_value(), source, {},
+                        width};
+            }
+            return {labneura::eda::ExpressionKind::Opaque,
+                    "implicit_conversion", source, {std::move(operand)}, width};
+        }
         default:
             return {labneura::eda::ExpressionKind::Opaque, "", source, {},
                     expression.type->getBitWidth()};
@@ -454,6 +469,33 @@ void visit_generate_instances(const slang::ast::Scope& scope,
                 if (inside_generate) {
                     callback(member.as<slang::ast::InstanceSymbol>());
                 }
+            } else if (member.kind == slang::ast::SymbolKind::GenerateBlock) {
+                const auto& block =
+                    member.as<slang::ast::GenerateBlockSymbol>();
+                if (!block.isUninstantiated) self(self, block, true);
+            } else if (member.kind ==
+                       slang::ast::SymbolKind::GenerateBlockArray) {
+                const auto& array =
+                    member.as<slang::ast::GenerateBlockArraySymbol>();
+                for (const auto* entry : array.entries) {
+                    if (!entry->isUninstantiated) self(self, *entry, true);
+                }
+            }
+        }
+    };
+    visit_scope(visit_scope, scope, false);
+}
+
+template <typename Callback>
+void visit_generate_assignments(const slang::ast::Scope& scope,
+                                Callback&& callback) {
+    const auto visit_scope = [&](const auto& self,
+                                 const slang::ast::Scope& current,
+                                 bool inside_generate) -> void {
+        for (const auto& member : current.members()) {
+            if (inside_generate &&
+                member.kind == slang::ast::SymbolKind::ContinuousAssign) {
+                callback(member.as<slang::ast::ContinuousAssignSymbol>());
             } else if (member.kind == slang::ast::SymbolKind::GenerateBlock) {
                 const auto& block =
                     member.as<slang::ast::GenerateBlockSymbol>();
@@ -593,6 +635,15 @@ Module summarize_module(const slang::ast::InstanceSymbol& instance,
             child_modules.push_back(summarize_module(
                 child, source_manager, false, true, std::string(child.name)));
         }
+    });
+
+    visit_generate_assignments(instance.body, [&](const auto& symbol) {
+        const auto& assignment =
+            symbol.getAssignment()
+                .template as<slang::ast::AssignmentExpression>();
+        assignments.emplace_back(
+            lower_expression(assignment.left(), source_manager),
+            lower_expression(assignment.right(), source_manager));
     });
 
     return Module(std::string(instance.getDefinition().name), std::move(ports),
