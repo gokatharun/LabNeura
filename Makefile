@@ -197,96 +197,71 @@ build-dist: sync-src
 	LABNEURA_COVERAGE= MACOSX_DEPLOYMENT_TARGET=11.0 $(PYTHON) -m build
 	$(TWINE) check dist/*
 
-# Store the new version for use in git operations
-NEW_VERSION_FILE := /tmp/labneura_new_version.txt
-
 # --------------------------------------
 # Update version in pyproject.toml and labneura_py.cpp
 # --------------------------------------
 .PHONY: update-version
 update-version:
-	@echo "==================================="
-	@echo "LabNeura Version Update"
-	@echo "==================================="
-	@CURRENT_VERSION=$$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml); \
-	echo "Current version: $$CURRENT_VERSION"; \
-	echo ""; \
-	read -p "Enter new version (or press Enter to keep current): " NEW_VERSION; \
-	if [ -z "$$NEW_VERSION" ]; then \
-		echo "Keeping current version: $$CURRENT_VERSION"; \
-		echo "$$CURRENT_VERSION" > $(NEW_VERSION_FILE); \
-	else \
-		echo "Updating version from $$CURRENT_VERSION to $$NEW_VERSION..."; \
-		sed -i '' "s/^version = \"$$CURRENT_VERSION\"/version = \"$$NEW_VERSION\"/" pyproject.toml; \
-		echo "✅ Version updated to $$NEW_VERSION in pyproject.toml"; \
-		CURRENT_CPP_VERSION=$$(grep '__version__' python/labneura_py.cpp | sed -E 's/.*"([^"]+)".*/\1/'); \
-		sed -i '' "s/m.attr(\"__version__\") = \"$$CURRENT_CPP_VERSION\"/m.attr(\"__version__\") = \"$$NEW_VERSION\"/" python/labneura_py.cpp; \
-		echo "✅ Version updated to $$NEW_VERSION in python/labneura_py.cpp"; \
-		echo "$$NEW_VERSION" > $(NEW_VERSION_FILE); \
+	@if ! git diff --quiet -- pyproject.toml python/labneura_py.cpp || \
+	    ! git diff --cached --quiet -- pyproject.toml python/labneura_py.cpp; then \
+		echo "Version files have existing edits; commit or stash them before publishing."; \
+		exit 1; \
 	fi
-	@echo "==================================="
+	$(PYTHON) scripts/update_version.py $(if $(VERSION),--version "$(VERSION)",--bump-patch)
 
 # --------------------------------------
 # Commit and push version changes to git
 # --------------------------------------
 .PHONY: git-commit-version
 git-commit-version:
-	@if [ ! -f $(NEW_VERSION_FILE) ]; then \
-		echo "❌ Version file not found. Run update-version first."; \
-		exit 1; \
-	fi
-	@NEW_VERSION=$$(cat $(NEW_VERSION_FILE)); \
+	@set -e; \
+	NEW_VERSION=$$($(PYTHON) scripts/update_version.py --get-version); \
 	CURRENT_BRANCH=$$(git rev-parse --abbrev-ref HEAD); \
-	echo ""; \
-	echo "==================================="; \
-	echo "Git Commit & Push"; \
-	echo "==================================="; \
-	echo "Branch: $$CURRENT_BRANCH"; \
-	echo "New version: $$NEW_VERSION"; \
-	echo ""; \
-	echo "Files to commit:"; \
-	git diff --name-only; \
-	echo ""; \
-	read -p "Continue with git commit and push? (y/n): " CONFIRM; \
-	if [ "$$CONFIRM" = "y" ] || [ "$$CONFIRM" = "Y" ]; then \
-		git add pyproject.toml python/labneura_py.cpp; \
-		git commit -m "chore: bump version to $$NEW_VERSION"; \
-		echo "✅ Committed: chore: bump version to $$NEW_VERSION"; \
-		git push origin $$CURRENT_BRANCH; \
-		echo "✅ Pushed to $$CURRENT_BRANCH"; \
-	else \
-		echo "⏭️  Skipped git commit and push"; \
-	fi
-	@echo "==================================="
+	if [ "$$CURRENT_BRANCH" = "HEAD" ]; then \
+		echo "Cannot push a version bump from a detached HEAD."; \
+		exit 1; \
+	fi; \
+	if git diff --quiet -- pyproject.toml python/labneura_py.cpp && \
+	   git diff --cached --quiet -- pyproject.toml python/labneura_py.cpp; then \
+		echo "No version changes to commit."; \
+		exit 1; \
+	fi; \
+	git add pyproject.toml python/labneura_py.cpp; \
+	git commit -m "chore: bump version to $$NEW_VERSION" -- pyproject.toml python/labneura_py.cpp; \
+	git push origin "$$CURRENT_BRANCH"
 
 # --------------------------------------
 # Publish to PyPI (requires PYPI_TOKEN env variable)
 # --------------------------------------
 .PHONY: publish
-publish: sync-src update-version git-commit-version
+publish:
 	@if [ -z "$(PYPI_TOKEN)" ]; then \
 		echo "PYPI_TOKEN not set. Export PYPI_TOKEN before running 'make publish'."; \
 		exit 1; \
 	fi
+	$(MAKE) sync-src
+	$(MAKE) update-version VERSION="$(VERSION)"
 	# Full local validation using venv
 	$(MAKE) clean install smoke test
 	$(MAKE) build-dist
+	$(MAKE) git-commit-version
 	# Upload artifacts to PyPI
 	$(TWINE) upload --non-interactive dist/* --username __token__ --password $(PYPI_TOKEN)
 	@echo "✅ Published to PyPI"
-	@rm -f $(NEW_VERSION_FILE)
 
 # --------------------------------------
 # Publish to TestPyPI (requires TEST_PYPI_TOKEN env variable)
 # --------------------------------------
 .PHONY: publish-testpypi
-publish-testpypi: sync-src update-version git-commit-version
+publish-testpypi:
 	@if [ -z "$(TEST_PYPI_TOKEN)" ]; then \
 		echo "TEST_PYPI_TOKEN not set. Export TEST_PYPI_TOKEN before running 'make publish-testpypi'."; \
 		exit 1; \
 	fi
+	$(MAKE) sync-src
+	$(MAKE) update-version VERSION="$(VERSION)"
 	$(MAKE) clean install smoke test
 	$(MAKE) build-dist
+	$(MAKE) git-commit-version
 	$(TWINE) upload --repository testpypi --non-interactive dist/* --username __token__ --password $(TEST_PYPI_TOKEN)
 	@echo "✅ Published to TestPyPI"
-	@rm -f $(NEW_VERSION_FILE)

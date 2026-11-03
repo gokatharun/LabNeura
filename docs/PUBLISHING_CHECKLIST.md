@@ -8,9 +8,15 @@ All backend files have been successfully modularized and integrated into the Pyt
 
 ## Wheel publishing
 
-GitHub Actions publishing is currently disabled. Use the manual commands below
-to build and publish packages. Re-enable automation only after restoring and
-testing the corresponding workflows.
+GitHub Actions publishes to PyPI when a GitHub Release is published. The
+release tag (`X.Y.Z` or `vX.Y.Z`) determines the package version; after
+publishing, the workflow opens a pull request to sync that version into the
+default branch.
+
+Local publishing automatically increments the patch version and pushes a
+version-only commit before upload. To publish a specific version instead, pass
+`VERSION=X.Y.Z` to the make target. Version declarations must not have local
+uncommitted edits before running a publish target.
 
 Source builds using GCC require GCC 13 or newer. CMake rejects older GCC
 versions with an actionable error. Run the test suite manually before
@@ -78,8 +84,13 @@ make publish
 This will:
 - Run full test suite
 - Build distributions
+- Increment the patch version (or use `VERSION=X.Y.Z`) and push the version commit
 - Upload to PyPI
 - Display confirmation message
+
+For GitHub releases, create and publish a release with a tag such as `v1.2.3`.
+The workflow builds and publishes using `1.2.3`, then opens a version-sync PR
+if the default branch does not already declare that version.
 
 ## What Changed in Modularization
 
@@ -126,7 +137,7 @@ src/labneura/backends/
 Before running `make publish`, ensure:
 
 - [ ] All tests pass: `make test`
-- [ ] Version bumped in `pyproject.toml` and `python/labneura_py.cpp` if needed
+- [ ] Choose the intended version; local publish auto-bumps patch unless `VERSION=X.Y.Z` is provided
 - [ ] CHANGELOG updated with new features
 - [ ] README updated if API changed
 - [ ] Clean build: `make clean install test`
