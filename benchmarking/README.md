@@ -35,8 +35,44 @@ build/native/labneura_native_backend_benchmark benchmark-local.csv
 The benchmark exits with an error if no supported SIMD backend is available;
 it does not report Generic-only measurements as a SIMD comparison.
 
-## Existing Python benchmark scripts
+## Python/API comparison with NumPy and PyTorch
 
-`benchmark_runner.py` remains an exploratory comparison with NumPy and
-PyTorch. It is not used by CI-generated reports; its operation semantics and
-timing boundaries differ from the native backend benchmark.
+The Python runner is separate from the native C++ benchmark above. It compares
+the Generic backend and the SIMD backend actually selected by the current CPU
+with NumPy and PyTorch CPU for FP32, saturating INT8, FP16, and saturating INT16
+ADD, SUB, MUL, and DIV. Generic FP16/INT16 cases are marked unsupported rather
+than reported as measurements.
+
+Benchmark dependencies (PyTorch, Matplotlib, threadpoolctl) are deliberately
+not part of the LabNeura package. GitHub Actions installs them from
+`benchmarking/requirements.txt` in the `python-benchmarks` job; locally, install
+LabNeura from this checkout and the extra requirements only when benchmarking:
+
+```sh
+python -m pip install .
+python -m pip install -r benchmarking/requirements.txt
+python benchmarking/run_benchmarks.py --smoke
+python benchmarking/run_benchmarks.py
+```
+
+The full run includes 10 through 1,000,000 elements, deterministic shared
+inputs, correctness checks before timing, independent timing batches, median,
+IQR, and p95. It measures input-object construction separately and separates
+allocating operations (including output allocation) from in-place operations.
+Input generation and dtype conversion are outside operation timings. Results
+are saved in a unique directory under
+`benchmarking/results/` as CSV, JSON, Markdown, and plots. Existing native and
+Python result files are never overwritten. Use `--output-dir` to select a new
+directory, `--sizes` to select test sizes, or `--threads` to set the CPU thread
+count. Existing output directories are rejected.
+
+The Python measurements are end-to-end Python API timings, not isolated native
+kernel timings. NumPy/PyTorch run on CPU with one thread by default. The current
+methodology repeatedly uses the same deterministic working set, so large cases
+are cache-resident and do not represent streaming DRAM bandwidth. The report
+records the selected backend and build metadata. It does not claim an AVX2
+runtime result unless the automatic backend on the host selected AVX2.
+
+The older exploratory scripts (`benchmark_int16_fp16.py`,
+`benchmark_results.json`, and `examples/benchmark_numpy.py`) are retained for
+historical context and are not inputs to the new report.

@@ -5,7 +5,6 @@ Calculates FLOPS, memory usage, and other performance metrics.
 """
 
 import time
-import psutil
 import numpy as np
 from typing import Dict, Tuple
 
@@ -47,6 +46,8 @@ class MetricsCalculator:
         Returns:
             Dictionary with memory metrics
         """
+        import psutil
+
         process = psutil.Process()
         mem_info = process.memory_info()
         
