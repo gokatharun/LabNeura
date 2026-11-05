@@ -594,6 +594,7 @@ void NEONBackend::operation_fp16(const TensorBackend& other, OperationType op_ty
 
     // DIV path for FP16
     if (op_type == OperationType::DIV) {
+#if defined(__ARM_FEATURE_FP16_VECTOR_ARITHMETIC) && defined(__aarch64__)
         // Main loop: 64 values (8 registers × 8 float16s)
         for (std::size_t i = 0; i < len64; i += 64) {
             if (i + PREFETCH_DISTANCE < size_) {
@@ -678,6 +679,16 @@ void NEONBackend::operation_fp16(const TensorBackend& other, OperationType op_ty
             uint16_t result = quantize_fp16(a / b);
             std::memcpy(&this_data[i], &result, sizeof(uint16_t));
         }
+#else
+        for (std::size_t i = 0; i < size_; ++i) {
+            uint16_t a_bits, b_bits;
+            std::memcpy(&a_bits, &this_data[i], sizeof(uint16_t));
+            std::memcpy(&b_bits, &other_data[i], sizeof(uint16_t));
+            const uint16_t result =
+                quantize_fp16(dequantize_fp16(a_bits) / dequantize_fp16(b_bits));
+            std::memcpy(&this_data[i], &result, sizeof(uint16_t));
+        }
+#endif
         return;
     }
 
