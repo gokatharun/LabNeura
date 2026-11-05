@@ -420,6 +420,7 @@ void NEONBackend::operation_fp16(const TensorBackend& other, OperationType op_ty
     const float16_t* other_data = reinterpret_cast<const float16_t*>(other.data_fp16());
     float16_t* this_data = reinterpret_cast<float16_t*>(data_fp16());
 
+#if defined(__ARM_FEATURE_FP16_VECTOR_ARITHMETIC) && defined(__aarch64__)
     // Prefetch distance: 128 float16s (~256 bytes)
     constexpr std::size_t PREFETCH_DISTANCE = 128;
 
@@ -429,8 +430,10 @@ void NEONBackend::operation_fp16(const TensorBackend& other, OperationType op_ty
     const std::size_t len16 = len32 + ((size_ - len32) / 16) * 16;
     const std::size_t len8  = len16 + ((size_ - len16) / 8) * 8;
     const std::size_t len4  = len8  + ((size_ - len8) / 4) * 4;
+#endif
 
     if (op_type == OperationType::ADD) {
+#if defined(__ARM_FEATURE_FP16_VECTOR_ARITHMETIC) && defined(__aarch64__)
         // Main loop: 64 values (8 registers × 8 float16s)
         for (std::size_t i = 0; i < len64; i += 64) {
             if (i + PREFETCH_DISTANCE < size_) {
@@ -508,10 +511,16 @@ void NEONBackend::operation_fp16(const TensorBackend& other, OperationType op_ty
         for (std::size_t i = len4; i < size_; ++i) {
             this_data[i] = this_data[i] + other_data[i];
         }
+#else
+        for (std::size_t i = 0; i < size_; ++i) {
+            this_data[i] = this_data[i] + other_data[i];
+        }
+#endif
         return;
     }
 
     if (op_type == OperationType::MUL) {
+#if defined(__ARM_FEATURE_FP16_VECTOR_ARITHMETIC) && defined(__aarch64__)
         // Main loop: 64 values
         for (std::size_t i = 0; i < len64; i += 64) {
             if (i + PREFETCH_DISTANCE < size_) {
@@ -589,6 +598,11 @@ void NEONBackend::operation_fp16(const TensorBackend& other, OperationType op_ty
         for (std::size_t i = len4; i < size_; ++i) {
             this_data[i] = this_data[i] * other_data[i];
         }
+#else
+        for (std::size_t i = 0; i < size_; ++i) {
+            this_data[i] = this_data[i] * other_data[i];
+        }
+#endif
         return;
     }
 
@@ -693,6 +707,7 @@ void NEONBackend::operation_fp16(const TensorBackend& other, OperationType op_ty
     }
 
     // SUB path (default)
+#if defined(__ARM_FEATURE_FP16_VECTOR_ARITHMETIC) && defined(__aarch64__)
     for (std::size_t i = 0; i < len64; i += 64) {
         if (i + PREFETCH_DISTANCE < size_) {
             __builtin_prefetch(&this_data[i + PREFETCH_DISTANCE], 1, 1);
@@ -770,6 +785,11 @@ void NEONBackend::operation_fp16(const TensorBackend& other, OperationType op_ty
     for (std::size_t i = len4; i < size_; ++i) {
         this_data[i] = this_data[i] - other_data[i];
     }
+#else
+    for (std::size_t i = 0; i < size_; ++i) {
+        this_data[i] = this_data[i] - other_data[i];
+    }
+#endif
 }
 
 // =======================

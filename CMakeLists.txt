@@ -269,8 +269,34 @@ if(NOT SKBUILD)
   target_link_libraries(labneura_example PRIVATE labneura)
 
   if(BUILD_TESTING)
+    add_executable(labneura_backend_selection_test
+      tests/backend_selection_test.cpp
+    )
+    target_include_directories(labneura_backend_selection_test PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/labneura/backends/common
+    )
+    target_link_libraries(labneura_backend_selection_test PRIVATE labneura)
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64"
+       AND LABNEURA_COMPILER_SUPPORTS_AVX2)
+      target_compile_definitions(labneura_backend_selection_test
+        PRIVATE LABNEURA_TEST_AVX2=1
+      )
+    endif()
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
+      target_compile_definitions(labneura_backend_selection_test
+        PRIVATE LABNEURA_TEST_NEON=1
+      )
+    endif()
+    add_test(
+      NAME backend_selection
+      COMMAND labneura_backend_selection_test
+    )
+
     add_executable(labneura_unsupported_dtype_test
       tests/unsupported_tensor_dtype_test.cpp
+    )
+    target_include_directories(labneura_unsupported_dtype_test PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests
     )
     target_link_libraries(labneura_unsupported_dtype_test PRIVATE labneura)
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64"
@@ -291,6 +317,9 @@ if(NOT SKBUILD)
 
     add_executable(labneura_simd_int8_regression_test
       tests/simd_int8_regression_test.cpp
+    )
+    target_include_directories(labneura_simd_int8_regression_test PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests
     )
     target_link_libraries(labneura_simd_int8_regression_test PRIVATE labneura)
     add_executable(labneura_native_backend_benchmark

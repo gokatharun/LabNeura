@@ -1,6 +1,7 @@
 #include "labneura/backends/common/backend_factory.h"
 #include "labneura/backends/common/cpu_features.h"
 #include "labneura/tensor.h"
+#include "test_environment.h"
 #if defined(LABNEURA_TEST_AVX2)
 #include "labneura/backends/cpu/avx2.h"
 #endif
@@ -14,34 +15,16 @@
 #endif
 
 #include <algorithm>
-#include <cstdlib>
 #include <iostream>
-#include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
 namespace {
 
-class BackendOverride {
+class SkipTest : public std::runtime_error {
 public:
-    explicit BackendOverride(const char* backend) {
-        if (const char* current = std::getenv("LABNEURA_BACKEND")) {
-            previous_ = current;
-        }
-        setenv("LABNEURA_BACKEND", backend, 1);
-    }
-
-    ~BackendOverride() {
-        if (previous_) {
-            setenv("LABNEURA_BACKEND", previous_->c_str(), 1);
-        } else {
-            unsetenv("LABNEURA_BACKEND");
-        }
-    }
-
-private:
-    std::optional<std::string> previous_;
+    using std::runtime_error::runtime_error;
 };
 
 std::vector<int> make_multiplicands(std::size_t size, bool rhs) {
@@ -147,17 +130,18 @@ void check_values(const int8_t* actual, const std::vector<int>& expected,
 void check_avx2_multiplication() {
 #if !defined(LABNEURA_TEST_AVX2)
     std::cout << "SKIP: AVX2 backend was not compiled for this target\n";
-    std::exit(77);
+    throw SkipTest("AVX2 backend was not compiled for this target");
 #elif !defined(__GNUC__) && !defined(__clang__)
     std::cout << "SKIP: AVX2 runtime detection is unavailable for this compiler\n";
-    std::exit(77);
+    throw SkipTest("AVX2 runtime detection is unavailable for this compiler");
 #else
     if (!runtime_supports_avx2()) {
         std::cout << "SKIP: CPU/OS does not support AVX2 state\n";
-        std::exit(77);
+        throw SkipTest("CPU/OS does not support AVX2 state");
     }
 
-    BackendOverride backend_override("AVX2");
+    labneura::test::ScopedEnvironmentVariable backend_override(
+        "LABNEURA_BACKEND", "AVX2");
     const std::vector<std::size_t> sizes = {
         1, 7, 8, 15, 16, 31, 32, 33, 63, 64, 65, 96, 97};
     for (const std::size_t size : sizes) {
@@ -199,14 +183,15 @@ void check_avx2_multiplication() {
 void check_neon_subtraction() {
 #if !defined(LABNEURA_TEST_NEON)
     std::cout << "SKIP: NEON backend was not compiled for this target\n";
-    std::exit(77);
+    throw SkipTest("NEON backend was not compiled for this target");
 #else
     if (!labneura::cpu_supports_neon()) {
         std::cout << "SKIP: CPU does not support NEON\n";
-        std::exit(77);
+        throw SkipTest("CPU does not support NEON");
     }
 
-    BackendOverride backend_override("NEON");
+    labneura::test::ScopedEnvironmentVariable backend_override(
+        "LABNEURA_BACKEND", "NEON");
     const std::vector<std::size_t> sizes = {
         1, 7, 8, 9, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129};
     for (const std::size_t size : sizes) {
@@ -260,6 +245,9 @@ int main(int argc, char** argv) {
         } else {
             throw std::invalid_argument("Unknown backend: " + backend);
         }
+    } catch (const SkipTest& skip) {
+        std::cout << "SKIP: " << skip.what() << '\n';
+        return 77;
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
         return 1;

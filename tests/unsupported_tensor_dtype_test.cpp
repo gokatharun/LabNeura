@@ -1,5 +1,6 @@
 #include "labneura/backends/common/backend_factory.h"
 #include "labneura/backends/cpu/generic.h"
+#include "test_environment.h"
 #if defined(LABNEURA_TEST_AVX2)
 #include "labneura/backends/cpu/avx2.h"
 #endif
@@ -8,10 +9,8 @@
 #endif
 
 #include <array>
-#include <cstdlib>
 #include <functional>
 #include <iostream>
-#include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -20,27 +19,12 @@ namespace {
 
 class BackendOverride {
 public:
-    explicit BackendOverride(const char* value) {
-        if (const char* current = std::getenv("LABNEURA_BACKEND")) {
-            previous_ = current;
-        }
-        if (value) {
-            setenv("LABNEURA_BACKEND", value, 1);
-        } else {
-            unsetenv("LABNEURA_BACKEND");
-        }
-    }
-
-    ~BackendOverride() {
-        if (previous_) {
-            setenv("LABNEURA_BACKEND", previous_->c_str(), 1);
-        } else {
-            unsetenv("LABNEURA_BACKEND");
-        }
-    }
+    explicit BackendOverride(const char* value)
+        : override_("LABNEURA_BACKEND",
+                    value ? std::optional<std::string>(value) : std::nullopt) {}
 
 private:
-    std::optional<std::string> previous_;
+    labneura::test::ScopedEnvironmentVariable override_;
 };
 
 void expect_unsupported(const std::function<void()>& construct,
