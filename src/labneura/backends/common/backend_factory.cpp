@@ -1,5 +1,6 @@
 #include "labneura/backends/common/backend_factory.h"
 #include "labneura/backends/common/cpu_features.h"
+#include "labneura/backends/common/dtype_validation.h"
 #include "labneura/backends/cpu/generic.h"
 #include <iostream>
 #include <cstdlib>
@@ -32,6 +33,7 @@ std::string detect_backend() {
 
 std::unique_ptr<TensorBackend>
 create_best_backend(std::size_t size, QuantizationMode mode) {
+    validate_tensor_dtype_supported(mode);
 
     // Optional override for testing via environment variable
     // LABNEURA_BACKEND can be set to "GENERIC", "NEON", or "AVX2"

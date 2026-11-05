@@ -3,6 +3,7 @@
 #include "labneura/backends/cpu/neon.h"
 #include "labneura/backends/cpu/avx2.h"
 #include "labneura/backends/common/backend_factory.h"
+#include "labneura/backends/common/dtype_validation.h"
 #include "labneura/types.hpp"
 #include <cstring>
 #include <algorithm>
@@ -12,7 +13,9 @@
 namespace labneura {
 
 namespace {
-std::vector<float> flatten_rows(const std::vector<std::vector<float>>& rows) {
+std::vector<float> flatten_rows(const std::vector<std::vector<float>>& rows,
+                                QuantizationMode mode) {
+    validate_tensor_dtype_supported(mode);
     std::vector<float> flat;
     if (rows.empty()) return flat;
     const std::size_t cols = rows.front().size();
@@ -34,7 +37,7 @@ Tensor::Tensor() : quantization_mode_(QuantizationMode::FP32), shape_{0} {
 }
 
 Tensor::Tensor(const std::vector<std::vector<float>>& rows, QuantizationMode mode)
-    : Tensor(flatten_rows(rows), mode) {
+    : Tensor(flatten_rows(rows, mode), mode) {
     shape_ = {rows.size(), rows.empty() ? std::size_t{0} : rows.front().size()};
 }
 
@@ -276,6 +279,7 @@ void Tensor::check_same_shape(const Tensor& other) const {
 }
 
 void Tensor::init_backend(std::size_t size) {
+    validate_tensor_dtype_supported(quantization_mode_);
     backend_ = create_best_backend(size, quantization_mode_);
 }
 

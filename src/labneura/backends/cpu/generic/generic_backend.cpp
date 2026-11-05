@@ -1,4 +1,5 @@
 #include "labneura/backends/cpu/generic.h"
+#include "labneura/backends/common/dtype_validation.h"
 #include <cstdlib>
 #include <memory>
 #include <algorithm>
@@ -9,6 +10,7 @@ namespace labneura {
 
 GenericBackend::GenericBackend(std::size_t size, QuantizationMode mode)
     : size_(size), quantization_mode_(mode) {
+    validate_tensor_dtype_supported(mode);
     // 64-byte aligned allocation with fallback to malloc (generic fallback backend)
     auto free_aligned_float = [](float* p){ if (p) std::free(p); };
     auto free_aligned_int8 = [](int8_t* p){ if (p) std::free(p); };

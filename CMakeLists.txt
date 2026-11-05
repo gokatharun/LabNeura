@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 project(LabNeura LANGUAGES CXX)
 
 include(CheckCXXCompilerFlag)
+include(CTest)
 include(FetchContent)
 
 option(
@@ -266,6 +267,28 @@ endif()
 if(NOT SKBUILD)
   add_executable(labneura_example examples/main.cpp)
   target_link_libraries(labneura_example PRIVATE labneura)
+
+  if(BUILD_TESTING)
+    add_executable(labneura_unsupported_dtype_test
+      tests/unsupported_tensor_dtype_test.cpp
+    )
+    target_link_libraries(labneura_unsupported_dtype_test PRIVATE labneura)
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64"
+       AND LABNEURA_COMPILER_SUPPORTS_AVX2)
+      target_compile_definitions(labneura_unsupported_dtype_test
+        PRIVATE LABNEURA_TEST_AVX2=1
+      )
+    endif()
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
+      target_compile_definitions(labneura_unsupported_dtype_test
+        PRIVATE LABNEURA_TEST_NEON=1
+      )
+    endif()
+    add_test(
+      NAME unsupported_tensor_dtypes
+      COMMAND labneura_unsupported_dtype_test
+    )
+  endif()
 endif()
 
 if(SKBUILD)

@@ -1,6 +1,7 @@
 #if defined(__ARM_NEON)
 
 #include "labneura/backends/cpu/neon.h"
+#include "labneura/backends/common/dtype_validation.h"
 #include "labneura/types.hpp"
 #include <arm_neon.h>
 #include <cstdlib>
@@ -21,6 +22,7 @@ namespace labneura {
 
 NEONBackend::NEONBackend(std::size_t size, QuantizationMode mode)
     : size_(size), quantization_mode_(mode) {
+    validate_tensor_dtype_supported(mode);
 
     aligned_size_ = ((size + 7) / 8) * 8;  // align to 8 elements for FP16/FP32 safety
 

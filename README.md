@@ -16,7 +16,7 @@ High-performance C++ tensor library with Python bindings, featuring **hardware-a
 - **Compile-time Optimization**: CMake detects hardware and enables appropriate compiler flags
 
 ### Tensor Operations
-- **Mixed-Precision Support**: FP64, FP32, FP16, INT32, INT16, INT8 (all fully supported)
+- **Tensor Data Types**: FP32 and INT8 are supported by all backends; FP16 and INT16 are supported by AVX2 and NEON backends only. FP64 and INT32 enum values are reserved but unsupported; constructing either mode throws `std::invalid_argument`.
 - **In-place Operations**: `add_inplace()`, `mul_inplace()`, `sub_inplace()`, `div_inplace()` for memory efficiency
 - **Immutable Operations**: `add()`, `mul()`, `sub()`, `div()` return new tensors without modifying originals
 - **Quantization**: Built-in INT8/INT16 quantization with up to 4x memory reduction

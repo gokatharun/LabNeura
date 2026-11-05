@@ -1,6 +1,7 @@
 #if defined(__AVX2__)
 
 #include "labneura/backends/cpu/avx2.h"
+#include "labneura/backends/common/dtype_validation.h"
 #include "avx2_internal.h"
 #include "labneura/utils/alignment.hpp"
 #include <memory>
@@ -15,6 +16,7 @@ namespace labneura {
 
 AVX2Backend::AVX2Backend(std::size_t size, QuantizationMode mode)
     : size_(size), quantization_mode_(mode) {
+    validate_tensor_dtype_supported(mode);
 
     // AVX2: 256-bit registers → 8 FP32 elements
     aligned_size_ = ((size + 7) / 8) * 8;
