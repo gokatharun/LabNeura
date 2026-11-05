@@ -293,7 +293,8 @@ if(NOT SKBUILD)
     target_include_directories(labneura_backend_selection_test PRIVATE
       ${CMAKE_CURRENT_SOURCE_DIR}/src/labneura/backends/common
     )
-    target_link_libraries(labneura_backend_selection_test PRIVATE labneura)
+    find_package(Threads REQUIRED)
+    target_link_libraries(labneura_backend_selection_test PRIVATE labneura Threads::Threads)
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64"
        AND LABNEURA_COMPILER_SUPPORTS_AVX2)
       target_compile_definitions(labneura_backend_selection_test

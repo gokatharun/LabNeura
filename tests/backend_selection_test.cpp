@@ -2,6 +2,7 @@
 #include "labneura/backends/common/cpu_features.h"
 #include "labneura/backends/cpu/generic.h"
 #include "backend_selection.h"
+#include "cpu_features_internal.h"
 #include "test_environment.h"
 
 #if defined(LABNEURA_TEST_AVX2)
@@ -12,9 +13,12 @@
 #include "labneura/backends/cpu/neon.h"
 #endif
 
+#include <atomic>
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <thread>
+#include <vector>
 
 namespace {
 
@@ -224,12 +228,100 @@ void check_actual_factory() {
     }
 }
 
+void check_feature_detection_is_cached() {
+    using labneura::test::ScopedEnvironmentVariable;
+    using labneura::detail::cpu_feature_detection_count;
+
+    // This runs first, so detection is triggered here at most once per process.
+    const auto first = labneura::detect_cpu_features();
+    require(cpu_feature_detection_count() == 1,
+            "Feature detection should have run exactly once");
+
+    const bool avx2 = labneura::cpu_supports_avx2();
+    const bool f16c = labneura::cpu_supports_f16c();
+    const bool neon = labneura::cpu_supports_neon();
+    require(avx2 == first.avx2 && f16c == first.f16c,
+            "Cached feature helpers disagree with detect_cpu_features()");
+
+    // Selecting a backend repeatedly, with changing overrides, must not re-detect
+    // and must still honour the current LABNEURA_BACKEND value.
+    for (int i = 0; i < 50; ++i) {
+        {
+            ScopedEnvironmentVariable generic("LABNEURA_BACKEND", "GENERIC");
+            require(labneura::detect_backend() == "GENERIC",
+                    "Override ignored after features were cached");
+            const auto backend = labneura::create_best_backend(
+                4, labneura::QuantizationMode::INT8);
+            require(concrete_backend_name(*backend) == "GENERIC",
+                    "Factory ignored GENERIC override after caching");
+        }
+        {
+            ScopedEnvironmentVariable invalid("LABNEURA_BACKEND", "OTHER");
+            bool rejected = false;
+            try {
+                static_cast<void>(labneura::detect_backend());
+            } catch (const std::invalid_argument&) {
+                rejected = true;
+            }
+            require(rejected, "Invalid override accepted after caching");
+        }
+        {
+            ScopedEnvironmentVariable none("LABNEURA_BACKEND", std::nullopt);
+            const auto name = labneura::detect_backend();
+            require(name == "GENERIC" || name == "AVX2" || name == "NEON",
+                    "Unexpected default backend name");
+        }
+    }
+    require(cpu_feature_detection_count() == 1,
+            "Backend selection re-ran CPU feature detection");
+    require(labneura::cpu_supports_neon() == neon &&
+                labneura::cpu_supports_avx2() == avx2,
+            "Cached features changed between calls");
+}
+
+void check_concurrent_selection() {
+    using labneura::test::ScopedEnvironmentVariable;
+    using labneura::detail::cpu_feature_detection_count;
+
+    // The environment is changed before threads start and restored after they
+    // join: concurrent setenv/getenv would itself be a data race.
+    ScopedEnvironmentVariable generic("LABNEURA_BACKEND", "GENERIC");
+    const auto expected = labneura::detect_cpu_features();
+    std::atomic<int> failures{0};
+    std::vector<std::thread> threads;
+    for (int t = 0; t < 8; ++t) {
+        threads.emplace_back([&] {
+            for (int i = 0; i < 500; ++i) {
+                const auto features = labneura::detect_cpu_features();
+                if (features.avx2 != expected.avx2 || features.f16c != expected.f16c ||
+                    features.sse41 != expected.sse41 ||
+                    labneura::detect_backend() != "GENERIC") {
+                    ++failures;
+                }
+                const auto backend = labneura::create_best_backend(
+                    8, labneura::QuantizationMode::FP32);
+                if (!backend || backend->size() != 8) {
+                    ++failures;
+                }
+            }
+        });
+    }
+    for (auto& thread : threads) {
+        thread.join();
+    }
+    require(failures.load() == 0, "Concurrent backend selection produced inconsistent results");
+    require(cpu_feature_detection_count() == 1,
+            "Concurrent selection re-ran CPU feature detection");
+}
+
 }  // namespace
 
 int main() {
     try {
+        check_feature_detection_is_cached();
         check_simulated_feature_detection();
         check_actual_factory();
+        check_concurrent_selection();
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
         return 1;
