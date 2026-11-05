@@ -78,6 +78,28 @@ bool detect_avx2() {
 #endif
 }
 
+bool detect_f16c() {
+#if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
+    int registers[4];
+    cpuid(1, 0, registers);
+    constexpr int avx = 1 << 28;
+    constexpr int osxsave = 1 << 27;
+    constexpr int f16c = 1 << 29;
+    return (registers[2] & (avx | osxsave | f16c)) == (avx | osxsave | f16c) &&
+           (xcr0() & 0x6) == 0x6;
+#elif defined(__x86_64__) || defined(__i386__)
+    unsigned int eax, ebx, ecx, edx;
+    constexpr unsigned int avx = 1U << 28;
+    constexpr unsigned int osxsave = 1U << 27;
+    constexpr unsigned int f16c = 1U << 29;
+    return cpuid(1, 0, eax, ebx, ecx, edx) &&
+           (ecx & (avx | osxsave | f16c)) == (avx | osxsave | f16c) &&
+           (xcr0() & 0x6U) == 0x6U;
+#else
+    return false;
+#endif
+}
+
 bool detect_neon() {
 #if defined(__aarch64__) || defined(_M_ARM64)
     return true;
@@ -93,11 +115,15 @@ bool detect_neon() {
 }  // namespace
 
 CPUFeatures detect_cpu_features() {
-    return {detect_sse41(), detect_avx2()};
+    return {detect_sse41(), detect_avx2(), detect_f16c()};
 }
 
 bool cpu_supports_avx2() {
     return detect_avx2();
+}
+
+bool cpu_supports_f16c() {
+    return detect_f16c();
 }
 
 bool cpu_supports_neon() {

@@ -186,12 +186,30 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
       src/labneura/backends/cpu/avx2/avx2_backend.cpp
       src/labneura/backends/cpu/avx2/avx2_ops_fp32.cpp
       src/labneura/backends/cpu/avx2/avx2_ops_int8.cpp
-      src/labneura/backends/cpu/avx2/avx2_ops_fp16.cpp
       src/labneura/backends/cpu/avx2/avx2_ops_int16.cpp
       PROPERTIES COMPILE_FLAGS "-mavx2"
     )
+    # FP16 must keep IEEE NaN/Inf/division semantics, so opt out of -ffast-math.
+    set_source_files_properties(
+      src/labneura/backends/cpu/avx2/avx2_ops_fp16.cpp
+      PROPERTIES COMPILE_FLAGS "-mavx2 -fno-fast-math"
+    )
     target_compile_definitions(labneura PRIVATE LABNEURA_ENABLE_AVX2=1)
     message(STATUS "LabNeura: AVX2 backend enabled (-mavx2)")
+    # F16C is independent of AVX2: build its kernel in an isolated translation
+    # unit and select it at runtime only when the CPU reports support.
+    check_cxx_compiler_flag("-mf16c" LABNEURA_COMPILER_SUPPORTS_F16C)
+    if(LABNEURA_COMPILER_SUPPORTS_F16C)
+      target_sources(labneura PRIVATE
+        src/labneura/backends/cpu/avx2/avx2_ops_fp16_f16c.cpp
+      )
+      set_source_files_properties(
+        src/labneura/backends/cpu/avx2/avx2_ops_fp16_f16c.cpp
+        PROPERTIES COMPILE_FLAGS "-mavx2 -mf16c -fno-fast-math"
+      )
+      target_compile_definitions(labneura PRIVATE LABNEURA_ENABLE_AVX2_F16C=1)
+      message(STATUS "LabNeura: AVX2 FP16 F16C kernel enabled (-mf16c, isolated)")
+    endif()
   else()
     message(STATUS "LabNeura: AVX2 backend disabled (compiler lacks -mavx2)")
   endif()
@@ -354,6 +372,34 @@ if(NOT SKBUILD)
     set_tests_properties(
       avx2_int8_multiplication
       neon_int8_subtraction
+      PROPERTIES SKIP_RETURN_CODE 77
+    )
+
+    add_executable(labneura_fp16_regression_test
+      tests/fp16_regression_test.cpp
+    )
+    target_include_directories(labneura_fp16_regression_test PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/labneura/backends/common
+    )
+    target_link_libraries(labneura_fp16_regression_test PRIVATE labneura)
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64"
+       AND LABNEURA_COMPILER_SUPPORTS_AVX2)
+      target_compile_definitions(labneura_fp16_regression_test
+        PRIVATE LABNEURA_TEST_AVX2=1
+      )
+    endif()
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
+      target_compile_definitions(labneura_fp16_regression_test
+        PRIVATE LABNEURA_TEST_NEON=1
+      )
+    endif()
+    add_test(NAME fp16_f16c_dispatch COMMAND labneura_fp16_regression_test DISPATCH)
+    add_test(NAME avx2_fp16_arithmetic COMMAND labneura_fp16_regression_test AVX2)
+    add_test(NAME neon_fp16_arithmetic COMMAND labneura_fp16_regression_test NEON)
+    set_tests_properties(
+      avx2_fp16_arithmetic
+      neon_fp16_arithmetic
       PROPERTIES SKIP_RETURN_CODE 77
     )
   endif()

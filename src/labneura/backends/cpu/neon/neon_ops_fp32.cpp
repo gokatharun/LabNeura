@@ -682,25 +682,18 @@ void NEONBackend::operation_fp16(const TensorBackend& other, OperationType op_ty
             const float16x4_t vb = vld1_f16(&other_data[i]);
             vst1_f16(&this_data[i], vdiv_f16(va, vb));
         }
-        // Scalar tail
+        // Scalar tail: float16_t <-> float conversions are IEEE round-to-nearest-even.
         for (std::size_t i = len4; i < size_; ++i) {
-            // Cast int16_t to uint16_t for fp16 operations
-            uint16_t a_bits, b_bits;
-            std::memcpy(&a_bits, &this_data[i], sizeof(uint16_t));
-            std::memcpy(&b_bits, &other_data[i], sizeof(uint16_t));
-            float a = dequantize_fp16(a_bits);
-            float b = dequantize_fp16(b_bits);
-            uint16_t result = quantize_fp16(a / b);
-            std::memcpy(&this_data[i], &result, sizeof(uint16_t));
+            const float a = static_cast<float>(this_data[i]);
+            const float b = static_cast<float>(other_data[i]);
+            this_data[i] = static_cast<float16_t>(a / b);
         }
 #else
+        // Without native FP16 arithmetic, divide in FP32 and round once to FP16.
         for (std::size_t i = 0; i < size_; ++i) {
-            uint16_t a_bits, b_bits;
-            std::memcpy(&a_bits, &this_data[i], sizeof(uint16_t));
-            std::memcpy(&b_bits, &other_data[i], sizeof(uint16_t));
-            const uint16_t result =
-                quantize_fp16(dequantize_fp16(a_bits) / dequantize_fp16(b_bits));
-            std::memcpy(&this_data[i], &result, sizeof(uint16_t));
+            const float a = static_cast<float>(this_data[i]);
+            const float b = static_cast<float>(other_data[i]);
+            this_data[i] = static_cast<float16_t>(a / b);
         }
 #endif
         return;

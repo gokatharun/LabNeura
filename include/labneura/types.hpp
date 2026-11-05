@@ -75,8 +75,20 @@ inline uint16_t quantize_fp16(float x) {
             // Overflow to infinity
             result = (sign << 15) | (31 << 10);
         } else if (new_exponent <= 0) {
-            // Underflow to zero
-            result = (sign << 15);
+            // FP16 subnormal result: round the shifted significand to nearest even.
+            const int32_t shift = 14 - new_exponent;
+            if (shift > 25) {
+                result = (sign << 15);
+            } else {
+                const uint32_t significand = mantissa | 0x800000;
+                uint32_t half = significand >> shift;
+                const uint32_t remainder = significand & ((1U << shift) - 1U);
+                const uint32_t halfway = 1U << (shift - 1);
+                if (remainder > halfway || (remainder == halfway && (half & 1U))) {
+                    ++half;
+                }
+                result = static_cast<uint16_t>((sign << 15) | half);
+            }
         } else {
             // Normal: combine sign, exponent (5 bits), mantissa (10 bits)
             // Round to nearest, ties to even
@@ -124,8 +136,17 @@ inline float dequantize_fp16(uint16_t h) {
             result = (sign << 31) | 0x7FC00000;
         }
     } else if (exponent == 0) {
-        // Zero (denormalized numbers are treated as zero for simplicity)
-        result = (sign << 31);
+        if (mantissa == 0) {
+            result = (sign << 31);
+        } else {
+            // Subnormal: normalize into an FP32 normal number.
+            uint32_t new_exponent = 113;
+            while ((mantissa & 0x400) == 0) {
+                mantissa <<= 1;
+                --new_exponent;
+            }
+            result = (sign << 31) | (new_exponent << 23) | ((mantissa & 0x3FF) << 13);
+        }
     } else {
         // Normal number: bias adjustment from 15 to 127
         uint32_t new_exponent = exponent + (127 - 15);
