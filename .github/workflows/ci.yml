@@ -6,6 +6,12 @@ on:
   pull_request:
     branches: [ main, develop ]
   workflow_dispatch:
+    inputs:
+      benchmark_only:
+        description: Run only the Linux x86_64 Generic-versus-AVX2 INT8 benchmark
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -13,6 +19,7 @@ permissions:
 jobs:
   gcc-source-build:
     name: Source build (GCC 13)
+    if: github.event_name != 'workflow_dispatch' || inputs.benchmark_only != true
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -39,6 +46,7 @@ jobs:
 
   build-test:
     name: Build & Test (${{ matrix.os }})
+    if: github.event_name != 'workflow_dispatch' || inputs.benchmark_only != true
     runs-on: ${{ matrix.os }}
 
     strategy:
@@ -157,6 +165,41 @@ jobs:
           path: |
             coverage.txt
             coverage_html
+
+  avx2-int8-benchmark:
+    name: Linux x86_64 AVX2 INT8 comparison
+    if: github.event_name == 'workflow_dispatch' && inputs.benchmark_only == true
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout selected branch
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install build and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest
+          python -m pip install .
+
+      - name: Verify AVX2 correctness regression
+        run: python -m pytest -q tests/test_tensor_coverage.py -k avx2_int8_multiplication_lane_order_and_saturation
+
+      - name: Benchmark Generic versus AVX2
+        run: python benchmarking/avx2_int8_comparison.py
+
+      - name: Publish comparison report to the selected branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add benchmarking/avx2_int8_comparison.md
+          git commit -m "bench: record Linux x86_64 AVX2 INT8 comparison"
+          git push
 
   publish-coverage:
     name: Publish LLVM Coverage

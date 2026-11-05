@@ -133,3 +133,35 @@ class TestTensorEdgeCases:
         s = a.sub(b)
         assert c.data_int8() == [127, -128]
         assert s.data_int8() == [126, -127]
+
+@pytest.mark.parametrize("size", [1, 8, 31, 32, 33, 63, 64, 65, 96, 97])
+def test_avx2_int8_multiplication_lane_order_and_saturation(size):
+    if ln.detect_backend() != "AVX2":
+        pytest.skip("AVX2 backend is not available on this build and CPU")
+
+    scenarios = [
+        ([(i % 32) + 1 for i in range(size)], [2] * size),
+        ([(i % 32) - 16 for i in range(size)],
+         [[1, 2, -1, -2][i % 4] for i in range(size)]),
+        ([([127, -128, 64, -64, 0][i % 5]) for i in range(size)],
+         ([2, 2, 2, 2, -128][i % 5] for i in range(size))),
+    ]
+
+    for lhs, rhs in scenarios:
+        rhs = list(rhs)
+        expected = [max(-128, min(127, a * b)) for a, b in zip(lhs, rhs)]
+
+        with force_backend("GENERIC"):
+            generic_a = ln.Tensor(lhs, ln.QuantizationMode.INT8)
+            generic_b = ln.Tensor(rhs, ln.QuantizationMode.INT8)
+            generic_a.mul_inplace(generic_b)
+            generic_result = generic_a.data_int8()
+
+        with force_backend("AVX2"):
+            avx2_a = ln.Tensor(lhs, ln.QuantizationMode.INT8)
+            avx2_b = ln.Tensor(rhs, ln.QuantizationMode.INT8)
+            avx2_a.mul_inplace(avx2_b)
+            avx2_result = avx2_a.data_int8()
+
+        assert generic_result == expected
+        assert avx2_result == expected
