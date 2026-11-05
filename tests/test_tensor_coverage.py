@@ -10,6 +10,8 @@ from contextlib import contextmanager
 import pytest
 import labneura as ln
 
+NEON_AVAILABLE = ln.detect_backend() == 'NEON'
+
 @contextmanager
 def force_backend(name: str):
     prev = os.environ.get('LABNEURA_BACKEND')
@@ -46,6 +48,7 @@ class TestTensorConstructorsAndAccessors:
         assert pytest.approx(tf.data_fp32()[0]) == 2.0
         assert ti.data_int8()[0] == 42
 
+    @pytest.mark.skipif(not NEON_AVAILABLE, reason='NEON backend is unavailable')
     def test_fp16_vector_and_access_neon(self):
         # FP16 path implemented on NEON backend
         with force_backend('NEON'):
@@ -55,6 +58,7 @@ class TestTensorConstructorsAndAccessors:
             assert isinstance(d, list)
             assert len(d) == 3
 
+    @pytest.mark.skipif(not NEON_AVAILABLE, reason='NEON backend is unavailable')
     def test_int16_vector_and_access_neon(self):
         with force_backend('NEON'):
             t = ln.Tensor([1000, -2000, 3000], ln.QuantizationMode.INT16)
@@ -100,6 +104,7 @@ class TestTensorOperations:
         # 2+3=5; -20+(-5)=-25? (we used -20? here it's 3 + -5 = -2); process and verify final
         assert a.data_int8() == [9, -5, 111]
 
+    @pytest.mark.skipif(not NEON_AVAILABLE, reason='NEON backend is unavailable')
     def test_fp16_ops_neon(self):
         with force_backend('NEON'):
             a = ln.Tensor([1.0, 2.0, 3.0, 4.0], ln.QuantizationMode.FP16)
@@ -110,6 +115,7 @@ class TestTensorOperations:
             # We can't directly dequantize fp16 via Tensor; check sizes
             assert c.size() == 4 and m.size() == 4 and s.size() == 4
 
+    @pytest.mark.skipif(not NEON_AVAILABLE, reason='NEON backend is unavailable')
     def test_int16_ops_neon(self):
         with force_backend('NEON'):
             a = ln.Tensor([100, -200, 300, -400], ln.QuantizationMode.INT16)

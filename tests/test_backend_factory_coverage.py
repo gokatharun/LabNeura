@@ -9,6 +9,8 @@ from contextlib import contextmanager
 import pytest
 import labneura as ln
 
+NEON_AVAILABLE = ln.detect_backend() == 'NEON'
+
 @contextmanager
 def override_backend(value: str):
     prev = os.environ.get('LABNEURA_BACKEND')
@@ -30,6 +32,7 @@ class TestBackendFactoryOverride:
             r = t1.add(ln.Tensor([0.5, 0.5, 0.5], ln.QuantizationMode.FP32))
             assert t1.size() == 3 and t2.size() == 3 and r.size() == 3
 
+    @pytest.mark.skipif(not NEON_AVAILABLE, reason='NEON backend is unavailable')
     def test_force_neon_backend(self):
         with override_backend('NEON'):
             # FP16 and INT16 paths exist on NEON backend
