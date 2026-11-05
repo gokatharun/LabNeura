@@ -36,7 +36,9 @@ void AVX2Backend::operation_int8(const TensorBackend& other, OperationType op_ty
             const __m256i vb_hi = _mm256_cvtepi8_epi16(_mm256_extracti128_si256(vb, 1));
             const __m256i prod_lo = _mm256_mullo_epi16(va_lo, vb_lo);
             const __m256i prod_hi = _mm256_mullo_epi16(va_hi, vb_hi);
-            const __m256i r = _mm256_packs_epi16(prod_lo, prod_hi);
+            const __m256i packed = _mm256_packs_epi16(prod_lo, prod_hi);
+            const __m256i r = _mm256_permute4x64_epi64(
+                packed, _MM_SHUFFLE(3, 1, 2, 0));
             _mm256_storeu_si256(reinterpret_cast<__m256i*>(this_data + i), r);
         }
         for (std::size_t i = vec_len; i < size_; ++i) {

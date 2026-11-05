@@ -288,6 +288,45 @@ if(NOT SKBUILD)
       NAME unsupported_tensor_dtypes
       COMMAND labneura_unsupported_dtype_test
     )
+
+    add_executable(labneura_simd_int8_regression_test
+      tests/simd_int8_regression_test.cpp
+    )
+    target_link_libraries(labneura_simd_int8_regression_test PRIVATE labneura)
+    add_executable(labneura_native_backend_benchmark
+      tests/native_backend_benchmark.cpp
+    )
+    target_link_libraries(labneura_native_backend_benchmark PRIVATE labneura)
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64"
+       AND LABNEURA_COMPILER_SUPPORTS_AVX2)
+      target_compile_definitions(labneura_simd_int8_regression_test
+        PRIVATE LABNEURA_TEST_AVX2=1
+      )
+      target_compile_definitions(labneura_native_backend_benchmark
+        PRIVATE LABNEURA_TEST_AVX2=1
+      )
+    endif()
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
+      target_compile_definitions(labneura_simd_int8_regression_test
+        PRIVATE LABNEURA_TEST_NEON=1
+      )
+      target_compile_definitions(labneura_native_backend_benchmark
+        PRIVATE LABNEURA_TEST_NEON=1
+      )
+    endif()
+    add_test(
+      NAME avx2_int8_multiplication
+      COMMAND labneura_simd_int8_regression_test AVX2
+    )
+    add_test(
+      NAME neon_int8_subtraction
+      COMMAND labneura_simd_int8_regression_test NEON
+    )
+    set_tests_properties(
+      avx2_int8_multiplication
+      neon_int8_subtraction
+      PROPERTIES SKIP_RETURN_CODE 77
+    )
   endif()
 endif()
 

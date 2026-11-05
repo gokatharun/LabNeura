@@ -158,14 +158,56 @@ jobs:
             coverage.txt
             coverage_html
 
-  publish-coverage:
-    name: Publish LLVM Coverage
+  native-simd:
+    name: Native SIMD tests and benchmarks (${{ matrix.architecture }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            architecture: x86_64
+          - os: ubuntu-24.04-arm
+            architecture: aarch64
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure native build
+        run: cmake -S . -B build/native -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+
+      - name: Build native tests and benchmark
+        run: cmake --build build/native --parallel 2
+
+      - name: Run native C++ tests
+        run: ctest --test-dir build/native --output-on-failure
+
+      - name: Run native backend benchmarks
+        if: github.event_name != 'pull_request'
+        run: |
+          build/native/labneura_native_backend_benchmark \
+            benchmark-${{ matrix.architecture }}.csv
+
+      - name: Upload native benchmark results
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: simd-benchmarks-${{ matrix.architecture }}
+          path: benchmark-${{ matrix.architecture }}.csv
+          if-no-files-found: error
+
+  publish-ci-reports:
+    name: Publish CI reports
     runs-on: ubuntu-latest
-    needs: build-test
+    needs: [build-test, native-simd]
+    concurrency:
+      group: ci-report-publish-${{ github.ref }}
+      cancel-in-progress: false
 
     if: |
-      github.event_name == 'push' &&
-      github.ref == 'refs/heads/main'
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
 
     steps:
       - uses: actions/checkout@v4
@@ -176,25 +218,40 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: labneura-coverage
-          path: coverage_artifact
+          path: ci_artifacts
 
-      - name: Publish coverage to repository
+      - name: Download native benchmark artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: simd-benchmarks-*
+          path: ci_artifacts
+          merge-multiple: true
+
+      - name: Update checkout to latest main
+        run: git pull --rebase origin main
+
+      - name: Generate and publish CI reports
         run: |
           mkdir -p coverage/html
 
           rm -rf coverage/html/*
-          cp coverage_artifact/coverage.txt coverage/coverage.txt
-          cp -r coverage_artifact/coverage_html/* coverage/html/
+          cp ci_artifacts/coverage.txt coverage/coverage.txt
+          cp -r ci_artifacts/coverage_html/* coverage/html/
+          python benchmarking/publish_ci_results.py \
+            --results-dir ci_artifacts \
+            --output benchmarking/results/latest.md \
+            --commit "$GITHUB_SHA" \
+            --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git add coverage
+          git add coverage benchmarking/results/latest.md
 
           if git diff --cached --quiet; then
-            echo "No coverage changes"
+            echo "No generated report changes"
             exit 0
           fi
 
-          git commit -m "ci: publish LLVM C++ coverage"
-          git push
+          git commit -m "ci: publish coverage and SIMD benchmarks [skip ci]"
+          git push origin HEAD:main
