@@ -1,4 +1,7 @@
 #include "labneura/backends/common/cpu_features.h"
+#include "cpu_features_internal.h"
+
+#include <atomic>
 
 #if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
 #include <intrin.h>
@@ -112,22 +115,47 @@ bool detect_neon() {
 #endif
 }
 
+struct DetectedFeatures {
+    CPUFeatures features;
+    bool neon;
+};
+
+std::atomic<std::size_t> g_detection_runs{0};
+
+// Detection runs once per process (thread-safe function-local static).
+const DetectedFeatures& cached_features() {
+    static const DetectedFeatures detected = [] {
+        g_detection_runs.fetch_add(1, std::memory_order_relaxed);
+        return DetectedFeatures{{detect_sse41(), detect_avx2(), detect_f16c()},
+                                detect_neon()};
+    }();
+    return detected;
+}
+
 }  // namespace
 
+namespace detail {
+
+std::size_t cpu_feature_detection_count() {
+    return g_detection_runs.load(std::memory_order_relaxed);
+}
+
+}  // namespace detail
+
 CPUFeatures detect_cpu_features() {
-    return {detect_sse41(), detect_avx2(), detect_f16c()};
+    return cached_features().features;
 }
 
 bool cpu_supports_avx2() {
-    return detect_avx2();
+    return cached_features().features.avx2;
 }
 
 bool cpu_supports_f16c() {
-    return detect_f16c();
+    return cached_features().features.f16c;
 }
 
 bool cpu_supports_neon() {
-    return detect_neon();
+    return cached_features().neon;
 }
 
 } // namespace labneura
