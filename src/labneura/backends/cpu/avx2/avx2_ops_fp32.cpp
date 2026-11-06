@@ -4,6 +4,7 @@
 #include "avx2_internal.h"
 #include "labneura/utils/alignment.hpp"
 #include <algorithm>
+#include <memory>
 #include <stdexcept>
 
 namespace labneura {
@@ -599,6 +600,77 @@ void AVX2Backend::operation_fp32(const TensorBackend& other, OperationType op_ty
         }
     }
     while (i < size) { this_data[i] -= other_data[i]; ++i; }
+}
+
+// =======================
+// Direct-output FP32 kernel
+// =======================
+
+namespace {
+
+// dst[i] = a[i] op b[i] with IEEE-754 single-precision ADD/SUB/MUL/DIV in both the
+// vector body and the scalar tail. dst may equal a or b exactly; partially
+// overlapping buffers are not supported. Unaligned accesses carry no penalty on
+// AVX2-capable CPUs when the data happens to be aligned.
+template <typename VecOp, typename ScalarOp>
+void fp32_into_kernel(float* dst, const float* a, const float* b, std::size_t n,
+                      VecOp vec_op, ScalarOp scalar_op) {
+    std::size_t i = 0;
+    for (; i + 32 <= n; i += 32) {
+        const __m256 r0 = vec_op(_mm256_loadu_ps(a + i),      _mm256_loadu_ps(b + i));
+        const __m256 r1 = vec_op(_mm256_loadu_ps(a + i + 8),  _mm256_loadu_ps(b + i + 8));
+        const __m256 r2 = vec_op(_mm256_loadu_ps(a + i + 16), _mm256_loadu_ps(b + i + 16));
+        const __m256 r3 = vec_op(_mm256_loadu_ps(a + i + 24), _mm256_loadu_ps(b + i + 24));
+        _mm256_storeu_ps(dst + i,      r0);
+        _mm256_storeu_ps(dst + i + 8,  r1);
+        _mm256_storeu_ps(dst + i + 16, r2);
+        _mm256_storeu_ps(dst + i + 24, r3);
+    }
+    for (; i + 8 <= n; i += 8) {
+        _mm256_storeu_ps(dst + i, vec_op(_mm256_loadu_ps(a + i), _mm256_loadu_ps(b + i)));
+    }
+    for (; i < n; ++i) {
+        dst[i] = scalar_op(a[i], b[i]);
+    }
+}
+
+}  // namespace
+
+std::unique_ptr<TensorBackend> AVX2Backend::create_output() const {
+    if (quantization_mode_ != QuantizationMode::FP32) {
+        return nullptr;
+    }
+    return std::make_unique<AVX2Backend>(size_, quantization_mode_);
+}
+
+bool AVX2Backend::operation_into(const TensorBackend& other, TensorBackend& out, OperationType op_type) const {
+    if (quantization_mode_ != QuantizationMode::FP32) {
+        return false;
+    }
+    if (out.size() != size_ || out.quantization_mode() != quantization_mode_) {
+        throw std::runtime_error("Output tensor does not match operand size or mode");
+    }
+    float* dst = out.data_fp32();
+    const float* a = data_fp32();
+    const float* b = other.data_fp32();
+    if (op_type == OperationType::ADD) {
+        fp32_into_kernel(dst, a, b, size_,
+            [](__m256 x, __m256 y) { return _mm256_add_ps(x, y); },
+            [](float x, float y) { return x + y; });
+    } else if (op_type == OperationType::MUL) {
+        fp32_into_kernel(dst, a, b, size_,
+            [](__m256 x, __m256 y) { return _mm256_mul_ps(x, y); },
+            [](float x, float y) { return x * y; });
+    } else if (op_type == OperationType::DIV) {
+        fp32_into_kernel(dst, a, b, size_,
+            [](__m256 x, __m256 y) { return _mm256_div_ps(x, y); },
+            [](float x, float y) { return x / y; });
+    } else {
+        fp32_into_kernel(dst, a, b, size_,
+            [](__m256 x, __m256 y) { return _mm256_sub_ps(x, y); },
+            [](float x, float y) { return x - y; });
+    }
+    return true;
 }
 
 // =======================

@@ -39,6 +39,33 @@ void TensorBackend::operation(const TensorBackend& other, OperationType op) {
     }
 }
 
+std::unique_ptr<TensorBackend> TensorBackend::operation_new(const TensorBackend& other, OperationType op) const {
+    if (size() != other.size()) {
+        throw std::runtime_error("Tensor size mismatch");
+    }
+
+    if (quantization_mode() != other.quantization_mode()) {
+        throw std::runtime_error("Quantization mode mismatch");
+    }
+
+    auto out = create_output();
+    if (!out) {
+        return nullptr;
+    }
+    if (!operation_into(other, *out, op)) {
+        return nullptr;
+    }
+    return out;
+}
+
+std::unique_ptr<TensorBackend> TensorBackend::create_output() const {
+    return nullptr;
+}
+
+bool TensorBackend::operation_into(const TensorBackend&, TensorBackend&, OperationType) const {
+    return false;
+}
+
 int16_t* TensorBackend::data_fp16() {
     throw std::runtime_error("FP16 data access not implemented for this backend");
 }
