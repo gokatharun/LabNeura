@@ -36,6 +36,9 @@ Tensor::Tensor() : quantization_mode_(QuantizationMode::FP32), shape_{0} {
     init_backend(0);
 }
 
+Tensor::Tensor(QuantizationMode mode, std::unique_ptr<TensorBackend> backend, std::vector<std::size_t> shape)
+    : quantization_mode_(mode), backend_(std::move(backend)), shape_(std::move(shape)) {}
+
 Tensor::Tensor(const std::vector<std::vector<float>>& rows, QuantizationMode mode)
     : Tensor(flatten_rows(rows, mode), mode) {
     shape_ = {rows.size(), rows.empty() ? std::size_t{0} : rows.front().size()};
@@ -216,26 +219,36 @@ const int16_t* Tensor::data_int16() const {
 }
 
 Tensor Tensor::add(const Tensor& other) const {
-    Tensor result(*this);
-    result.add_inplace(other);
-    return result;
+    return binary_op(other, OperationType::ADD);
 }
 
 Tensor Tensor::mul(const Tensor& other) const {
-    Tensor result(*this);
-    result.mul_inplace(other);
-    return result;
+    return binary_op(other, OperationType::MUL);
 }
 
 Tensor Tensor::sub(const Tensor& other) const {
-    Tensor result(*this);
-    result.sub_inplace(other);
-    return result;
+    return binary_op(other, OperationType::SUB);
 }
 
 Tensor Tensor::div(const Tensor& other) const {
+    return binary_op(other, OperationType::DIV);
+}
+
+Tensor Tensor::binary_op(const Tensor& other, OperationType op) const {
+    if (backend_ && other.backend_) {
+        check_same_shape(other);
+        if (auto out = backend_->operation_new(*other.backend_, op)) {
+            return Tensor(quantization_mode_, std::move(out), shape_);
+        }
+    }
+
     Tensor result(*this);
-    result.div_inplace(other);
+    switch (op) {
+        case OperationType::ADD: result.add_inplace(other); break;
+        case OperationType::SUB: result.sub_inplace(other); break;
+        case OperationType::MUL: result.mul_inplace(other); break;
+        default: result.div_inplace(other); break;
+    }
     return result;
 }
 

@@ -34,7 +34,23 @@ public:
     void div_inplace(const TensorBackend& other);
     void operation(const TensorBackend& other, OperationType op);
 
+    // Allocating operation: out = this (op) other, without modifying either input.
+    // Returns nullptr when this backend has no direct-output kernel for the current
+    // dtype; callers then fall back to clone() + in-place. Validation errors are
+    // reported with the same exceptions as operation().
+    std::unique_ptr<TensorBackend> operation_new(const TensorBackend& other, OperationType op) const;
+
 protected:
+    // ---- Optional direct-output hooks (defaults: unsupported) ----
+    // Returns an uninitialised output backend of the same type, size and mode, or
+    // nullptr if operation_into() is not supported for this backend/mode.
+    virtual std::unique_ptr<TensorBackend> create_output() const;
+    // Computes out = this (op) other for equal-size, equal-mode operands. `out` is a
+    // distinct, freshly created backend. Exact aliasing (out's buffer == an input's
+    // buffer) is safe because kernels are elementwise; partial overlap is not allowed.
+    // Returns false if unsupported.
+    virtual bool operation_into(const TensorBackend& other, TensorBackend& out, OperationType op) const;
+
     // ---- Backend-specific kernels (virtual hooks) ----
     virtual void operation_fp32(const TensorBackend& other, OperationType op) = 0;
     virtual void operation_int8(const TensorBackend& other, OperationType op) = 0;

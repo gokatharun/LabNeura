@@ -28,6 +28,10 @@ public:
     void operation_int16(const TensorBackend& other, OperationType op_type) override;
     void operation_int8(const TensorBackend& other, OperationType op_type) override;
 
+protected:
+    std::unique_ptr<TensorBackend> create_output() const override;
+    bool operation_into(const TensorBackend& other, TensorBackend& out, OperationType op_type) const override;
+
 private:
     std::size_t size_;
     std::size_t aligned_size_;

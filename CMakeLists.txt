@@ -184,13 +184,14 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
     # Apply AVX2 flags to all AVX2 backend files
     set_source_files_properties(
       src/labneura/backends/cpu/avx2/avx2_backend.cpp
-      src/labneura/backends/cpu/avx2/avx2_ops_fp32.cpp
       src/labneura/backends/cpu/avx2/avx2_ops_int8.cpp
       src/labneura/backends/cpu/avx2/avx2_ops_int16.cpp
       PROPERTIES COMPILE_FLAGS "-mavx2"
     )
-    # FP16 must keep IEEE NaN/Inf/division semantics, so opt out of -ffast-math.
+    # FP16 and FP32 must keep IEEE NaN/Inf/division semantics, so opt out of
+    # -ffast-math (Clang otherwise lowers vector division to RCPPS + Newton-Raphson).
     set_source_files_properties(
+      src/labneura/backends/cpu/avx2/avx2_ops_fp32.cpp
       src/labneura/backends/cpu/avx2/avx2_ops_fp16.cpp
       PROPERTIES COMPILE_FLAGS "-mavx2 -fno-fast-math"
     )
@@ -219,6 +220,14 @@ endif()
 
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
   target_compile_definitions(labneura PRIVATE LABNEURA_ENABLE_NEON=1)
+  if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    # FP32 NEON division is IEEE (vdivq_f32 / scalar fdiv); keep NaN/Inf/denormal
+    # semantics independent of the global -ffast-math.
+    set_source_files_properties(
+      src/labneura/backends/cpu/neon/neon_ops_fp32.cpp
+      PROPERTIES COMPILE_FLAGS "-fno-fast-math"
+    )
+  endif()
 endif()
 
 target_include_directories(labneura
@@ -395,6 +404,33 @@ if(NOT SKBUILD)
         PRIVATE LABNEURA_TEST_NEON=1
       )
     endif()
+    add_executable(labneura_fp32_direct_output_test
+      tests/fp32_direct_output_test.cpp
+    )
+    target_include_directories(labneura_fp32_direct_output_test PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+    target_link_libraries(labneura_fp32_direct_output_test PRIVATE labneura)
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64"
+       AND LABNEURA_COMPILER_SUPPORTS_AVX2)
+      target_compile_definitions(labneura_fp32_direct_output_test
+        PRIVATE LABNEURA_TEST_AVX2=1
+      )
+    endif()
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
+      target_compile_definitions(labneura_fp32_direct_output_test
+        PRIVATE LABNEURA_TEST_NEON=1
+      )
+    endif()
+    add_test(NAME fp32_generic_allocating COMMAND labneura_fp32_direct_output_test GENERIC)
+    add_test(NAME fp32_avx2_allocating COMMAND labneura_fp32_direct_output_test AVX2)
+    add_test(NAME fp32_neon_allocating COMMAND labneura_fp32_direct_output_test NEON)
+    set_tests_properties(
+      fp32_avx2_allocating
+      fp32_neon_allocating
+      PROPERTIES SKIP_RETURN_CODE 77
+    )
+
     add_test(NAME fp16_f16c_dispatch COMMAND labneura_fp16_regression_test DISPATCH)
     add_test(NAME avx2_fp16_arithmetic COMMAND labneura_fp16_regression_test AVX2)
     add_test(NAME neon_fp16_arithmetic COMMAND labneura_fp16_regression_test NEON)
