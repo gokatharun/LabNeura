@@ -218,6 +218,15 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
 
 endif()
 
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+  # Generic is the numerical reference: under -ffast-math GCC lowers a / b to
+  # a * (1 / b), which is not correctly rounded (observed on x86_64 CI).
+  set_source_files_properties(
+    src/labneura/backends/cpu/generic/generic_ops_fp32.cpp
+    PROPERTIES COMPILE_FLAGS "-fno-fast-math"
+  )
+endif()
+
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
   target_compile_definitions(labneura PRIVATE LABNEURA_ENABLE_NEON=1)
   if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
