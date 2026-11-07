@@ -11,6 +11,8 @@ import numpy as np
 import pytest
 import labneura
 
+GENERIC_BACKEND = labneura.detect_backend() == "GENERIC"
+
 
 class TestBackendErrorHandling:
     """Tests for backend error conditions and default implementations"""
@@ -55,6 +57,7 @@ class TestBackendErrorHandling:
         with pytest.raises(RuntimeError, match="Quantization mode mismatch"):
             t1.sub_inplace(t2)
 
+    @pytest.mark.skipif(GENERIC_BACKEND, reason="FP16 is unsupported by Generic")
     def test_quantization_mode_mismatch_mul(self):
         """Test that mul_inplace throws on quantization mode mismatch"""
         t1 = labneura.Tensor([2.0, 3.0], labneura.QuantizationMode.FP16)
@@ -84,6 +87,7 @@ class TestBackendOperationDispatching:
         t1.add_inplace(t2)
         np.testing.assert_allclose(t1.data_fp32(), [5.0, 7.0, 9.0], rtol=1e-6)
 
+    @pytest.mark.skipif(GENERIC_BACKEND, reason="FP16 is unsupported by Generic")
     def test_operation_dispatches_fp16(self):
         """Verify FP16 operations are dispatched correctly"""
         t1 = labneura.Tensor([2.0, 4.0, 6.0], labneura.QuantizationMode.FP16)
@@ -168,6 +172,7 @@ class TestMultipleOperations:
         result = t1.data_int8()
         assert result == [13, 23, 33]
 
+    @pytest.mark.skipif(GENERIC_BACKEND, reason="FP16 is unsupported by Generic")
     def test_chain_operations_fp16(self):
         """Test chaining operations on FP16"""
         t1 = labneura.Tensor([5.0, 10.0, 15.0], labneura.QuantizationMode.FP16)
@@ -249,6 +254,7 @@ class TestEdgeCasesForBackend:
 class TestMixedModeErrorCases:
     """Test various error cases with mixed modes"""
 
+    @pytest.mark.skipif(GENERIC_BACKEND, reason="FP16 is unsupported by Generic")
     def test_fp32_with_fp16_error(self):
         """Test FP32 with FP16 throws mode mismatch"""
         t1 = labneura.Tensor([1.0, 2.0], labneura.QuantizationMode.FP32)
@@ -265,6 +271,7 @@ class TestMixedModeErrorCases:
         with pytest.raises(RuntimeError, match="Quantization mode mismatch"):
             t1.sub_inplace(t2)
 
+    @pytest.mark.skipif(GENERIC_BACKEND, reason="FP16 is unsupported by Generic")
     def test_int8_with_fp16_error(self):
         """Test INT8 with FP16 throws mode mismatch"""
         t1 = labneura.Tensor([1, 2], labneura.QuantizationMode.INT8)
@@ -281,6 +288,7 @@ class TestMixedModeErrorCases:
         with pytest.raises(RuntimeError, match="Quantization mode mismatch"):
             t1.add_inplace(t2)
 
+    @pytest.mark.skipif(GENERIC_BACKEND, reason="FP16 is unsupported by Generic")
     def test_fp16_with_int16_error(self):
         """Test FP16 with INT16 throws mode mismatch"""
         t1 = labneura.Tensor([1.0, 2.0], labneura.QuantizationMode.FP16)
@@ -301,6 +309,7 @@ class TestAllQuantizationModes:
         result = t1.add(t2)
         np.testing.assert_allclose(result.data_fp32(), [11.0, 22.0], rtol=1e-6)
 
+    @pytest.mark.skipif(GENERIC_BACKEND, reason="FP16 is unsupported by Generic")
     def test_fp16_operations_complete(self):
         """Complete test of FP16 operations"""
         t1 = labneura.Tensor([10.0, 20.0], labneura.QuantizationMode.FP16)

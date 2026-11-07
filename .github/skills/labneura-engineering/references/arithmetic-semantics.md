@@ -1,9 +1,9 @@
 # M3.2 Elementwise Arithmetic Semantics
 
-Status: **M3.2.1 semantics defined; M3.2.2 Generic FP32 and M3.2.3 Generic
-INT8 broadcasting implemented.** The broader dtype/backend contract below
-remains a target for later milestones; current coverage is called out
-separately.
+Status: **M3.2.1 semantics defined; M3.2.2 Generic FP32, M3.2.3 Generic
+INT8, and M3.2.4 Generic INT16 broadcasting implemented.** The broader
+dtype/backend contract below remains a target for later milestones; current
+coverage is called out separately.
 
 ## API
 
@@ -104,13 +104,15 @@ change; update tests that currently require equal shapes. Existing same-shape
 operations, integer saturation, integer division-by-zero result `0`, and FP
 floating-point behavior are intended to remain compatible.
 
-M3.2.2/M3.2.3 implement unequal-shape broadcasting for FP32 and INT8 tensors
-whose backend is Generic. Equal-shape operations continue to use their
-existing backend paths. NEON and AVX2 are not silently replaced by Generic for
-broadcasting: their unequal-shape behavior remains the existing size/shape
-error until those backends gain broadcast kernels. INT8 broadcasting uses
-widened signed integer intermediates and saturates to the documented INT8
-range; it does not convert values through FP32.
+M3.2.2/M3.2.3/M3.2.4 implement unequal-shape broadcasting for FP32, INT8,
+and INT16 tensors whose backend is Generic. Equal-shape operations continue
+to use their existing backend paths. NEON and AVX2 are not silently replaced
+by Generic for broadcasting: their unequal-shape behavior remains the
+existing size/shape error until those backends gain broadcast kernels. INT8
+and INT16 use widened signed integer intermediates and saturate to their
+documented ranges; they do not convert values through FP32. Generic INT16
+also now supports equal-shape arithmetic through the existing Tensor methods;
+this does not change optimized-backend behavior.
 
 ## Semantic test matrix
 
@@ -138,21 +140,21 @@ level, treating NaN payloads as unspecified.
    and in-place ADD/SUB/MUL/DIV, shape and alias checks, native/Python tests.
 2. **M3.2.3 — Generic INT8 broadcasting:** reuse the typed iterator; widened
    intermediates, saturation, division edge cases, and parity tests.
-3. **M3.2.4 — Generic FP16/INT16 decision and implementation:** establish
-   executable Generic support or explicitly mark these dtype/backend pairs
-   unsupported; do not silently fall back.
-4. **M3.2.5 — NEON broadcasting:** add supported dtype/operation combinations
+3. **M3.2.4 — Generic INT16 broadcasting:** reuse the typed iterator and add
+   Generic INT16 storage access/equal-shape kernels with widened intermediates,
+   saturation, division edge cases, and parity tests.
+4. **M3.2.5 — Generic FP16 decision and implementation:** establish executable
+   Generic support or explicitly mark Generic FP16 unsupported; do not
+   silently fall back.
+5. **M3.2.6 — NEON broadcasting:** add supported dtype/operation combinations
    with explicit backend parity and tail tests.
-5. **M3.2.6 — AVX2 broadcasting:** same contract, explicit boundary/tail
+6. **M3.2.7 — AVX2 broadcasting:** same contract, explicit boundary/tail
    tests, and execution on x86 AVX2 CI. Validate F16C dispatch separately.
-6. **M3.2.7 — API and regression closure:** C++/Python error parity, operator
+7. **M3.2.8 — API and regression closure:** C++/Python error parity, operator
    coverage, mixed-dtype rejection, views/offset/overlap, full suites and
    documentation.
 
-Generic FP16/INT16 arithmetic is not covered by the current implementation.
-Whether to add those Generic kernels as the semantic reference or leave them
-explicitly unsupported is an open implementation decision; resolve it before
-claiming Generic coverage for those dtypes. Do not silently use a different
+Generic FP16 arithmetic remains unsupported. Do not silently use a different
 dtype or backend fallback.
 
 The strict floating-point clauses above are intended semantics, not assertions

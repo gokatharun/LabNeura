@@ -6,6 +6,8 @@ Tests +, -, *, /, +=, -=, *=, /= operators
 import pytest
 import labneura
 
+GENERIC_BACKEND = labneura.detect_backend() == "GENERIC"
+
 
 class TestBinaryOperators:
     """Test binary arithmetic operators (+, -, *, /)"""
@@ -398,6 +400,10 @@ class TestOperatorConsistency:
 
 class TestOperatorsWithFP16:
     """Test operators with FP16 quantization mode"""
+
+    pytestmark = pytest.mark.skipif(
+        GENERIC_BACKEND, reason="FP16 is unsupported by Generic"
+    )
 
     def test_add_fp16(self):
         """Test + operator with FP16 tensors"""

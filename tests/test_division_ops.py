@@ -6,6 +6,8 @@ import numpy as np
 import pytest
 import labneura
 
+GENERIC_BACKEND = labneura.detect_backend() == "GENERIC"
+
 
 def make_fp32(values):
     """Helper to create FP32 tensor."""
@@ -129,6 +131,7 @@ def test_div_fp32_various_sizes():
 # FP16 Division Tests
 # =======================
 
+@pytest.mark.skipif(GENERIC_BACKEND, reason="FP16 is unsupported by Generic")
 def test_div_fp16_basic():
     """Basic FP16 division test."""
     a = make_fp16([10.0, 20.0, 30.0, 40.0])
@@ -139,6 +142,7 @@ def test_div_fp16_basic():
     np.testing.assert_allclose(result, [5.0, 5.0, 6.0, 5.0], rtol=1e-3)
 
 
+@pytest.mark.skipif(GENERIC_BACKEND, reason="FP16 is unsupported by Generic")
 def test_div_inplace_fp16():
     """In-place FP16 division test."""
     a = make_fp16([100.0, 50.0, 25.0, 10.0])
@@ -148,6 +152,7 @@ def test_div_inplace_fp16():
     np.testing.assert_allclose(result, [10.0, 10.0, 10.0, 5.0], rtol=1e-3)
 
 
+@pytest.mark.skipif(GENERIC_BACKEND, reason="FP16 is unsupported by Generic")
 def test_div_fp16_negative_values():
     """FP16 division with negative values."""
     a = make_fp16([10.0, -20.0, -30.0, 40.0])
@@ -157,6 +162,7 @@ def test_div_fp16_negative_values():
     np.testing.assert_allclose(result, [5.0, -5.0, 6.0, -5.0], rtol=1e-3)
 
 
+@pytest.mark.skipif(GENERIC_BACKEND, reason="FP16 is unsupported by Generic")
 def test_div_fp16_large_tensor():
     """FP16 division with large tensor (tests SIMD loops: 64, 32, 16, 8, 4)."""
     size = 150
@@ -170,6 +176,7 @@ def test_div_fp16_large_tensor():
     np.testing.assert_allclose(result, expected, rtol=1e-2)
 
 
+@pytest.mark.skipif(GENERIC_BACKEND, reason="FP16 is unsupported by Generic")
 def test_div_fp16_various_sizes():
     """Test various FP16 tensor sizes to cover all SIMD paths."""
     sizes = [1, 3, 4, 7, 8, 15, 16, 31, 32, 63, 64, 65, 127, 128]
@@ -446,10 +453,14 @@ def test_div_backend_consistency():
     # Test all data types
     test_cases = [
         (make_fp32([10.0, 20.0, 30.0]), make_fp32([2.0, 4.0, 5.0])),
-        (make_fp16([10.0, 20.0, 30.0]), make_fp16([2.0, 4.0, 5.0])),
         (make_int16([10, 20, 30]), make_int16([2, 4, 5])),
         (make_int8([10, 20, 30]), make_int8([2, 4, 5])),
     ]
+    if not GENERIC_BACKEND:
+        test_cases.insert(
+            1,
+            (make_fp16([10.0, 20.0, 30.0]), make_fp16([2.0, 4.0, 5.0])),
+        )
     
     for a, b in test_cases:
         c = a.div(b)

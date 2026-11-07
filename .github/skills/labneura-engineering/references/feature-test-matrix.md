@@ -36,9 +36,9 @@ Examples: `(3,1)+(1,4)->(3,4)`; `(5,3,1)+(1,4)->(5,3,4)`; `(2,3)+(4,3)` is incom
 M3.1 implements only a reusable shape/effective-stride planner. It accepts
 element-based input strides, including non-contiguous layouts, and does not
 allocate expanded storage or execute arithmetic itself. M3.2.2/M3.2.3 use this
-planner and a shared typed iterator for Generic FP32 and INT8 elementwise
-arithmetic; FP16/INT16 and optimized-backend broadcast kernels remain future
-work.
+planner and a shared typed iterator for Generic FP32, INT8, and INT16
+elementwise arithmetic; FP16 and optimized-backend broadcast kernels remain
+future work.
 M3.1 is locally validated by the native Generic/NEON nD tests and Python
 planner tests. The x86 CI run must still execute the `tensor_nd_avx2` planner
 tests and Python suite on this change before AVX2 CI validation is complete.
@@ -56,8 +56,13 @@ Python tests pass with Generic selected; full native/Python suite results are
 recorded in `current-state.md`. M3.2.3 adds Generic INT8 ADD/SUB/MUL/DIV
 broadcasting with widened-and-clipped NumPy references, saturation boundaries,
 division edge cases, views, empty tensors, allocating independence and
-in-place alias checks. FP16/INT16 and NEON/AVX2 broadcasting remain pending;
-the general matrix below is not yet complete.
+in-place alias checks. M3.2.4 adds Generic INT16 allocating and in-place
+broadcasting using widened-and-clipped references, including INT16 extremes,
+division edge cases, equal-shape operations, offset views, empty tensors, and
+alias rejection. FP16 and NEON/AVX2 broadcasting remain pending; the general
+matrix below is not yet complete. Python tests that require FP16 storage or
+arithmetic explicitly skip when Generic is selected; mixed-mode checks retain
+coverage for supported FP32/INT8/INT16 combinations.
 
 ### Elementwise arithmetic semantic matrix
 
@@ -67,6 +72,10 @@ the general matrix below is not yet complete.
 - [x] Generic INT8 ADD/SUB/MUL/DIV: allocating and in-place broadcasting,
   scalar/rank/multi-axis/empty shapes, offset views, saturation, zero-divisor
   and truncation semantics, minimum-value overflow, and alias rejection.
+- [x] Generic INT16 ADD/SUB/MUL/DIV: allocating and in-place broadcasting,
+  equal-shape and scalar/rank/multi-axis/empty shapes, offset views, saturation,
+  zero-divisor and truncation semantics, minimum-value overflow, and alias
+  rejection.
 - [ ] ADD, SUB, MUL, DIV for FP32, FP16, INT16 and INT8, allocating/in-place.
 - [ ] Same-dtype result preservation; every mixed-dtype pair rejected.
 - [ ] Same shape, scalar, singleton, rank extension, multi-axis, zero-size,

@@ -541,7 +541,9 @@ Tensor Tensor::binary_op(const Tensor& other, OperationType op) const {
             shape_ != other.shape_ &&
             quantization_mode_ == other.quantization_mode_ &&
             (quantization_mode_ == QuantizationMode::FP32 ||
-             quantization_mode_ == QuantizationMode::INT8) &&
+             quantization_mode_ == QuantizationMode::FP16 ||
+             quantization_mode_ == QuantizationMode::INT8 ||
+             quantization_mode_ == QuantizationMode::INT16) &&
             lhs_generic && rhs_generic;
         if (shape_ != other.shape_ && !generic_broadcast) {
             check_same_shape(other);
@@ -610,7 +612,9 @@ void Tensor::binary_inplace(const Tensor& other, OperationType op) {
         shape_ != other.shape_ &&
         quantization_mode_ == other.quantization_mode_ &&
         (quantization_mode_ == QuantizationMode::FP32 ||
-         quantization_mode_ == QuantizationMode::INT8) &&
+         quantization_mode_ == QuantizationMode::FP16 ||
+         quantization_mode_ == QuantizationMode::INT8 ||
+         quantization_mode_ == QuantizationMode::INT16) &&
         lhs_backend && rhs_backend;
     if (shape_ == other.shape_ || !generic_broadcast) {
         check_same_shape(other);

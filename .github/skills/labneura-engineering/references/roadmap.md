@@ -100,7 +100,8 @@ Record dtype, operation, shape, allocating/in-place, layout, cache regime, backe
 | M3.2.1 | Elementwise arithmetic semantics | Contract and semantic test matrix documented; no kernels |
 | M3.2.2 | Generic FP32 arithmetic with broadcasting | ADD/SUB/MUL/DIV; allocating and supported in-place operations; NumPy parity |
 | M3.2.3 | Generic INT8 arithmetic with broadcasting | Saturating ADD/SUB/MUL, safe integer DIV, allocating/in-place and NumPy parity |
-| M3.2.4+ | Remaining dtype/backend broadcast kernels | Generic FP16/INT16, then NEON/AVX2 with explicit backend parity |
+| M3.2.4 | Generic INT16 arithmetic with broadcasting | Widened saturating ADD/SUB/MUL, safe integer DIV, allocating/in-place and NumPy parity |
+| M3.2.5+ | Remaining dtype/backend broadcast kernels | Generic FP16 decision, then NEON/AVX2 with explicit backend parity |
 | M3 (later) | Comparison and logical operations | Shared planner, separately defined dtype/result semantics and backend parity |
 | M4 | Reductions | Axis/keepdims/dtype/edge tests |
 | M5 | Dot and matmul | 2D and batched semantics, dedicated kernels |
@@ -122,10 +123,11 @@ broadcasting remains pending.
 
 M3.2.1 defined the same-dtype, broadcast, overflow, division, rounding,
 aliasing, and error contract recorded in `references/arithmetic-semantics.md`.
-M3.2.2 implements Generic FP32 ADD/SUB/MUL/DIV broadcasting, and M3.2.3 adds
-Generic INT8 broadcasting with saturating arithmetic. Generic FP16/INT16 and
-optimized backend broadcast kernels remain pending and should be implemented
-in bounded, explicitly tested stages.
+M3.2.2 implements Generic FP32 ADD/SUB/MUL/DIV broadcasting, M3.2.3 adds
+Generic INT8 broadcasting with saturating arithmetic, and M3.2.4 adds Generic
+INT16 broadcasting and equal-shape arithmetic. Generic FP16 and optimized
+backend broadcast kernels remain pending and should be implemented in bounded,
+explicitly tested stages.
 
 ## Good agent task boundaries
 Good: "Define and test nD shape/numel overflow invariants; no operations."

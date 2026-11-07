@@ -14,6 +14,8 @@ import numpy as np
 import pytest
 import labneura
 
+GENERIC_BACKEND = labneura.detect_backend() == "GENERIC"
+
 
 class TestCopyMoveAssignment:
     """Tests for copy and move assignment operators (Lines 127-145)"""
@@ -40,6 +42,7 @@ class TestCopyMoveAssignment:
         assert t2.size() == 3
         assert t2.data_int8() == [10, 20, 30]
 
+    @pytest.mark.skipif(GENERIC_BACKEND, reason="FP16 is unsupported by Generic")
     def test_copy_assignment_fp16(self):
         """Test copy assignment operator with FP16 tensors"""
         t1 = labneura.Tensor([1.5, 2.5, 3.5], labneura.QuantizationMode.FP16)
@@ -164,6 +167,7 @@ class TestInt16Constructors:
         result = t.data_int16()
         assert result[0] == -32768
 
+    @pytest.mark.skipif(GENERIC_BACKEND, reason="FP16 is unsupported by Generic")
     def test_int_scalar_fp16(self):
         """Test int scalar constructor with FP16 mode"""
         t = labneura.Tensor(42, labneura.QuantizationMode.FP16)
@@ -172,6 +176,7 @@ class TestInt16Constructors:
         result = t.data_fp16()
         assert len(result) == 1
 
+    @pytest.mark.skipif(GENERIC_BACKEND, reason="FP16 is unsupported by Generic")
     def test_int_scalar_fp16_negative(self):
         """Test int scalar constructor with negative FP16 value"""
         t = labneura.Tensor(-123, labneura.QuantizationMode.FP16)
@@ -200,6 +205,7 @@ class TestConstDataAccessors:
         data = t.data_int8()
         assert data == [10, 20, 30]
 
+    @pytest.mark.skipif(GENERIC_BACKEND, reason="FP16 is unsupported by Generic")
     def test_const_data_fp16_access(self):
         """Test const data_fp16() accessor"""
         t = labneura.Tensor([1.5, 2.5, 3.5], labneura.QuantizationMode.FP16)
@@ -325,6 +331,7 @@ class TestUncommonQuantizationPaths:
         assert t.size() == 1
         assert t.data_int16()[0] == 0
 
+    @pytest.mark.skipif(GENERIC_BACKEND, reason="FP16 is unsupported by Generic")
     def test_scalar_zero_fp16(self):
         """Test scalar constructor with zero in FP16 mode"""
         t = labneura.Tensor(0, labneura.QuantizationMode.FP16)
@@ -336,8 +343,9 @@ class TestUncommonQuantizationPaths:
         t1 = labneura.Tensor(1.5, labneura.QuantizationMode.FP32)
         assert t1.size() == 1
         
-        t2 = labneura.Tensor(2.5, labneura.QuantizationMode.FP16)
-        assert t2.size() == 1
+        if not GENERIC_BACKEND:
+            t2 = labneura.Tensor(2.5, labneura.QuantizationMode.FP16)
+            assert t2.size() == 1
         
         t3 = labneura.Tensor(3.5, labneura.QuantizationMode.INT8)
         assert t3.size() == 1
@@ -356,6 +364,7 @@ class TestQuantizationModeConversions:
         result = t.data_fp32()
         np.testing.assert_allclose(result, [1.0, 2.0, 3.0, 4.0, 5.0], rtol=1e-6)
 
+    @pytest.mark.skipif(GENERIC_BACKEND, reason="FP16 is unsupported by Generic")
     def test_int_vector_fp16_conversion(self):
         """Test int vector properly converts to FP16"""
         data = [10, 20, 30]
@@ -397,6 +406,7 @@ class TestOperationsOnDifferentModes:
         result = t1.mul(t2)
         assert result.data_int8() == [10, 18, 28]
 
+    @pytest.mark.skipif(GENERIC_BACKEND, reason="FP16 is unsupported by Generic")
     def test_sub_fp16_tensors(self):
         """Test sub operation on FP16 tensors"""
         t1 = labneura.Tensor([10.0, 20.0, 30.0], labneura.QuantizationMode.FP16)

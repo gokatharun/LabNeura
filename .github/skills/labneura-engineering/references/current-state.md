@@ -24,8 +24,8 @@ the immediate priorities; GPU implementation is not active work.
   INT8. FP64 and INT32 are explicitly rejected. Arithmetic operations are
   ADD, SUB, MUL, and DIV, but support is not uniform across every
   dtype/backend/operation combination: Generic arithmetic is implemented for
-  FP32 and INT8, while NEON and AVX2 have additional FP16/INT16 code. Check the
-  relevant backend and tests before claiming a particular combination.
+  FP32, INT8, and INT16, while NEON and AVX2 have additional FP16/INT16 code.
+  Check the relevant backend and tests before claiming a particular combination.
 - Tensor supports contiguous arbitrary-rank construction using
   `Tensor::from_flat` / `Tensor.from_flat(data, shape, mode="auto")`, including
   1D and higher-rank shapes. Existing vector, scalar, and 2D nested-row
@@ -36,8 +36,9 @@ the immediate priorities; GPU implementation is not active work.
   `reshape` requires an equal element count; `flatten` returns shape `[numel]`.
   Both preserve dtype and row-major element order and return independent deep
   copies. Scalar and zero-element tensors follow the existing shape rules.
-- Elementwise Tensor operations require identical shapes. There are no
-  implicit broadcasts.
+- Generic FP32, INT8, and INT16 elementwise arithmetic supports NumPy-style
+  broadcasting. Non-Generic backends retain equal-shape behavior; there is no
+  implicit mixed-dtype promotion.
 - `add_into` is implemented for FP32 and exposed as the Python module function
   `labneura.add_into(a, b, out)`. It writes into caller-owned output storage,
   requires matching shape and backend, and supports exact input/output aliasing.
@@ -235,25 +236,38 @@ Allocating unequal-shape results use independent Generic storage and contiguous
 output metadata. In-place broadcasting is allowed only if the result shape
 equals the destination shape; partial overlaps and broadcast scalar aliases
 that would be overwritten during iteration are rejected. INT8 ADD/SUB/MUL use
-int16 intermediates and clamp to `[-128, 127]`; DIV truncates toward zero,
-returns zero for a zero divisor, and safely saturates `-128 / -1` to `127`.
-Same-shape operations and non-Generic mismatch behavior retain their existing
-backend paths. NEON/AVX2 broadcasting and FP16/INT16 broadcasting remain
-unsupported.
+int16 intermediates and clamp to `[-128, 127]`; INT16 operations use int32
+intermediates and clamp ADD/SUB/MUL to `[-32768, 32767]`. Integer DIV truncates
+toward zero, returns zero for a zero divisor, and safely saturates the minimum
+value divided by `-1`. Same-shape operations and non-Generic mismatch behavior
+retain their existing backend paths. NEON/AVX2 broadcasting and FP16
+broadcasting remain unsupported.
 
-M3.2.3 validation on Apple Silicon:
+M3.2.4 validation on Apple Silicon:
 
-- Native full CTest: 16 passed, 6 AVX2-only tests skipped. The focused
-  `tensor_broadcast_generic` test passed.
-- Focused Python broadcast tests with `LABNEURA_BACKEND=GENERIC`: 88 passed,
-  2 intentional non-Generic-only behavior checks skipped.
-- Full Python suite on the normal host backend: 1020 passed, 116 skipped, and
-  3 existing pytest return-value warnings.
-- Full Python suite with `LABNEURA_BACKEND=GENERIC`: 875 passed, 147 skipped,
-  114 failed. The failures are FP16/INT16 cases that require backend data
-  access or arithmetic those dtypes do not support on Generic; none are
-  FP32/INT8 broadcast tests. The supported Generic broadcast/mismatch
-  regression selection passed 98 tests with 2 intentional skips.
+- Focused native `tensor_broadcast_generic`: passed.
+- Full native CTest: 16 passed, 6 AVX2-only tests skipped.
+- Focused Python INT16 broadcasting with Generic: 37 passed, 1 intentional
+  non-Generic behavior check skipped. All Generic broadcast tests: 125 passed,
+  3 intentional non-Generic behavior checks skipped.
+- Full Python suite on the normal host backend: 1021 passed, 153 skipped, and
+  3 existing pytest return-value warnings after updating stale tests that
+  expected Generic INT16 support to be absent.
+- The initial full Python suite with `LABNEURA_BACKEND=GENERIC` had 45
+  failures. Every traceback ended with `FP16 data access not implemented for
+  this backend` during FP16 tensor construction. They were FP16 constructors,
+  accessors, arithmetic/operator, mixed-mode error, division, and corner-case
+  coverage tests; no failure involved FP32, INT8, INT16, broadcasting, or
+  storage aliasing. Generic FP16 remains outside this milestone.
+- FP16-specific tests now skip explicitly when Generic is selected. Combined
+  checks retain their FP32/INT8/INT16 coverage: the scalar-construction and
+  backend-consistency tests conditionally omit only the FP16 case. Final
+  Generic-forced full Python suite: 983 passed, 191 skipped, 0 failed, with
+  3 existing pytest return-value warnings. Of the prior 45 failures, 43 are
+  now intentional backend-specific skips and the two combined tests pass
+  while checking supported dtypes.
+- Focused Generic INT16 broadcasting: 37 passed, 1 intentional skip;
+  focused Generic INT8 broadcasting: 37 passed, 1 intentional skip.
 - AVX2 runtime validation is unavailable on this Apple Silicon host.
 
 M3.2.2 validation on Apple Silicon: focused native Generic broadcasting test
@@ -274,10 +288,10 @@ transpose/permutation remain unimplemented.
 - View APIs only support contiguous `reshape_view()` and first-axis
   slice/select operations. Negative/reverse slicing, arbitrary axes,
   non-contiguous views and transpose/permutation remain pending.
-- Tensor views remain contiguous-only. Broadcasting is implemented only for
-  Generic FP32 unequal-shape operations; equal-shape operations retain existing
-  backend behavior. NEON/AVX2 and FP16/INT8/INT16 broadcasting remain pending.
-- Per-backend dtype/operation support is uneven. Generic FP16/INT16 are not
+- Tensor views remain contiguous-only. Broadcasting is implemented for Generic
+  FP32, INT8, and INT16 unequal-shape arithmetic; equal-shape operations retain
+  existing backend behavior. NEON/AVX2 and FP16 broadcasting remain pending.
+- Per-backend dtype/operation support is uneven. Generic FP16 is not
   supported for arithmetic; verify each backend operation rather than assuming
   every enum combination is implemented.
 - AVX2 has historical x86_64 CI benchmark evidence, but the current Apple

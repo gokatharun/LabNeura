@@ -1,9 +1,8 @@
 """
 Tests to cover default implementations in base.cpp that throw exceptions.
 
-GenericBackend only implements FP32 and INT8, so when FP16/INT16 are used
-with GenericBackend, it should call the default implementations in base.cpp
-which throw exceptions.
+GenericBackend's unsupported FP16 paths should call the default
+implementations in base.cpp, while supported INT16 paths remain usable.
 """
 
 import os
@@ -11,10 +10,12 @@ from contextlib import contextmanager
 import pytest
 import labneura
 
+GENERIC_BACKEND = labneura.detect_backend() == "GENERIC"
+
 
 @contextmanager
 def force_generic_backend():
-    """Force use of GenericBackend which doesn't implement FP16/INT16"""
+    """Force use of GenericBackend."""
     prev = os.environ.get('LABNEURA_BACKEND')
     os.environ['LABNEURA_BACKEND'] = 'GENERIC'
     try:
@@ -26,41 +27,43 @@ def force_generic_backend():
             os.environ['LABNEURA_BACKEND'] = prev
 
 
-class TestGenericBackendFP16NotImplemented:
-    """Test that GenericBackend throws for FP16 operations (hits base.cpp defaults)"""
+class TestGenericBackendFP16Supported:
+    """Test that GenericBackend supports FP16 data access and arithmetic."""
 
-    def test_fp16_data_access_throws(self):
-        """Test that accessing FP16 data with GenericBackend throws"""
+    def test_fp16_data_access_works(self):
+        """FP16 storage should be accessible with GenericBackend."""
         with force_generic_backend():
-            # GenericBackend doesn't implement FP16, so this hits the default
-            # implementation in base.cpp which throws
-            with pytest.raises(RuntimeError, match="FP16 data access not implemented"):
-                t = labneura.Tensor([1.0, 2.0, 3.0], labneura.QuantizationMode.FP16)
+            t = labneura.Tensor([1.0, 2.0, 3.0], labneura.QuantizationMode.FP16)
+            assert t.data_fp16() == [0x3c00, 0x4000, 0x4200]
 
     def test_fp16_operations_with_generic(self):
-        """Test FP16 operations when forced to use GenericBackend"""
+        """FP16 arithmetic should work with the Generic backend."""
         with force_generic_backend():
-            # GenericBackend doesn't support FP16 operations
-            with pytest.raises(RuntimeError, match="FP16 data access not implemented"):
-                t1 = labneura.Tensor([2.0, 4.0, 6.0], labneura.QuantizationMode.FP16)
+            t1 = labneura.Tensor([2.0, 4.0, 6.0], labneura.QuantizationMode.FP16)
+            t2 = labneura.Tensor([1.0, 2.0, 3.0], labneura.QuantizationMode.FP16)
+            result = t1.add(t2)
+            assert result.data_fp16() == [0x4200, 0x4600, 0x4880]
 
 
-class TestGenericBackendINT16NotImplemented:
-    """Test that GenericBackend throws for INT16 operations (hits base.cpp defaults)"""
+class TestGenericBackendINT16Supported:
+    """Test GenericBackend INT16 data access and equal-shape arithmetic."""
 
-    def test_int16_data_access_throws(self):
-        """Test that accessing INT16 data with GenericBackend throws"""
+    def test_int16_data_access(self):
         with force_generic_backend():
-            # GenericBackend doesn't implement INT16, hits base.cpp default
-            with pytest.raises(RuntimeError, match="INT16 data access not implemented"):
-                t = labneura.Tensor([100, 200, 300], labneura.QuantizationMode.INT16)
+            tensor = labneura.Tensor(
+                [100, 200, 300], labneura.QuantizationMode.INT16
+            )
+            assert tensor.data_int16() == [100, 200, 300]
 
     def test_int16_operations_with_generic(self):
-        """Test INT16 operations when forced to use GenericBackend"""
         with force_generic_backend():
-            # GenericBackend doesn't support INT16 operations
-            with pytest.raises(RuntimeError, match="INT16 data access not implemented"):
-                t1 = labneura.Tensor([1000, 2000, 3000], labneura.QuantizationMode.INT16)
+            lhs = labneura.Tensor(
+                [1000, 2000, 3000], labneura.QuantizationMode.INT16
+            )
+            rhs = labneura.Tensor(
+                [100, 200, 300], labneura.QuantizationMode.INT16
+            )
+            assert lhs.add(rhs).data_int16() == [1100, 2200, 3300]
 
 
 class TestGenericBackendSupportedModes:
@@ -120,6 +123,7 @@ class TestGenericBackendSupportedModes:
 class TestBackendCapabilities:
     """Test to understand which quantization modes are supported by which backends"""
 
+    @pytest.mark.skipif(GENERIC_BACKEND, reason="FP16 is unsupported by Generic")
     def test_check_fp16_backend_used(self):
         """Check which backend is used for FP16"""
         # Don't force generic - use default backend selection

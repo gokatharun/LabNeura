@@ -1,7 +1,9 @@
 #include "labneura/backends/cpu/generic.h"
 #include "labneura/runtime.h"
+#include "labneura/types.hpp"
 #include <algorithm>
 #include <cstdint>
+#include <cstring>
 #include <limits>
 #include <type_traits>
 
@@ -65,30 +67,36 @@ void validate_broadcast_range(const TensorStorage& storage,
 template <typename Element>
 Element apply_broadcast_operation(OperationType op_type, Element lhs,
                                   Element rhs) {
-    if constexpr (std::is_same_v<Element, int8_t>) {
-        int16_t result = 0;
+    if constexpr (std::is_same_v<Element, int8_t> ||
+                  std::is_same_v<Element, int16_t>) {
+        using Wide = std::conditional_t<std::is_same_v<Element, int8_t>,
+                                        int16_t, int32_t>;
+        Wide result = 0;
         switch (op_type) {
             case OperationType::ADD:
-                result = static_cast<int16_t>(lhs) + static_cast<int16_t>(rhs);
+                result = static_cast<Wide>(lhs) + static_cast<Wide>(rhs);
                 break;
             case OperationType::SUB:
-                result = static_cast<int16_t>(lhs) - static_cast<int16_t>(rhs);
+                result = static_cast<Wide>(lhs) - static_cast<Wide>(rhs);
                 break;
             case OperationType::MUL:
-                result = static_cast<int16_t>(lhs) * static_cast<int16_t>(rhs);
+                result = static_cast<Wide>(lhs) * static_cast<Wide>(rhs);
                 break;
             case OperationType::DIV:
                 if (rhs == 0) {
                     return 0;
                 }
-                result = static_cast<int16_t>(lhs) / static_cast<int16_t>(rhs);
+                result = static_cast<Wide>(lhs) / static_cast<Wide>(rhs);
                 break;
             default:
                 throw std::invalid_argument(
                     "Unsupported broadcast arithmetic operation");
         }
-        return static_cast<int8_t>(
-            std::max<int16_t>(-128, std::min<int16_t>(127, result)));
+        const Wide minimum = static_cast<Wide>(
+            std::numeric_limits<Element>::min());
+        const Wide maximum = static_cast<Wide>(
+            std::numeric_limits<Element>::max());
+        return static_cast<Element>(std::max(minimum, std::min(maximum, result)));
     } else {
         switch (op_type) {
             case OperationType::ADD: return lhs + rhs;
@@ -126,6 +134,61 @@ void execute_broadcast(const Element* lhs_data, std::size_t lhs_storage_offset,
     }
 }
 
+inline float bit_pattern_to_fp16_float(uint16_t bits) {
+    return dequantize_fp16(bits);
+}
+
+inline uint16_t fp16_float_to_bit_pattern(float value) {
+    return quantize_fp16(value);
+}
+
+inline void apply_fp16_broadcast_element(OperationType op_type,
+                                        const int16_t* lhs_data,
+                                        std::size_t lhs_offset,
+                                        const int16_t* rhs_data,
+                                        std::size_t rhs_offset,
+                                        int16_t* output_data,
+                                        std::size_t output_offset) {
+    uint16_t lhs_bits = static_cast<uint16_t>(lhs_data[lhs_offset]);
+    uint16_t rhs_bits = static_cast<uint16_t>(rhs_data[rhs_offset]);
+    const float lhs_value = bit_pattern_to_fp16_float(lhs_bits);
+    const float rhs_value = bit_pattern_to_fp16_float(rhs_bits);
+    float result = 0.0f;
+    switch (op_type) {
+        case OperationType::ADD: result = lhs_value + rhs_value; break;
+        case OperationType::SUB: result = lhs_value - rhs_value; break;
+        case OperationType::MUL: result = lhs_value * rhs_value; break;
+        case OperationType::DIV: result = lhs_value / rhs_value; break;
+        default: throw std::invalid_argument("Unsupported FP16 broadcast arithmetic operation");
+    }
+    uint16_t out_bits = fp16_float_to_bit_pattern(result);
+    std::memcpy(&output_data[output_offset], &out_bits, sizeof(out_bits));
+}
+
+void execute_fp16_broadcast(const int16_t* lhs_data, std::size_t lhs_storage_offset,
+                            const int16_t* rhs_data, std::size_t rhs_storage_offset,
+                            int16_t* output_data,
+                            std::size_t output_storage_offset,
+                            std::size_t output_numel,
+                            const detail::BroadcastPlan& plan,
+                            OperationType op_type) {
+    for (std::size_t linear_index = 0; linear_index < output_numel; ++linear_index) {
+        std::size_t remainder = linear_index;
+        std::size_t lhs_offset = lhs_storage_offset;
+        std::size_t rhs_offset = rhs_storage_offset;
+        for (std::size_t axis = plan.shape.size(); axis > 0; --axis) {
+            const std::size_t dimension = plan.shape[axis - 1];
+            const std::size_t coordinate = remainder % dimension;
+            remainder /= dimension;
+            lhs_offset += coordinate * plan.lhs_strides[axis - 1];
+            rhs_offset += coordinate * plan.rhs_strides[axis - 1];
+        }
+        apply_fp16_broadcast_element(op_type, lhs_data, lhs_offset, rhs_data,
+                                    rhs_offset, output_data,
+                                    output_storage_offset + linear_index);
+    }
+}
+
 }  // namespace
 
 void GenericBackend::operation_fp32(const TensorBackend& other, OperationType op_type) {
@@ -154,6 +217,28 @@ void GenericBackend::operation_fp32(const TensorBackend& other, OperationType op
         return;
     }
     for (std::size_t i = 0; i < size_; ++i) this_data[i] -= other_data[i];
+}
+
+void GenericBackend::operation_fp16(const TensorBackend& other, OperationType op_type) {
+    const int16_t* other_data = other.data_fp16();
+    int16_t* this_data = data_fp16();
+
+    for (std::size_t i = 0; i < size_; ++i) {
+        const uint16_t lhs_bits = static_cast<uint16_t>(this_data[i]);
+        const uint16_t rhs_bits = static_cast<uint16_t>(other_data[i]);
+        const float lhs = dequantize_fp16(lhs_bits);
+        const float rhs = dequantize_fp16(rhs_bits);
+        float result = 0.0f;
+        switch (op_type) {
+            case OperationType::ADD: result = lhs + rhs; break;
+            case OperationType::SUB: result = lhs - rhs; break;
+            case OperationType::MUL: result = lhs * rhs; break;
+            case OperationType::DIV: result = lhs / rhs; break;
+            default: throw std::invalid_argument("Unsupported FP16 operation");
+        }
+        const uint16_t out_bits = quantize_fp16(result);
+        std::memcpy(&this_data[i], &out_bits, sizeof(out_bits));
+    }
 }
 
 bool GenericBackend::operation_into(const TensorBackend& other, TensorBackend& out,
@@ -190,9 +275,11 @@ void GenericBackend::operation_broadcast(
     if (quantization_mode_ != other.quantization_mode_ ||
         quantization_mode_ != output.quantization_mode_ ||
         (quantization_mode_ != QuantizationMode::FP32 &&
-         quantization_mode_ != QuantizationMode::INT8)) {
+         quantization_mode_ != QuantizationMode::FP16 &&
+         quantization_mode_ != QuantizationMode::INT8 &&
+         quantization_mode_ != QuantizationMode::INT16)) {
         throw std::runtime_error(
-            "Generic broadcasting supports matching FP32 or INT8 tensors");
+            "Generic broadcasting supports matching FP32, FP16, INT8, or INT16 tensors");
     }
     if (size_ != lhs_numel || other.size_ != rhs_numel) {
         throw std::runtime_error(
@@ -231,13 +318,27 @@ void GenericBackend::operation_broadcast(
             other.storage_offset_,
             static_cast<float*>(output.storage_->data()), output.storage_offset_,
             output_numel, plan, op_type);
-    } else {
+    } else if (quantization_mode_ == QuantizationMode::FP16) {
+        execute_fp16_broadcast(
+            static_cast<const int16_t*>(storage_->data()), storage_offset_,
+            static_cast<const int16_t*>(other.storage_->data()),
+            other.storage_offset_,
+            static_cast<int16_t*>(output.storage_->data()), output.storage_offset_,
+            output_numel, plan, op_type);
+    } else if (quantization_mode_ == QuantizationMode::INT8) {
         execute_broadcast(
             static_cast<const int8_t*>(storage_->data()), storage_offset_,
             static_cast<const int8_t*>(other.storage_->data()),
             other.storage_offset_,
             static_cast<int8_t*>(output.storage_->data()), output.storage_offset_,
             output_numel, plan, op_type);
+    } else {
+        execute_broadcast(
+            static_cast<const int16_t*>(storage_->data()), storage_offset_,
+            static_cast<const int16_t*>(other.storage_->data()),
+            other.storage_offset_,
+            static_cast<int16_t*>(output.storage_->data()),
+            output.storage_offset_, output_numel, plan, op_type);
     }
 }
 

@@ -9,6 +9,9 @@ import sys
 import labneura
 import pytest
 
+GENERIC_BACKEND = labneura.detect_backend() == "GENERIC"
+
+
 class TestTensorConstructors:
     """Test all Tensor constructors with different data types and quantization modes."""
     
@@ -39,6 +42,7 @@ class TestTensorConstructors:
         assert result[2] == 3
         assert result[3] == -4
     
+    @pytest.mark.skipif(GENERIC_BACKEND, reason="FP16 is unsupported by Generic")
     def test_float_vector_fp16_constructor(self):
         """Test constructor with float vector in FP16 mode."""
         data = [1.0, 2.0, 3.0, 4.0]
@@ -80,6 +84,7 @@ class TestTensorConstructors:
         assert t.size() == 1
         assert t.data_int8()[0] == 42 or t.data_int8()[0] == 43  # Rounding
     
+    @pytest.mark.skipif(GENERIC_BACKEND, reason="FP16 is unsupported by Generic")
     def test_float_scalar_fp16_constructor(self):
         """Test constructor with float scalar in FP16 mode."""
         t = labneura.Tensor(2.0, labneura.QuantizationMode.FP16)
@@ -172,12 +177,14 @@ class TestTensorDataAccessors:
         data = t.data_int8()
         assert len(data) == 3
     
+    @pytest.mark.skipif(GENERIC_BACKEND, reason="FP16 is unsupported by Generic")
     def test_data_fp16_nonconst(self):
         """Test non-const data_fp16() accessor."""
         t = labneura.Tensor([1.0, 2.0], labneura.QuantizationMode.FP16)
         data = t.data_fp16()
         assert len(data) == 2
     
+    @pytest.mark.skipif(GENERIC_BACKEND, reason="FP16 is unsupported by Generic")
     def test_data_fp16_const(self):
         """Test const data_fp16() accessor."""
         t = labneura.Tensor([1.0, 2.0], labneura.QuantizationMode.FP16)
@@ -208,6 +215,7 @@ class TestTensorOperations:
         assert data[1] == 7
         assert data[2] == 9
     
+    @pytest.mark.skipif(GENERIC_BACKEND, reason="FP16 is unsupported by Generic")
     def test_add_fp16(self):
         """Test FP16 addition."""
         t1 = labneura.Tensor([1.0, 2.0, 3.0], labneura.QuantizationMode.FP16)
@@ -235,6 +243,7 @@ class TestTensorOperations:
         assert data[1] == 9
         assert data[2] == 16
     
+    @pytest.mark.skipif(GENERIC_BACKEND, reason="FP16 is unsupported by Generic")
     def test_mul_fp16(self):
         """Test FP16 multiplication."""
         t1 = labneura.Tensor([2.0, 3.0], labneura.QuantizationMode.FP16)
@@ -262,6 +271,7 @@ class TestTensorOperations:
         assert data[1] == 18
         assert data[2] == 27
     
+    @pytest.mark.skipif(GENERIC_BACKEND, reason="FP16 is unsupported by Generic")
     def test_sub_fp16(self):
         """Test FP16 subtraction."""
         t1 = labneura.Tensor([5.0, 6.0], labneura.QuantizationMode.FP16)
@@ -293,6 +303,7 @@ class TestTensorInplaceOperations:
         assert data[1] == 7
         assert data[2] == 9
     
+    @pytest.mark.skipif(GENERIC_BACKEND, reason="FP16 is unsupported by Generic")
     def test_add_inplace_fp16(self):
         """Test in-place FP16 addition."""
         t1 = labneura.Tensor([1.0, 2.0], labneura.QuantizationMode.FP16)
@@ -320,6 +331,7 @@ class TestTensorInplaceOperations:
         assert data[1] == 9
         assert data[2] == 16
     
+    @pytest.mark.skipif(GENERIC_BACKEND, reason="FP16 is unsupported by Generic")
     def test_mul_inplace_fp16(self):
         """Test in-place FP16 multiplication."""
         t1 = labneura.Tensor([2.0, 3.0], labneura.QuantizationMode.FP16)
@@ -347,6 +359,7 @@ class TestTensorInplaceOperations:
         assert data[1] == 18
         assert data[2] == 27
     
+    @pytest.mark.skipif(GENERIC_BACKEND, reason="FP16 is unsupported by Generic")
     def test_sub_inplace_fp16(self):
         """Test in-place FP16 subtraction."""
         t1 = labneura.Tensor([5.0, 6.0], labneura.QuantizationMode.FP16)
@@ -378,6 +391,7 @@ class TestTensorMetadata:
         t = labneura.Tensor([1], labneura.QuantizationMode.INT8)
         assert t.quantization_mode() == labneura.QuantizationMode.INT8
     
+    @pytest.mark.skipif(GENERIC_BACKEND, reason="FP16 is unsupported by Generic")
     def test_quantization_mode_fp16(self):
         """Test quantization_mode() for FP16."""
         t = labneura.Tensor([1.0], labneura.QuantizationMode.FP16)
@@ -482,6 +496,7 @@ class TestLargeScaleTensors:
         result_data = result.data_fp32()
         assert len(result_data) == 512
     
+    @pytest.mark.skipif(GENERIC_BACKEND, reason="FP16 is unsupported by Generic")
     def test_large_fp16_tensor_operations(self):
         """Test large FP16 tensor operations."""
         data = [float(i) for i in range(512)]

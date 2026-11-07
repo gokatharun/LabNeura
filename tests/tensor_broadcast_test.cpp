@@ -32,6 +32,12 @@ labneura::Tensor make_int8_tensor(std::vector<int> values,
         values, shape, labneura::QuantizationMode::INT8);
 }
 
+labneura::Tensor make_int16_tensor(std::vector<int> values,
+                                   std::vector<std::size_t> shape) {
+    return labneura::Tensor::from_flat(
+        values, shape, labneura::QuantizationMode::INT16);
+}
+
 void apply_operation(labneura::Tensor& lhs, const labneura::Tensor& rhs,
                      labneura::OperationType operation, bool inplace) {
     if (inplace) {
@@ -99,6 +105,54 @@ std::vector<int8_t> reference_int8_broadcast(
     return result;
 }
 
+int16_t reference_int16(labneura::OperationType operation, int16_t lhs,
+                        int16_t rhs) {
+    int32_t result = 0;
+    switch (operation) {
+        case labneura::OperationType::ADD:
+            result = static_cast<int32_t>(lhs) + static_cast<int32_t>(rhs);
+            break;
+        case labneura::OperationType::SUB:
+            result = static_cast<int32_t>(lhs) - static_cast<int32_t>(rhs);
+            break;
+        case labneura::OperationType::MUL:
+            result = static_cast<int32_t>(lhs) * static_cast<int32_t>(rhs);
+            break;
+        case labneura::OperationType::DIV:
+            if (rhs == 0) return 0;
+            result = static_cast<int32_t>(lhs) / static_cast<int32_t>(rhs);
+            break;
+    }
+    return static_cast<int16_t>(
+        std::max<int32_t>(-32768, std::min<int32_t>(32767, result)));
+}
+
+std::vector<int16_t> reference_int16_broadcast(
+    const labneura::Tensor& lhs, const labneura::Tensor& rhs,
+    labneura::OperationType operation) {
+    const auto plan = labneura::detail::make_broadcast_plan(
+        lhs.shape(), lhs.strides(), rhs.shape(), rhs.strides());
+    const std::size_t output_numel =
+        labneura::detail::checked_broadcast_numel(plan.shape);
+    std::vector<int16_t> result(output_numel);
+    for (std::size_t linear = 0; linear < output_numel; ++linear) {
+        std::size_t remainder = linear;
+        std::size_t lhs_offset = 0;
+        std::size_t rhs_offset = 0;
+        for (std::size_t axis = plan.shape.size(); axis > 0; --axis) {
+            const std::size_t dimension = plan.shape[axis - 1];
+            const std::size_t coordinate = remainder % dimension;
+            remainder /= dimension;
+            lhs_offset += coordinate * plan.lhs_strides[axis - 1];
+            rhs_offset += coordinate * plan.rhs_strides[axis - 1];
+        }
+        result[linear] =
+            reference_int16(operation, lhs.data_int16()[lhs_offset],
+                            rhs.data_int16()[rhs_offset]);
+    }
+    return result;
+}
+
 void require_int8_values(const labneura::Tensor& actual,
                          const std::vector<std::size_t>& expected_shape,
                          const std::vector<int8_t>& expected,
@@ -113,11 +167,34 @@ void require_int8_values(const labneura::Tensor& actual,
     }
 }
 
+void require_int16_values(const labneura::Tensor& actual,
+                          const std::vector<std::size_t>& expected_shape,
+                          const std::vector<int16_t>& expected,
+                          const std::string& context) {
+    require(actual.shape() == expected_shape, context + ": shape mismatch");
+    require(actual.quantization_mode() == labneura::QuantizationMode::INT16,
+            context + ": dtype mismatch");
+    require(actual.size() == expected.size(), context + ": size mismatch");
+    for (std::size_t i = 0; i < expected.size(); ++i) {
+        require(actual.data_int16()[i] == expected[i],
+                context + ": value mismatch at " + std::to_string(i));
+    }
+}
+
 std::vector<int8_t> copy_int8_values(const labneura::Tensor& tensor) {
     std::vector<int8_t> values;
     values.reserve(tensor.size());
     for (std::size_t i = 0; i < tensor.size(); ++i) {
         values.push_back(tensor.data_int8()[i]);
+    }
+    return values;
+}
+
+std::vector<int16_t> copy_int16_values(const labneura::Tensor& tensor) {
+    std::vector<int16_t> values;
+    values.reserve(tensor.size());
+    for (std::size_t i = 0; i < tensor.size(); ++i) {
+        values.push_back(tensor.data_int16()[i]);
     }
     return values;
 }
@@ -469,6 +546,155 @@ void test_int8_broadcasting() {
     }
 }
 
+void test_int16_broadcast_operation(labneura::OperationType operation,
+                                    const std::string& name) {
+    using labneura::Tensor;
+    const std::vector<std::pair<Tensor, Tensor>> cases{
+        {make_int16_tensor({32767}, {}),
+         make_int16_tensor({1}, {})},
+        {make_int16_tensor({-32768, -100, -7, 7, 100, 32767}, {6}),
+         make_int16_tensor({3}, {})},
+        {make_int16_tensor({32760, -32760, -7, 7, 32767, -32768}, {2, 3}),
+         make_int16_tensor({10, -10, 3}, {3})},
+        {make_int16_tensor({32760, -32760, -7, 7, 32767, -32768}, {2, 3}),
+         make_int16_tensor({1, 2, 3}, {1, 3})},
+        {make_int16_tensor({32760, -32760, -7, 7, 32767, -32768}, {2, 3}),
+         make_int16_tensor({10, -10}, {2, 1})},
+        {make_int16_tensor({-32768, -30000, -7, 0, 7, 30000}, {2, 1, 3}),
+         make_int16_tensor({-1, 0, 2, 32767}, {1, 4, 1})},
+        {make_int16_tensor({}, {0, 3}),
+         make_int16_tensor({1, 2, 3}, {1, 3})},
+    };
+
+    for (const auto& test_case : cases) {
+        const Tensor& lhs = test_case.first;
+        const Tensor& rhs = test_case.second;
+        const auto lhs_before = copy_int16_values(lhs);
+        const auto rhs_before = copy_int16_values(rhs);
+        const auto expected = reference_int16_broadcast(lhs, rhs, operation);
+        Tensor result = lhs;
+        apply_operation(result, rhs, operation, false);
+        const auto plan = labneura::detail::make_broadcast_plan(
+            lhs.shape(), lhs.strides(), rhs.shape(), rhs.strides());
+        require_int16_values(result, plan.shape, expected,
+                             name + " allocating broadcast");
+        require(result.is_contiguous() && result.storage_offset() == 0,
+                name + ": output is not contiguous independent storage");
+        require_int16_values(lhs, lhs.shape(), lhs_before,
+                             name + ": allocating operation changed lhs");
+        require_int16_values(rhs, rhs.shape(), rhs_before,
+                             name + ": allocating operation changed rhs");
+    }
+
+    Tensor source = make_int16_tensor(
+        {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}, {4, 3});
+    Tensor view = source.slice_first_axis(1, 3);
+    const Tensor rhs = make_int16_tensor({32767, 3, -32768}, {3});
+    const auto source_before = copy_int16_values(source);
+    const auto expected_view = reference_int16_broadcast(view, rhs, operation);
+    Tensor allocated = view;
+    apply_operation(allocated, rhs, operation, false);
+    require_int16_values(allocated, {2, 3}, expected_view,
+                         name + " offset-view allocation");
+    require_int16_values(source, {4, 3}, source_before,
+                         name + ": allocating view operation changed source");
+    require(view.storage_offset() == 3, name + ": offset-view setup failed");
+
+    apply_operation(view, rhs, operation, true);
+    auto expected_source = source_before;
+    for (std::size_t row = 1; row < 3; ++row) {
+        for (std::size_t column = 0; column < 3; ++column) {
+            const std::size_t index = row * 3 + column;
+            expected_source[index] = reference_int16(
+                operation, source_before[index], rhs.data_int16()[column]);
+        }
+    }
+    require_int16_values(source, {4, 3}, expected_source,
+                         name + " in-place offset-view broadcast");
+
+    Tensor destination = make_int16_tensor(
+        {-32768, -30000, -7, 0, 7, 30000}, {2, 3});
+    const Tensor scalar = make_int16_tensor({3}, {});
+    const auto expected_scalar =
+        reference_int16_broadcast(destination, scalar, operation);
+    apply_operation(destination, scalar, operation, true);
+    require_int16_values(destination, {2, 3}, expected_scalar,
+                         name + " in-place scalar broadcast");
+}
+
+void test_int16_broadcasting() {
+    using labneura::OperationType;
+    using labneura::Tensor;
+
+    test_int16_broadcast_operation(OperationType::ADD, "INT16 ADD");
+    test_int16_broadcast_operation(OperationType::SUB, "INT16 SUB");
+    test_int16_broadcast_operation(OperationType::MUL, "INT16 MUL");
+    test_int16_broadcast_operation(OperationType::DIV, "INT16 DIV");
+
+    const Tensor lhs =
+        make_int16_tensor({32767, -32768, -7, 7, 30000, -30000}, {2, 3});
+    const Tensor rhs =
+        make_int16_tensor({1, -1, 3, 0, -3, 2}, {2, 3});
+    for (const auto operation : {OperationType::ADD, OperationType::SUB,
+                                 OperationType::MUL, OperationType::DIV}) {
+        const auto expected = reference_int16_broadcast(lhs, rhs, operation);
+        Tensor inplace = lhs;
+        apply_operation(inplace, rhs, operation, true);
+        require_int16_values(inplace, {2, 3}, expected,
+                             "INT16 equal-shape in-place operation");
+        Tensor allocating = lhs;
+        apply_operation(allocating, rhs, operation, false);
+        require_int16_values(allocating, {2, 3}, expected,
+                             "INT16 equal-shape allocating operation");
+    }
+
+    const Tensor division_lhs = make_int16_tensor(
+        {-32768, 32767, -7, 7, 32767}, {5});
+    const Tensor division_rhs = make_int16_tensor({-1, 0, 3, -3, 2}, {5});
+    require_int16_values(division_lhs.div(division_rhs), {5},
+                         {32767, 0, -2, -2, 16383},
+                         "INT16 division boundaries");
+
+    Tensor alias_source = make_int16_tensor({1, 2, 3}, {3});
+    try {
+        alias_source.add_inplace(alias_source.select_first_axis(0));
+        throw std::runtime_error("INT16 partial overlap was accepted");
+    } catch (const std::invalid_argument&) {
+    }
+
+    Tensor exact_alias = make_int16_tensor({30000, -30000, 2}, {3});
+    exact_alias.add_inplace(exact_alias);
+    require_int16_values(exact_alias, {3}, {32767, -32768, 4},
+                         "INT16 exact in-place alias");
+
+    Tensor empty = make_int16_tensor({}, {0, 3});
+    empty.add_inplace(make_int16_tensor({1, 2, 3}, {1, 3}));
+    require(empty.size() == 0 &&
+                empty.shape() == std::vector<std::size_t>({0, 3}),
+            "INT16 empty in-place broadcast changed metadata");
+
+    try {
+        (void)make_int16_tensor({1, 2, 3, 4, 5, 6}, {2, 3})
+            .add(make_int16_tensor({1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12},
+                                  {4, 3}));
+        throw std::runtime_error("INT16 incompatible shapes were accepted");
+    } catch (const std::runtime_error& error) {
+        require(std::string(error.what()).find("shape mismatch") !=
+                    std::string::npos,
+                "INT16 incompatible-shape error was not actionable");
+    }
+
+    Tensor scalar = make_int16_tensor({1}, {});
+    try {
+        scalar.add_inplace(make_int16_tensor({1, 2}, {2}));
+        throw std::runtime_error("INT16 destination expansion was accepted");
+    } catch (const std::runtime_error& error) {
+        require(std::string(error.what()).find("cannot expand") !=
+                    std::string::npos,
+                "INT16 destination-expansion error was not actionable");
+    }
+}
+
 void run_generic_tests() {
     labneura::test::ScopedEnvironmentVariable backend_override(
         "LABNEURA_BACKEND", "GENERIC");
@@ -479,6 +705,7 @@ void run_generic_tests() {
     test_inplace_broadcast_and_offset_views();
     test_errors_aliases_and_ieee_values();
     test_int8_broadcasting();
+    test_int16_broadcasting();
 }
 
 }  // namespace
@@ -486,7 +713,7 @@ void run_generic_tests() {
 int main() {
     try {
         run_generic_tests();
-        std::cout << "GENERIC: FP32 and INT8 broadcasting tests passed\n";
+        std::cout << "GENERIC: FP32, INT8, and INT16 broadcasting tests passed\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "Broadcasting test failed: " << error.what() << '\n';

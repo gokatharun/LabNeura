@@ -71,13 +71,14 @@ plane = volume.select_first_axis(2)   # shape (2, 3), offset 12
 Only forward ranges along the first axis are supported. Negative/reverse
 slicing, arbitrary-axis or non-contiguous indexing, and transpose are not
 supported. LabNeura includes an internal nD broadcast shape/stride planner.
-FP32 and INT8 ADD/SUB/MUL/DIV broadcasting is currently supported for the
-Generic backend, including allocating results and in-place operations that do
-not expand the destination. INT8 ADD/SUB/MUL saturate and integer division
-truncates toward zero, returns zero for a zero divisor, and saturates
-`-128 / -1` to `127`. Equal-shape arithmetic continues to use the selected
-backend; unequal-shape broadcasting on NEON/AVX2 and FP16/INT16 broadcasting
-are not yet supported. The arithmetic contract and semantic test matrix are in
+FP32, INT8, and INT16 ADD/SUB/MUL/DIV broadcasting is currently supported for
+the Generic backend, including allocating results and in-place operations that
+do not expand the destination. INT8 and INT16 ADD/SUB/MUL saturate; integer
+division truncates toward zero, returns zero for a zero divisor, and saturates
+the signed minimum divided by `-1` to the signed maximum. Equal-shape
+arithmetic continues to use the selected backend; unequal-shape broadcasting
+on NEON/AVX2 and FP16 broadcasting are not yet supported. The arithmetic
+contract and semantic test matrix are in
 [arithmetic-semantics.md](.github/skills/labneura-engineering/references/arithmetic-semantics.md);
 the documented full dtype/backend matrix remains future work.
 

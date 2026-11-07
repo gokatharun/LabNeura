@@ -165,7 +165,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             architecture: x86_64
           - os: ubuntu-24.04-arm
             architecture: aarch64
@@ -183,6 +183,10 @@ jobs:
       - name: Verify x86_64 CPU features
         if: matrix.architecture == 'x86_64'
         run: |
+          uname -a
+          g++ --version
+          cmake --version
+          python --version
           lscpu
           python - <<'PY'
           from pathlib import Path
@@ -204,6 +208,8 @@ jobs:
           print(f"F16C supported: {'f16c' in flags}")
           if "avx2" not in flags:
               raise SystemExit("This x86_64 runner does not expose AVX2")
+          if "f16c" not in flags:
+              raise SystemExit("This x86_64 runner does not expose F16C")
           PY
 
       - name: Configure native build
@@ -226,6 +232,16 @@ jobs:
           commands = json.loads(
               Path("build/native/compile_commands.json").read_text()
           )
+          cache = Path("build/native/CMakeCache.txt").read_text()
+          for feature in (
+              "LABNEURA_COMPILER_SUPPORTS_AVX2:INTERNAL=1",
+              "LABNEURA_COMPILER_SUPPORTS_F16C:INTERNAL=1",
+          ):
+              if feature not in cache:
+                  raise SystemExit(
+                      f"CMake did not confirm compiler support: {feature}"
+                  )
+
           avx_sources = (
               "avx2_backend.cpp",
               "avx2_ops_int8.cpp",
@@ -254,16 +270,12 @@ jobs:
               "",
           )
           cpu_flags = set(flags_line.split())
-          if f16c is None:
-              if "f16c" in cpu_flags:
-                  raise SystemExit(
-                      "CPU supports F16C but the F16C kernel was not compiled"
-                  )
-              print("F16C kernel was not compiled by this toolchain")
-          elif "-mavx2" not in f16c["command"] or "-mf16c" not in f16c["command"]:
+          if "f16c" not in cpu_flags:
+              raise SystemExit("This x86_64 runner does not expose F16C")
+          if (f16c is None or "-mavx2" not in f16c["command"]
+              or "-mf16c" not in f16c["command"]):
               raise SystemExit("F16C kernel is missing -mavx2 or -mf16c")
-          else:
-              print("F16C flags confirmed: -mavx2 -mf16c")
+          print("F16C flags confirmed: -mavx2 -mf16c")
           PY
 
       - name: Confirm AVX2 runtime dispatch
@@ -276,7 +288,10 @@ jobs:
         if: matrix.architecture == 'x86_64'
         env:
           LABNEURA_BACKEND: AVX2
-        run: ctest --test-dir build/native --output-on-failure
+        run: |
+          set -o pipefail
+          ctest --test-dir build/native --output-on-failure \
+            2>&1 | tee ctest-avx2.log
 
       - name: Run native C++ tests (aarch64)
         if: matrix.architecture == 'aarch64'
@@ -287,8 +302,46 @@ jobs:
         env:
           LABNEURA_BACKEND: AVX2
         run: |
+          set -o pipefail
           ctest --test-dir build/native -V \
-            -R '^(avx2_allocation_safety|tensor_nd_avx2|fp16_f16c_dispatch|avx2_fp16_arithmetic)$'
+            -R '^(avx2_allocation_safety|tensor_nd_avx2|fp16_f16c_dispatch|avx2_fp16_arithmetic)$' \
+            2>&1 | tee avx2-focused-ctest.log
+          python - <<'PY'
+          import re
+          from pathlib import Path
+
+          expected = {
+              "tensor_nd_avx2",
+              "avx2_allocation_safety",
+              "fp16_f16c_dispatch",
+              "avx2_fp16_arithmetic",
+          }
+          statuses = {}
+          for line in Path("avx2-focused-ctest.log").read_text().splitlines():
+              match = re.match(
+                  r"\s*\d+/\d+ Test #\d+: (\S+)\s+\.+\s+(Passed|Skipped|Failed)",
+                  line,
+              )
+              if match:
+                  statuses[match.group(1)] = match.group(2)
+          if statuses != {name: "Passed" for name in expected}:
+              raise SystemExit(
+                  f"Required AVX2 tests did not all pass: {statuses}"
+              )
+          PY
+
+      - name: Verify F16C vector and scalar FP16 execution
+        if: matrix.architecture == 'x86_64'
+        env:
+          LABNEURA_BACKEND: AVX2
+        run: |
+          set -o pipefail
+          build/native/labneura_fp16_regression_test AVX2 \
+            2>&1 | tee avx2-fp16-regression.log
+          grep -Fq "Running AVX2 FP16 with the F16C vector kernel" \
+            avx2-fp16-regression.log
+          grep -Fq "Running AVX2 FP16 with the scalar fallback" \
+            avx2-fp16-regression.log
 
       - name: Install package and run full Python suite with AVX2
         if: matrix.architecture == 'x86_64'
@@ -299,7 +352,85 @@ jobs:
           python -m pip install pytest numpy
           python -m pip install .
           python -c "import labneura; assert labneura.detect_backend() == 'AVX2'; print('Selected backend:', labneura.detect_backend())"
-          python -m pytest -q
+          set -o pipefail
+          python -m pytest -q -o addopts= 2>&1 | tee python-avx2-pytest.log
+
+      - name: Verify AVX2 broadcast dispatch does not use Generic
+        if: matrix.architecture == 'x86_64'
+        env:
+          LABNEURA_BACKEND: AVX2
+        run: |
+          python - <<'PY'
+          import labneura
+
+          if labneura.detect_backend() != "AVX2":
+              raise SystemExit(
+                  f"Expected AVX2 backend, got {labneura.detect_backend()}"
+              )
+
+          for mode, lhs_values, rhs_values in (
+              (
+                  labneura.QuantizationMode.FP32,
+                  [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+                  [10.0, 20.0, 30.0],
+              ),
+              (
+                  labneura.QuantizationMode.FP16,
+                  [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+                  [10.0, 20.0, 30.0],
+              ),
+              (
+                  labneura.QuantizationMode.INT8,
+                  [1, 2, 3, 4, 5, 6],
+                  [10, 20, 30],
+              ),
+              (
+                  labneura.QuantizationMode.INT16,
+                  [1, 2, 3, 4, 5, 6],
+                  [10, 20, 30],
+              ),
+          ):
+              matrix = labneura.Tensor.from_flat(lhs_values, [2, 3], mode)
+              vector = labneura.Tensor.from_flat(rhs_values, [3], mode)
+              try:
+                  matrix.add(vector)
+              except RuntimeError:
+                  continue
+              raise SystemExit(
+                  f"AVX2 {mode} broadcasting unexpectedly succeeded; "
+                  "it may have been routed through Generic"
+              )
+          PY
+
+      - name: Run AVX2 equal-shape FP16, INT8, and INT16 arithmetic tests
+        if: matrix.architecture == 'x86_64'
+        env:
+          LABNEURA_BACKEND: AVX2
+        run: python -m pytest tests/test_avx2_div_int816fp16.py -q -o addopts=
+
+      - name: Run Generic FP16, FP32, INT8, and INT16 broadcast tests
+        if: matrix.architecture == 'x86_64'
+        env:
+          LABNEURA_BACKEND: GENERIC
+        run: |
+          python -c "import labneura; assert labneura.detect_backend() == 'GENERIC'; print('Selected backend:', labneura.detect_backend())"
+          python -m pytest \
+            tests/test_tensor_broadcast.py \
+            tests/test_base_default_implementations.py \
+            -q -o addopts=
+
+      - name: Upload AVX2 validation logs
+        if: always() && matrix.architecture == 'x86_64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: avx2-f16c-validation-logs
+          path: |
+            ctest-avx2.log
+            avx2-focused-ctest.log
+            avx2-fp16-regression.log
+            python-avx2-pytest.log
+            build/native/compile_commands.json
+          if-no-files-found: warn
 
       - name: Run native backend benchmarks
         if: github.event_name != 'pull_request'

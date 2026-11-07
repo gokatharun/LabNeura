@@ -9,6 +9,8 @@ import numpy as np
 import labneura
 import platform
 
+GENERIC_BACKEND = labneura.detect_backend() == "GENERIC"
+
 
 class TestCornerCases:
     """Comprehensive corner case testing for all backends."""
@@ -206,8 +208,10 @@ class TestCornerCases:
         with pytest.raises(RuntimeError):
             _ = a.data_fp32()
 
-    @pytest.mark.skipif(platform.machine() not in ['arm64', 'aarch64'], 
-                        reason="FP16 only on ARM NEON")
+    @pytest.mark.skipif(
+        platform.machine() not in ['arm64', 'aarch64'] or GENERIC_BACKEND,
+        reason="FP16 requires a backend that supports it",
+    )
     def test_wrong_data_accessor_fp16(self):
         """Test accessing wrong data type (FP16 tensor with FP32 accessor)."""
         a = labneura.Tensor([1, 2, 3], mode=labneura.QuantizationMode.FP16)
@@ -224,8 +228,10 @@ class TestCornerCases:
 
     # ===== NEON-SPECIFIC FP16/INT16 COMPREHENSIVE TESTS =====
     
-    @pytest.mark.skipif(platform.machine() not in ['arm64', 'aarch64'], 
-                        reason="FP16 only on ARM NEON")
+    @pytest.mark.skipif(
+        platform.machine() not in ['arm64', 'aarch64'] or GENERIC_BACKEND,
+        reason="FP16 requires a backend that supports it",
+    )
     def test_fp16_all_operations_various_sizes(self):
         """Test FP16 ADD/MUL/SUB with various sizes."""
         sizes = [1, 8, 16, 32, 64, 128, 256, 512, 1024, 2048]
@@ -283,8 +289,10 @@ class TestCornerCases:
             for i in range(min(10, size)):
                 assert a.data_int16()[i] == 7
 
-    @pytest.mark.skipif(platform.machine() not in ['arm64', 'aarch64'], 
-                        reason="FP16 only on ARM NEON")
+    @pytest.mark.skipif(
+        platform.machine() not in ['arm64', 'aarch64'] or GENERIC_BACKEND,
+        reason="FP16 requires a backend that supports it",
+    )
     def test_fp16_tail_chains(self):
         """Test FP16 operations at all tail chain boundaries."""
         # NEON processes 8 elements at a time, tail chain: 64->32->16->8->4->scalar
