@@ -105,7 +105,7 @@ Record dtype, operation, shape, allocating/in-place, layout, cache regime, backe
 | M3.3.2 | BOOL dtype foundation | Canonical one-byte storage, construction/access/copy/lifetime across Generic, NEON, and AVX2 |
 | M3.3.3 | Generic tensor comparisons | EQ/NE/LT/LE/GT/GE with BOOL output, shared broadcasting, explicit non-Generic rejection |
 | M3.3.4 | NEON tensor comparisons | Native NEON EQ/NE/LT/LE/GT/GE for FP32/FP16/INT16/INT8, explicit Generic parity |
-| M3.3.5 | AVX2 tensor comparisons | Native AVX2 parity and x86 hardware validation for all comparison operations and supported numeric dtypes |
+| M3.3.5 | AVX2 tensor comparisons | AVX2 kernels and parity tests implemented; x86 hardware/runtime validation pending |
 | M3 (later) | Logical operations | BOOL logical AND/OR/NOT and `where()` after comparison backends are complete |
 | M4 | Reductions | Axis/keepdims/dtype/edge tests |
 | M5 | Dot and matmul | 2D and batched semantics, dedicated kernels |

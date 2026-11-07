@@ -46,8 +46,11 @@ Use this checklist for every feature and every backend implementation.
 - [x] Generic and NEON tests explicitly select their backend; NEON parity covers
   all operations and numeric dtypes, IEEE special values, signed integer
   boundaries, broadcasting, scalar inputs, empty outputs, and offset views.
-- [ ] AVX2 no-fallback test on x86 hardware; add AVX2 comparison kernels and
-  explicit Generic-parity correctness tests before claiming AVX2 support.
+- [x] AVX2 kernels and explicit tests cover all operations/dtypes, Generic
+  parity, special values, signed boundaries, broadcast/scalar/nested views,
+  empty outputs, canonical BOOL bytes, and width-boundary tails.
+- [ ] Execute AVX2 native/Python comparison and regression tests on an
+  AVX2-capable x86 host; confirm runtime detection and no fallback.
 
 ## Broadcasting
 - [ ] Same shape.

@@ -147,6 +147,11 @@ For performance changes:
   FP16 comparisons decode binary16 values before comparing; never compare their
   raw integer encodings. Broadcast kernels consume the shared plan's effective
   strides and must explicitly test views, vector tails and Generic parity.
+- Keep AVX2 intrinsics in AVX2-only translation units compiled with `-mavx2`;
+  do not apply that flag to generic dispatch code. AVX2 FP16 comparisons must
+  not depend on F16C. Compress integer masks without changing element order,
+  and validate width-boundary tails on AVX2-capable x86 hardware before
+  claiming AVX2 runtime support.
 - Unsupported combinations must fail clearly or use an explicitly documented dispatch fallback.
 - Do not force CPU workers and GPU queues into one scheduler abstraction.
 - Add Metal/CUDA/HIP only through a concrete vertical slice with actual hardware validation. Do not add speculative GPU frameworks now.

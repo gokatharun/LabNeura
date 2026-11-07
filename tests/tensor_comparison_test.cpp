@@ -16,6 +16,7 @@
 #include <vector>
 
 #if defined(LABNEURA_TEST_AVX2)
+#include "labneura/backends/common/cpu_features.h"
 #include "labneura/backends/cpu/avx2.h"
 #endif
 
@@ -388,10 +389,21 @@ comparison_results_for_backend(
 
 template <typename Value>
 void test_backend_parity_for_dtype(
+    const std::string& optimized_backend,
     const std::vector<Value>& lhs_values,
     const std::vector<Value>& rhs_values,
     labneura::QuantizationMode dtype, const std::string& dtype_name) {
-    for (const std::size_t count : {3, 15, 16, 17, 31, 32, 33}) {
+    std::vector<std::size_t> boundary_sizes{3, 15, 16, 17, 31, 32, 33};
+    if (optimized_backend == "AVX2") {
+        std::size_t lanes = 8;
+        if (dtype == labneura::QuantizationMode::INT8) {
+            lanes = 32;
+        } else if (dtype == labneura::QuantizationMode::INT16) {
+            lanes = 16;
+        }
+        boundary_sizes = {lanes - 1, lanes, lanes + 1, lanes * 2 + 3};
+    }
+    for (const std::size_t count : boundary_sizes) {
         std::vector<Value> lhs_boundary;
         std::vector<Value> rhs_boundary;
         lhs_boundary.reserve(count);
@@ -404,11 +416,12 @@ void test_backend_parity_for_dtype(
             "GENERIC", lhs_boundary, rhs_boundary, {count}, {count}, {count},
             dtype);
         const auto neon_boundary = comparison_results_for_backend(
-            "NEON", lhs_boundary, rhs_boundary, {count}, {count}, {count},
-            dtype);
+            optimized_backend, lhs_boundary, rhs_boundary, {count}, {count},
+            {count}, dtype);
         for (std::size_t i = 0; i < std::size(kComparisons); ++i) {
             require(neon_boundary[i] == generic_boundary[i],
-                    dtype_name + " NEON/" + kComparisons[i].name +
+                    dtype_name + " " + optimized_backend + "/" +
+                        kComparisons[i].name +
                         " vector-boundary parity mismatch at " +
                         std::to_string(count));
         }
@@ -418,11 +431,12 @@ void test_backend_parity_for_dtype(
         "GENERIC", lhs_values, rhs_values, {lhs_values.size()},
         {rhs_values.size()}, {lhs_values.size()}, dtype);
     const auto neon_equal = comparison_results_for_backend(
-        "NEON", lhs_values, rhs_values, {lhs_values.size()},
+        optimized_backend, lhs_values, rhs_values, {lhs_values.size()},
         {rhs_values.size()}, {lhs_values.size()}, dtype);
     for (std::size_t i = 0; i < std::size(kComparisons); ++i) {
         require(neon_equal[i] == generic_equal[i],
-                dtype_name + " NEON/" + kComparisons[i].name +
+                dtype_name + " " + optimized_backend + "/" +
+                    kComparisons[i].name +
                     " equal-shape parity mismatch");
     }
 
@@ -435,36 +449,38 @@ void test_backend_parity_for_dtype(
         "GENERIC", broadcast_lhs, broadcast_rhs, {2, 3}, {3}, {2, 3},
         dtype);
     const auto neon_broadcast = comparison_results_for_backend(
-        "NEON", broadcast_lhs, broadcast_rhs, {2, 3}, {3}, {2, 3}, dtype);
+        optimized_backend, broadcast_lhs, broadcast_rhs, {2, 3}, {3},
+        {2, 3}, dtype);
     for (std::size_t i = 0; i < std::size(kComparisons); ++i) {
         require(neon_broadcast[i] == generic_broadcast[i],
-                dtype_name + " NEON/" + kComparisons[i].name +
+                dtype_name + " " + optimized_backend + "/" +
+                    kComparisons[i].name +
                     " broadcast parity mismatch");
     }
 }
 
-void test_generic_neon_parity() {
+void test_generic_optimized_parity(const std::string& optimized_backend) {
     using labneura::QuantizationMode;
     const float nan = std::numeric_limits<float>::quiet_NaN();
     const float infinity = std::numeric_limits<float>::infinity();
-    test_backend_parity_for_dtype<float>(
+    test_backend_parity_for_dtype<float>(optimized_backend,
         {nan, -infinity, -3, -1, -0.0f, 0.0f, 1, 2, 3, 4, 5, 6, 7, 8, 9,
          10, infinity},
         {nan, -infinity, -2, -1, 0.0f, -0.0f, 2, 2, 4, 3, 5, 7, 6, 9, 8,
          11, infinity},
         QuantizationMode::FP32, "FP32");
-    test_backend_parity_for_dtype<float>(
+    test_backend_parity_for_dtype<float>(optimized_backend,
         {nan, -infinity, -3, -1, -0.0f, 0.0f, 1, 2, 3, 4, 5, 6, 7, 8, 9,
          10, infinity},
         {nan, -infinity, -2, -1, 0.0f, -0.0f, 2, 2, 4, 3, 5, 7, 6, 9, 8,
          11, infinity},
         QuantizationMode::FP16, "FP16");
-    test_backend_parity_for_dtype<int>(
+    test_backend_parity_for_dtype<int>(optimized_backend,
         {-128, -127, -100, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 126, 127,
          -128},
         {127, -128, -99, -2, 0, 1, 0, 2, 4, 3, 5, 7, 6, 9, 127, 126, 127},
         QuantizationMode::INT8, "INT8");
-    test_backend_parity_for_dtype<int>(
+    test_backend_parity_for_dtype<int>(optimized_backend,
         {-32768, -32767, -100, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 32766,
          32767, -32768},
         {32767, -32768, -99, -2, 0, 1, 0, 2, 4, 3, 5, 7, 6, 9, 32767,
@@ -518,8 +534,83 @@ void run_neon_tests() {
     test_scalar_and_higher_rank_broadcasts();
     test_float_special_values();
     test_zero_size_views_and_output_independence();
-    test_generic_neon_parity();
+    test_generic_optimized_parity("NEON");
     test_errors_and_bool_input_policy();
+}
+
+template <typename Value>
+void test_avx2_nested_views_for_dtype(labneura::QuantizationMode dtype,
+                                      const std::string& dtype_name) {
+    std::vector<Value> values(24);
+    for (std::size_t i = 0; i < values.size(); ++i) {
+        values[i] = static_cast<Value>(i);
+    }
+    labneura::Tensor parent;
+    labneura::Tensor row;
+    if constexpr (std::is_floating_point_v<Value>) {
+        parent = labneura::Tensor::from_flat(
+            std::vector<float>(values.begin(), values.end()), {6, 4}, dtype);
+        row = labneura::Tensor::from_flat(
+            std::vector<float>{8, 9, 10, 11}, {4}, dtype);
+    } else {
+        parent = labneura::Tensor::from_flat(
+            std::vector<int>(values.begin(), values.end()), {6, 4}, dtype);
+        row = labneura::Tensor::from_flat(std::vector<int>{8, 9, 10, 11},
+                                          {4}, dtype);
+    }
+    const labneura::Tensor nested_view =
+        parent.slice_first_axis(1, 5).slice_first_axis(1, 3);
+    require(nested_view.storage_offset() == 8,
+            dtype_name + " nested AVX2 view offset mismatch");
+    const labneura::Tensor result = nested_view.eq(row);
+    require_bool_result(result, {2, 4}, {1, 1, 1, 1, 0, 0, 0, 0},
+                        dtype_name + " nested AVX2 view comparison");
+    require(labneura::detect_backend() == "AVX2",
+            "AVX2 backend selection changed during nested view comparison");
+}
+
+void run_avx2_tests() {
+    labneura::test::ScopedEnvironmentVariable backend_override(
+        "LABNEURA_BACKEND", "AVX2");
+    require(labneura::detect_backend() == "AVX2",
+            "AVX2 backend was not explicitly selected");
+    require(labneura::cpu_supports_avx2(),
+            "AVX2 test requires CPU and OS AVX2 support");
+    test_supported_numeric_dtypes();
+    test_scalar_and_higher_rank_broadcasts();
+    test_float_special_values();
+    test_zero_size_views_and_output_independence();
+    test_generic_optimized_parity("AVX2");
+    test_avx2_nested_views_for_dtype<float>(labneura::QuantizationMode::FP32,
+                                             "FP32");
+    test_avx2_nested_views_for_dtype<float>(labneura::QuantizationMode::FP16,
+                                             "FP16");
+    test_avx2_nested_views_for_dtype<int>(labneura::QuantizationMode::INT16,
+                                           "INT16");
+    test_avx2_nested_views_for_dtype<int>(labneura::QuantizationMode::INT8,
+                                           "INT8");
+    test_errors_and_bool_input_policy();
+
+    labneura::Tensor generic_tensor;
+    labneura::Tensor avx2_tensor;
+    {
+        labneura::test::ScopedEnvironmentVariable generic_backend(
+            "LABNEURA_BACKEND", "GENERIC");
+        generic_tensor = labneura::Tensor::from_flat(
+            std::vector<float>{1, 2, 3}, {3});
+    }
+    {
+        labneura::test::ScopedEnvironmentVariable avx2_backend(
+            "LABNEURA_BACKEND", "AVX2");
+        avx2_tensor = labneura::Tensor::from_flat(
+            std::vector<float>{1, 2, 3}, {3});
+    }
+    require_throws<std::runtime_error>(
+        [&] { (void)generic_tensor.eq(avx2_tensor); },
+        "Mixed Generic/AVX2 comparison dispatch",
+        "same Generic, NEON, or AVX2 backend");
+    require(labneura::detect_backend() == "AVX2",
+            "Mixed-backend rejection altered explicit AVX2 selection");
 }
 
 void run_unsupported_backend_test(const std::string& backend) {
@@ -573,7 +664,7 @@ int main(int argc, char** argv) {
             if (!labneura::cpu_supports_avx2()) {
                 throw SkipTest("CPU/OS does not support AVX2 state");
             }
-            run_unsupported_backend_test(backend);
+            run_avx2_tests();
 #endif
         } else {
             throw std::invalid_argument("Unknown backend: " + backend);

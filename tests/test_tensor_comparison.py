@@ -43,6 +43,16 @@ def _force_neon(monkeypatch):
         pytest.skip("NEON backend is unavailable on this host")
 
 
+def _force_avx2(monkeypatch):
+    monkeypatch.setenv("LABNEURA_BACKEND", "AVX2")
+    try:
+        selected = labneura.detect_backend()
+    except (RuntimeError, ValueError) as error:
+        pytest.skip(f"AVX2 backend is unavailable: {error}")
+    if selected != "AVX2":
+        pytest.skip("AVX2 backend is unavailable on this host")
+
+
 def _tensor(values, shape, dtype):
     return labneura.Tensor.from_flat(values, shape, dtype)
 
@@ -387,3 +397,144 @@ def test_neon_zero_sized_and_offset_view_broadcasts(
     _assert_bool_result(result, expected, (2, 3))
     assert _data(source, dtype) == source_before
     assert labneura.detect_backend() == "NEON"
+
+
+@pytest.mark.parametrize("operation,numpy_operation", COMPARISONS.items())
+@pytest.mark.parametrize("dtype", GENERIC_DTYPES)
+def test_avx2_comparison_parity_all_dtypes_and_vector_boundaries(
+    monkeypatch, operation, numpy_operation, dtype
+):
+    numpy_dtype = NUMPY_DTYPES[dtype]
+    if dtype == labneura.QuantizationMode.INT8:
+        lanes = 32
+        seed_lhs = [-128, -127, -2, -1, 0, 1, 2, 127]
+        seed_rhs = [127, -128, -1, -1, 1, 0, 2, -127]
+    elif dtype == labneura.QuantizationMode.INT16:
+        lanes = 16
+        seed_lhs = [-32768, -32767, -2, -1, 0, 1, 2, 32767]
+        seed_rhs = [32767, -32768, -1, -1, 1, 0, 2, -32767]
+    else:
+        lanes = 8
+        # FP16 comparisons must use these decoded numeric values, not the
+        # ordering of their binary16 storage encodings.
+        seed_lhs = [-np.inf, -8.0, -2.0, -0.0, 0.0, 0.5, 2.0, np.inf]
+        seed_rhs = [-np.inf, -7.0, -1.0, 0.0, -0.0, 1.0, 2.0, np.inf]
+
+    for size in (3, lanes - 1, lanes, lanes + 1, lanes * 2 + 3):
+        lhs_values = np.resize(np.asarray(seed_lhs, dtype=numpy_dtype), size)
+        rhs_values = np.resize(np.asarray(seed_rhs, dtype=numpy_dtype), size)
+        expected = numpy_operation(lhs_values, rhs_values)
+
+        _force_generic(monkeypatch)
+        generic = getattr(_tensor(lhs_values.tolist(), [size], dtype), operation)(
+            _tensor(rhs_values.tolist(), [size], dtype)
+        )
+        _assert_bool_result(generic, expected, (size,))
+
+        _force_avx2(monkeypatch)
+        lhs = _tensor(lhs_values.tolist(), [size], dtype)
+        rhs = _tensor(rhs_values.tolist(), [size], dtype)
+        lhs_before = list(_data(lhs, dtype))
+        rhs_before = list(_data(rhs, dtype))
+        actual = getattr(lhs, operation)(rhs)
+        _assert_bool_result(actual, expected, (size,))
+        assert actual.data_bool() == generic.data_bool()
+        assert _data(lhs, dtype) == lhs_before
+        assert _data(rhs, dtype) == rhs_before
+        assert labneura.detect_backend() == "AVX2"
+
+
+@pytest.mark.parametrize("operation,numpy_operation", COMPARISONS.items())
+@pytest.mark.parametrize(
+    "dtype,numpy_dtype",
+    [
+        (labneura.QuantizationMode.FP32, np.float32),
+        (labneura.QuantizationMode.FP16, np.float16),
+    ],
+)
+def test_avx2_float_comparison_special_values(
+    monkeypatch, operation, numpy_operation, dtype, numpy_dtype
+):
+    lhs_values = [np.nan, -np.inf, np.inf, -0.0, 0.0]
+    rhs_values = [np.nan, -np.inf, np.inf, 0.0, -0.0]
+    expected = numpy_operation(
+        np.asarray(lhs_values, dtype=numpy_dtype),
+        np.asarray(rhs_values, dtype=numpy_dtype),
+    )
+
+    _force_generic(monkeypatch)
+    generic = getattr(_tensor(lhs_values, [5], dtype), operation)(
+        _tensor(rhs_values, [5], dtype)
+    )
+    _assert_bool_result(generic, expected, (5,))
+
+    _force_avx2(monkeypatch)
+    avx2 = getattr(_tensor(lhs_values, [5], dtype), operation)(
+        _tensor(rhs_values, [5], dtype)
+    )
+    _assert_bool_result(avx2, expected, (5,))
+    assert avx2.data_bool() == generic.data_bool()
+    assert labneura.detect_backend() == "AVX2"
+
+
+@pytest.mark.parametrize("operation,numpy_operation", COMPARISONS.items())
+@pytest.mark.parametrize("dtype", GENERIC_DTYPES)
+def test_avx2_comparison_broadcast_empty_and_nested_views(
+    monkeypatch, operation, numpy_operation, dtype
+):
+    numpy_dtype = NUMPY_DTYPES[dtype]
+    matrix_values = np.asarray([1, 4, 7, 2, 5, 8], dtype=numpy_dtype)
+    row_values = np.asarray([2, 5, 9], dtype=numpy_dtype)
+    expected_broadcast = numpy_operation(
+        matrix_values.reshape(2, 3), row_values
+    )
+
+    _force_generic(monkeypatch)
+    generic_broadcast = getattr(
+        _tensor(matrix_values.tolist(), [2, 3], dtype), operation
+    )(_tensor(row_values.tolist(), [3], dtype))
+    _assert_bool_result(generic_broadcast, expected_broadcast, (2, 3))
+
+    _force_avx2(monkeypatch)
+    broadcast = getattr(
+        _tensor(matrix_values.tolist(), [2, 3], dtype), operation
+    )(_tensor(row_values.tolist(), [3], dtype))
+    _assert_bool_result(broadcast, expected_broadcast, (2, 3))
+    assert broadcast.data_bool() == generic_broadcast.data_bool()
+
+    scalar_values = np.asarray([2], dtype=numpy_dtype)
+    scalar_expected = numpy_operation(matrix_values.reshape(2, 3), scalar_values)
+    _force_generic(monkeypatch)
+    generic_scalar = getattr(
+        _tensor(matrix_values.tolist(), [2, 3], dtype), operation
+    )(_tensor([2], [], dtype))
+    _assert_bool_result(generic_scalar, scalar_expected, (2, 3))
+
+    _force_avx2(monkeypatch)
+    scalar = getattr(
+        _tensor(matrix_values.tolist(), [2, 3], dtype), operation
+    )(_tensor([2], [], dtype))
+    _assert_bool_result(scalar, scalar_expected, (2, 3))
+    assert scalar.data_bool() == generic_scalar.data_bool()
+
+    empty = _tensor([], [0, 3], dtype)
+    empty_result = getattr(empty, operation)(
+        _tensor([1, 2, 3], [1, 3], dtype)
+    )
+    _assert_bool_result(
+        empty_result, np.empty((0, 3), dtype=np.bool_), (0, 3)
+    )
+
+    values = np.arange(24, dtype=numpy_dtype)
+    source = _tensor(values.tolist(), [6, 4], dtype)
+    nested_view = source.slice_first_axis(1, 5).slice_first_axis(1, 3)
+    row = _tensor([8, 9, 10, 11], [4], dtype)
+    source_before = list(_data(source, dtype))
+    expected_view = numpy_operation(
+        values.reshape(6, 4)[2:4], np.asarray([8, 9, 10, 11], dtype=numpy_dtype)
+    )
+    result = getattr(nested_view, operation)(row)
+    _assert_bool_result(result, expected_view, (2, 4))
+    assert nested_view.storage_offset == 8
+    assert _data(source, dtype) == source_before
+    assert labneura.detect_backend() == "AVX2"

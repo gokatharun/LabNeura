@@ -639,16 +639,30 @@ Tensor Tensor::comparison_op(const Tensor& other, ComparisonType comparison) con
     const auto* lhs_neon = dynamic_cast<const NEONBackend*>(backend_.get());
     const auto* rhs_neon =
         dynamic_cast<const NEONBackend*>(other.backend_.get());
-    if ((!lhs_generic || !rhs_generic) && (!lhs_neon || !rhs_neon)) {
-        throw std::runtime_error(
-            "Tensor comparisons are only supported by the Generic and NEON backends");
-    }
-#else
-    if (!lhs_generic || !rhs_generic) {
-        throw std::runtime_error(
-            "Tensor comparisons are only supported by the Generic backend");
-    }
 #endif
+#if defined(LABNEURA_ENABLE_AVX2)
+    const auto* lhs_avx2 = dynamic_cast<const AVX2Backend*>(backend_.get());
+    const auto* rhs_avx2 =
+        dynamic_cast<const AVX2Backend*>(other.backend_.get());
+#endif
+    const bool generic_pair = lhs_generic && rhs_generic;
+#if defined(LABNEURA_ENABLE_NEON)
+    const bool neon_pair = lhs_neon && rhs_neon;
+#endif
+#if defined(LABNEURA_ENABLE_AVX2)
+    const bool avx2_pair = lhs_avx2 && rhs_avx2;
+#endif
+    if (!generic_pair
+#if defined(LABNEURA_ENABLE_NEON)
+        && !neon_pair
+#endif
+#if defined(LABNEURA_ENABLE_AVX2)
+        && !avx2_pair
+#endif
+    ) {
+        throw std::runtime_error(
+            "Tensor comparisons are only supported when both tensors use the same Generic, NEON, or AVX2 backend");
+    }
 
     detail::BroadcastPlan plan;
     try {
@@ -661,7 +675,7 @@ Tensor Tensor::comparison_op(const Tensor& other, ComparisonType comparison) con
     const std::size_t output_numel =
         detail::checked_broadcast_numel(plan.shape);
     std::unique_ptr<TensorBackend> output_backend;
-    if (lhs_generic && rhs_generic) {
+    if (generic_pair) {
         auto generic_output =
             std::make_unique<GenericBackend>(output_numel,
                                              QuantizationMode::BOOL);
@@ -670,12 +684,20 @@ Tensor Tensor::comparison_op(const Tensor& other, ComparisonType comparison) con
             other.numel());
         output_backend = std::move(generic_output);
 #if defined(LABNEURA_ENABLE_NEON)
-    } else {
+    } else if (neon_pair) {
         auto neon_output =
             std::make_unique<NEONBackend>(output_numel, QuantizationMode::BOOL);
         lhs_neon->compare_broadcast(*rhs_neon, *neon_output, plan, comparison,
                                     numel(), other.numel());
         output_backend = std::move(neon_output);
+#endif
+#if defined(LABNEURA_ENABLE_AVX2)
+    } else if (avx2_pair) {
+        auto avx2_output =
+            std::make_unique<AVX2Backend>(output_numel, QuantizationMode::BOOL);
+        lhs_avx2->compare_broadcast(*rhs_avx2, *avx2_output, plan, comparison,
+                                    numel(), other.numel());
+        output_backend = std::move(avx2_output);
 #endif
     }
     return Tensor(QuantizationMode::BOOL, std::move(output_backend),

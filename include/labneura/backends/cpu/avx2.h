@@ -1,5 +1,6 @@
 #pragma once
 #include "labneura/backends/common/base.h"
+#include "labneura/detail/broadcast.h"
 
 namespace labneura {
 
@@ -41,6 +42,10 @@ private:
     AVX2Backend(std::shared_ptr<TensorStorage> storage,
                 std::size_t logical_size,
                 std::size_t storage_offset);
+    void compare_broadcast(
+        const AVX2Backend& other, AVX2Backend& output,
+        const detail::BroadcastPlan& plan, ComparisonType comparison,
+        std::size_t lhs_numel, std::size_t rhs_numel) const;
 
     std::size_t size_;
     std::size_t aligned_size_;
@@ -52,6 +57,8 @@ private:
     int16_t* data_int16_{nullptr};
     int8_t* data_int8_{nullptr};
     std::uint8_t* data_bool_{nullptr};
+
+    friend class Tensor;
 };
 
 } // namespace labneura

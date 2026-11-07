@@ -26,10 +26,10 @@ the immediate priorities; GPU implementation is not active work.
   operations are ADD, SUB, MUL, and DIV, but support is not uniform across every
   dtype/backend/operation combination: Generic arithmetic is implemented for
   FP32, INT8, and INT16, while NEON and AVX2 have additional FP16/INT16 code.
-  The six Tensor comparisons have Generic and NEON implementations for
-  matching FP32, FP16, INT16, and INT8 inputs, returning BOOL; AVX2 comparison
-  kernels remain pending. Check the relevant backend and tests before claiming
-  a particular combination.
+  The six Tensor comparisons have Generic, NEON, and AVX2 implementations for
+  matching FP32, FP16, INT16, and INT8 inputs, returning BOOL. AVX2 kernels
+  and explicit tests are present, but require runtime validation on an AVX2-
+  capable x86 host before claiming validated AVX2 support.
 - Tensor supports contiguous arbitrary-rank construction using
   `Tensor::from_flat` / `Tensor.from_flat(data, shape, mode="auto")`, including
   1D and higher-rank shapes. Existing vector, scalar, and 2D nested-row
@@ -181,9 +181,10 @@ invalid value. BOOL deep copies and views preserve backend and storage lifetime.
 BOOL arithmetic, BOOL-to-BOOL comparisons, logical operations, and `where()`
 remain unsupported. Generic numeric comparisons are implemented as M3.3.3
 below; NEON numeric comparison kernels are implemented in M3.3.4. AVX2
-comparison kernels remain pending.
+numeric comparison kernels are implemented in M3.3.5; their x86 runtime
+validation remains pending.
 
-### Tensor comparisons (M3.3.3 Generic; M3.3.4 NEON)
+### Tensor comparisons (M3.3.3 Generic; M3.3.4 NEON; M3.3.5 AVX2)
 
 `Tensor.eq/ne/lt/le/gt/ge` and the matching Python methods compare two tensors
 of the same FP32, FP16, INT16, or INT8 dtype and return a newly allocated,
@@ -192,16 +193,18 @@ scalar through nD shapes, zero-sized outputs, and offset views, and do not
 mutate inputs. INT8/INT16 are signed; FP16 compares decoded binary16 values.
 FP32/FP16 use IEEE comparisons (NaN is unequal to itself and ordered
 comparisons with NaN are false; signed zeros compare equal). BOOL input
-comparisons and mixed-dtype promotion are rejected. Generic and NEON execute
-their own kernels; explicit AVX2 selection is rejected rather than routed
-through another backend. NEON vectorizes FP32 and decoded FP16 comparisons in
-four lanes, INT16 in eight lanes, and signed INT8 in sixteen lanes; tails are
-handled without over-reading. Broadcast coordinates are gathered using the
-shared plan, so scalar/rank extension, zero-sized outputs and offset views do
-not materialize inputs. FP16 binary16 values are decoded to FP32 before vector
-comparison, avoiding a dependency on ARM FP16 compare instructions. Both
-Generic and NEON comparison sources are built without fast-math to preserve
-IEEE NaN/Inf behavior.
+comparisons and mixed-dtype promotion are rejected. Generic, NEON and AVX2
+execute their own kernels; dispatch rejects mixed-backend inputs and has no
+silent cross-backend fallback. NEON vectorizes FP32 and decoded FP16 in four
+lanes, INT16 in eight lanes, and signed INT8 in sixteen lanes. AVX2 vectorizes
+FP32 and software-decoded FP16 in eight lanes, INT16 in sixteen lanes, and
+signed INT8 in thirty-two lanes. AVX2 FP16 does not require F16C. Integer
+comparison masks are compressed to canonical bytes while preserving lane
+order. Vector tails are handled without over-reading. Broadcast coordinates
+are gathered using the shared plan, so scalar/rank extension, zero-sized
+outputs and offset views do not materialize inputs. Generic, NEON and AVX2
+comparison sources are built without fast-math to preserve IEEE NaN/Inf
+behavior.
 
 NEON comparison validation on Apple Silicon:
 
@@ -212,8 +215,14 @@ NEON comparison validation on Apple Silicon:
   outputs, offset views, BOOL canonical values, and invalid inputs.
 - Python comparison tests explicitly select each backend and check NumPy
   results plus Generic/NEON parity for all operations and dtypes.
-- AVX2 comparison support and x86 validation remain pending; do not claim full
-  SIMD completion until that milestone is implemented and tested on AVX2 hardware.
+- AVX2 comparison kernels and explicit parity tests are implemented. The AVX2
+  kernel and Tensor dispatch passed x86_64-targeted Clang syntax checks from
+  this ARM host.
+- AVX2 CPU detection is unavailable on this Apple arm64 machine. AVX2 CTest
+  and Python cases are architecture-gated and skipped locally. Compilation
+  with x86 CMake flags, runtime selection, actual AVX2 comparisons, and AVX2
+  arithmetic/FP16 regression tests remain pending on an x86_64 AVX2 host.
+  M3.3.5 is not runtime-validated.
 
 Apple Silicon validation:
 
@@ -222,15 +231,16 @@ Apple Silicon validation:
 - Focused native comparison/broadcast/BOOL/FP16 regression CTest: 8 passed,
   3 AVX2-only tests skipped.
 - Full native CTest: 21 passed, 8 AVX2-specific tests skipped.
-- Focused Python comparison suite: 116 passed, including explicit Generic and
-  NEON selection and parity.
+- Focused Python comparison suite: 116 passed and 60 AVX2-specific tests
+  skipped on ARM, including explicit Generic and NEON selection and parity.
 - Focused Python broadcast/BOOL/FP16 regressions: 170 passed, 125 existing
   backend-specific skips.
-- Full Python suite with the normal host backend confirmed as NEON: 1158
-  passed, 153 skipped, and 3 existing pytest return-value warnings.
-- `git diff --check` passed. AVX2 hardware/CI validation was not run; AVX2
-  comparison implementation remains future work, so SIMD comparison support is
-  not complete across all required CPU backends.
+- Full Python suite on the normal ARM host: 1158 passed, 213 skipped, and 3
+  existing pytest return-value warnings. AVX2-specific tests account for
+  architecture-gated skips.
+- `git diff --check` passed. AVX2 x86 hardware/CI validation was not run; the
+  implementation exists but is not runtime-validated, so complete SIMD
+  comparison support remains pending.
 
 Tensor metadata is separate from storage and execution. TensorStorage is
 shared-owned internally, while public Tensor copies still deep-copy. Backend
