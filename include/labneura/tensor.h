@@ -155,6 +155,7 @@ private:
     // backend supports it, otherwise clones this tensor and runs the in-place kernel.
     Tensor(QuantizationMode mode, std::unique_ptr<TensorBackend> backend, std::vector<std::size_t> shape);
     Tensor binary_op(const Tensor& other, OperationType op) const;
+    void binary_inplace(const Tensor& other, OperationType op);
 
     // Helper to initialize backend based on hardware
     void init_backend(std::size_t size);

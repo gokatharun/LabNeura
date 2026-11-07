@@ -96,7 +96,12 @@ Record dtype, operation, shape, allocating/in-place, layout, cache regime, backe
 | M1 | nD metadata/storage invariants | Rank/shape/stride/overflow tests |
 | M2 | Creation, views, shape transforms, basic indexing | Explicit alias/copy semantics |
 | M2.3 | First-axis slice/select views | Offset-aware contiguous views, bounds/lifetime and backend tests |
-| M3 | Broadcasting + elementwise arithmetic/comparison/logical | Shared planner, backend parity |
+| M3.1 | Broadcasting shape/stride planner | Pure nD output-shape and effective-stride plan; no arithmetic |
+| M3.2.1 | Elementwise arithmetic semantics | Contract and semantic test matrix documented; no kernels |
+| M3.2.2 | Generic FP32 arithmetic with broadcasting | ADD/SUB/MUL/DIV; allocating and supported in-place operations; NumPy parity |
+| M3.2.3 | Generic INT8 arithmetic with broadcasting | Saturating ADD/SUB/MUL, safe integer DIV, allocating/in-place and NumPy parity |
+| M3.2.4+ | Remaining dtype/backend broadcast kernels | Generic FP16/INT16, then NEON/AVX2 with explicit backend parity |
+| M3 (later) | Comparison and logical operations | Shared planner, separately defined dtype/result semantics and backend parity |
 | M4 | Reductions | Axis/keepdims/dtype/edge tests |
 | M5 | Dot and matmul | 2D and batched semantics, dedicated kernels |
 | M6 | ML math | Numerical stability and reference tests |
@@ -110,6 +115,17 @@ Backend optimization is continuous during M1–M7: Generic first, then optimized
 M2.3 first-axis slice/select implementation and Generic/NEON local tests are
 present in the current worktree. AVX2 runtime validation remains pending on an
 AVX2-capable x86_64 runner.
+
+M3.1 is complete: the shared metadata-only nD broadcast planner returns the
+output shape and both operands' effective element strides. Arithmetic
+broadcasting remains pending.
+
+M3.2.1 defined the same-dtype, broadcast, overflow, division, rounding,
+aliasing, and error contract recorded in `references/arithmetic-semantics.md`.
+M3.2.2 implements Generic FP32 ADD/SUB/MUL/DIV broadcasting, and M3.2.3 adds
+Generic INT8 broadcasting with saturating arithmetic. Generic FP16/INT16 and
+optimized backend broadcast kernels remain pending and should be implemented
+in bounded, explicitly tested stages.
 
 ## Good agent task boundaries
 Good: "Define and test nD shape/numel overflow invariants; no operations."

@@ -3,6 +3,7 @@
 #include "eda_bindings.h"
 #include "labneura/types.hpp"
 #include "labneura/tensor.h"
+#include "labneura/detail/broadcast.h"
 #include "labneura/runtime.h"
 #include "labneura/backends/common/backend_factory.h"
 
@@ -173,6 +174,22 @@ PYBIND11_MODULE(labneura, m) {
           },
           "Write FP32 a + b into the caller-provided output tensor",
           py::arg("a"), py::arg("b"), py::arg("out"));
+
+    m.def("_broadcast_plan",
+          [](py::handle lhs_shape, py::handle lhs_strides,
+             py::handle rhs_shape, py::handle rhs_strides) {
+              const auto plan = labneura::detail::make_broadcast_plan(
+                  parse_tensor_shape(lhs_shape),
+                  parse_tensor_shape(lhs_strides),
+                  parse_tensor_shape(rhs_shape),
+                  parse_tensor_shape(rhs_strides));
+              return py::make_tuple(py::tuple(py::cast(plan.shape)),
+                                    py::tuple(py::cast(plan.lhs_strides)),
+                                    py::tuple(py::cast(plan.rhs_strides)));
+          },
+          "Internal shape/stride planner; does not execute or allocate tensors",
+          py::arg("lhs_shape"), py::arg("lhs_strides"),
+          py::arg("rhs_shape"), py::arg("rhs_strides"));
 
     // QuantizationMode enum
     py::enum_<labneura::QuantizationMode>(m, "QuantizationMode")

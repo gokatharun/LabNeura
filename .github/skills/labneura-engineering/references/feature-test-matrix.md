@@ -33,6 +33,54 @@ Use this checklist for every feature and every backend implementation.
 
 Examples: `(3,1)+(1,4)->(3,4)`; `(5,3,1)+(1,4)->(5,3,4)`; `(2,3)+(4,3)` is incompatible.
 
+M3.1 implements only a reusable shape/effective-stride planner. It accepts
+element-based input strides, including non-contiguous layouts, and does not
+allocate expanded storage or execute arithmetic itself. M3.2.2/M3.2.3 use this
+planner and a shared typed iterator for Generic FP32 and INT8 elementwise
+arithmetic; FP16/INT16 and optimized-backend broadcast kernels remain future
+work.
+M3.1 is locally validated by the native Generic/NEON nD tests and Python
+planner tests. The x86 CI run must still execute the `tensor_nd_avx2` planner
+tests and Python suite on this change before AVX2 CI validation is complete.
+
+M3.2.1 defines arithmetic semantics only; no arithmetic or backend behavior
+has changed at that milestone. See
+[arithmetic-semantics.md](./arithmetic-semantics.md) for the normative dtype,
+overflow, division, broadcast, aliasing and API contract, plus the
+operation-by-dtype semantic test matrix. M3.2.2 implements a subset:
+Generic FP32 ADD/SUB/MUL/DIV with allocating and supported in-place
+broadcasting. It covers scalar, rank extension, singleton and multi-axis
+broadcasts, zero-sized output, incompatible shapes, destination expansion,
+offset views, alias safety, IEEE special values, and NumPy comparisons. Focused
+Python tests pass with Generic selected; full native/Python suite results are
+recorded in `current-state.md`. M3.2.3 adds Generic INT8 ADD/SUB/MUL/DIV
+broadcasting with widened-and-clipped NumPy references, saturation boundaries,
+division edge cases, views, empty tensors, allocating independence and
+in-place alias checks. FP16/INT16 and NEON/AVX2 broadcasting remain pending;
+the general matrix below is not yet complete.
+
+### Elementwise arithmetic semantic matrix
+
+- [x] Generic FP32 ADD/SUB/MUL/DIV: allocating results, allowed in-place RHS
+  broadcasting, destination-expansion rejection, scalar and nD shapes,
+  zero-sized outputs, offset views, alias safety, and IEEE special values.
+- [x] Generic INT8 ADD/SUB/MUL/DIV: allocating and in-place broadcasting,
+  scalar/rank/multi-axis/empty shapes, offset views, saturation, zero-divisor
+  and truncation semantics, minimum-value overflow, and alias rejection.
+- [ ] ADD, SUB, MUL, DIV for FP32, FP16, INT16 and INT8, allocating/in-place.
+- [ ] Same-dtype result preservation; every mixed-dtype pair rejected.
+- [ ] Same shape, scalar, singleton, rank extension, multi-axis, zero-size,
+  incompatible shape and output-shape checks.
+- [ ] In-place RHS expansion allowed only when output shape equals destination;
+  destination expansion rejected.
+- [ ] INT8/INT16 saturation for ADD/SUB/MUL; truncation-toward-zero DIV;
+  zero-divisor and minimum-signed-value divided by `-1` cases.
+- [ ] FP32 IEEE signed zero, divide-by-zero, NaN/Inf, subnormal and overflow.
+- [ ] FP16 ties-to-even rounding, binary16 subnormal/overflow and NaN/Inf.
+- [ ] Exact and partial overlap, views/offsets, no expanded storage allocation.
+- [ ] Explicit Generic/NEON/AVX2 operation × dtype tests, SIMD tails and Python
+  API/error parity. AVX2 requires actual capable x86 runtime validation.
+
 ## Storage and views
 - [ ] Shape/stride/offset invariants and overflow.
 - [ ] Contiguous layout.

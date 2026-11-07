@@ -20,6 +20,91 @@ def _row_major_strides(shape):
 
 
 @pytest.mark.parametrize(
+    ("lhs_shape", "lhs_strides", "rhs_shape", "rhs_strides", "expected"),
+    [
+        ([2, 3], [3, 1], [2, 3], [3, 1], ((2, 3), (3, 1), (3, 1))),
+        ([2, 3], [3, 1], [3], [1], ((2, 3), (3, 1), (0, 1))),
+        (
+            [4, 1, 3],
+            [3, 3, 1],
+            [1, 5, 3],
+            [15, 3, 1],
+            ((4, 5, 3), (3, 0, 1), (0, 3, 1)),
+        ),
+        ([], [], [2, 3], [3, 1], ((2, 3), (0, 0), (3, 1))),
+        ([], [], [], [], ((), (), ())),
+        ([0, 3], [3, 1], [1, 3], [3, 1], ((0, 3), (3, 1), (0, 1))),
+        ([2, 3], [1, 2], [3], [2], ((2, 3), (1, 2), (0, 2))),
+        ([2, 1, 3], [3, 3, 1], [1, 5, 1], [5, 1, 1],
+         ((2, 5, 3), (3, 0, 1), (0, 1, 0))),
+    ],
+)
+def test_internal_broadcast_plan_shapes_and_effective_strides(
+    lhs_shape, lhs_strides, rhs_shape, rhs_strides, expected
+):
+    assert labneura._broadcast_plan(
+        lhs_shape, lhs_strides, rhs_shape, rhs_strides
+    ) == expected
+
+
+def test_broadcast_plan_rejects_incompatible_dimensions_and_bad_metadata():
+    with pytest.raises(ValueError, match="Cannot broadcast dimensions"):
+        labneura._broadcast_plan([2, 3], [3, 1], [4, 3], [3, 1])
+    with pytest.raises(ValueError, match="shape and stride ranks must match"):
+        labneura._broadcast_plan([2, 3], [3], [3], [1])
+    with pytest.raises(ValueError):
+        labneura._broadcast_plan([2], [-1], [2], [1])
+    with pytest.raises(TypeError):
+        labneura._broadcast_plan([True], [1], [1], [1])
+
+
+def test_broadcast_plan_checks_output_numel_overflow():
+    size_t_max = sys.maxsize * 2 + 1
+    empty_plan = labneura._broadcast_plan(
+        [0, size_t_max, size_t_max],
+        [size_t_max, 1, 1],
+        [0, size_t_max, size_t_max],
+        [size_t_max, 1, 1],
+    )
+    assert empty_plan[0] == (0, size_t_max, size_t_max)
+    with pytest.raises(OverflowError, match="Broadcast output element count"):
+        labneura._broadcast_plan(
+            [size_t_max, 2], [2, 1], [1, 2], [2, 1]
+        )
+
+
+def test_broadcast_plan_does_not_change_offset_view_metadata_or_storage():
+    source = labneura.Tensor.from_flat(list(map(float, range(12))), [4, 3])
+    view = source.slice_first_axis(1, 3)
+    before = (
+        source.shape,
+        source.strides,
+        source.storage_offset,
+        source.data_fp32(),
+        view.shape,
+        view.strides,
+        view.storage_offset,
+        view.data_fp32(),
+    )
+
+    plan = labneura._broadcast_plan(
+        view.shape, view.strides, (3,), (1,)
+    )
+
+    assert plan == ((2, 3), (3, 1), (0, 1))
+    assert (
+        source.shape,
+        source.strides,
+        source.storage_offset,
+        source.data_fp32(),
+        view.shape,
+        view.strides,
+        view.storage_offset,
+        view.data_fp32(),
+    ) == before
+
+
+@pytest.mark.parametrize(
     ("data", "shape"),
     [
         ([1.0, 2.0, 3.0], [3]),

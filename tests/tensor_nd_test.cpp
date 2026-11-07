@@ -1,5 +1,6 @@
 #include "labneura/backends/common/backend_factory.h"
 #include "labneura/backends/common/cpu_features.h"
+#include "labneura/detail/broadcast.h"
 #include "labneura/tensor.h"
 #include "labneura/types.hpp"
 #include "test_environment.h"
@@ -58,6 +59,110 @@ void check_layout(const labneura::Tensor& tensor,
             context + ": contiguous tensor reported non-contiguous");
     require(tensor.numel() == tensor.size(),
             context + ": numel differs from logical element count");
+}
+
+void check_broadcast_planner() {
+    using labneura::detail::make_broadcast_plan;
+
+    const auto same_shape = make_broadcast_plan(
+        {2, 3}, {3, 1}, {2, 3}, {3, 1});
+    require(same_shape.shape == std::vector<std::size_t>({2, 3}) &&
+                same_shape.lhs_strides ==
+                    std::vector<std::size_t>({3, 1}) &&
+                same_shape.rhs_strides ==
+                    std::vector<std::size_t>({3, 1}),
+            "Broadcast planner changed same-shape operand strides");
+
+    const auto vector_to_matrix = make_broadcast_plan(
+        {2, 3}, {3, 1}, {3}, {1});
+    require(vector_to_matrix.shape == std::vector<std::size_t>({2, 3}) &&
+                vector_to_matrix.lhs_strides ==
+                    std::vector<std::size_t>({3, 1}) &&
+                vector_to_matrix.rhs_strides ==
+                    std::vector<std::size_t>({0, 1}),
+            "Broadcast planner mishandled missing leading dimensions");
+
+    const auto multiple_dimensions = make_broadcast_plan(
+        {4, 1, 3}, {3, 3, 1}, {1, 5, 3}, {15, 3, 1});
+    require(multiple_dimensions.shape ==
+                std::vector<std::size_t>({4, 5, 3}) &&
+                multiple_dimensions.lhs_strides ==
+                    std::vector<std::size_t>({3, 0, 1}) &&
+                multiple_dimensions.rhs_strides ==
+                    std::vector<std::size_t>({0, 3, 1}),
+            "Broadcast planner mishandled multiple expanded dimensions");
+
+    const auto scalar = make_broadcast_plan({}, {}, {2, 3}, {3, 1});
+    require(scalar.shape == std::vector<std::size_t>({2, 3}) &&
+                scalar.lhs_strides ==
+                    std::vector<std::size_t>({0, 0}) &&
+                scalar.rhs_strides ==
+                    std::vector<std::size_t>({3, 1}),
+            "Broadcast planner mishandled a scalar operand");
+    const auto two_scalars = make_broadcast_plan({}, {}, {}, {});
+    require(two_scalars.shape.empty() &&
+                two_scalars.lhs_strides.empty() &&
+                two_scalars.rhs_strides.empty(),
+            "Broadcasting two scalars should produce a scalar plan");
+
+    const auto empty = make_broadcast_plan(
+        {0, 3}, {3, 1}, {1, 3}, {3, 1});
+    require(empty.shape == std::vector<std::size_t>({0, 3}) &&
+                empty.lhs_strides == std::vector<std::size_t>({3, 1}) &&
+                empty.rhs_strides == std::vector<std::size_t>({0, 1}),
+            "Broadcast planner mishandled a zero dimension");
+    const std::size_t max_dimension =
+        std::numeric_limits<std::size_t>::max();
+    const auto empty_large_dimensions = make_broadcast_plan(
+        {0, max_dimension, max_dimension}, {max_dimension, 1, 1},
+        {0, max_dimension, max_dimension}, {max_dimension, 1, 1});
+    require(empty_large_dimensions.shape ==
+                std::vector<std::size_t>({0, max_dimension, max_dimension}),
+            "Zero-sized broadcast shape incorrectly overflowed");
+
+    const auto non_contiguous = make_broadcast_plan(
+        {2, 3}, {1, 2}, {3}, {2});
+    require(non_contiguous.shape == std::vector<std::size_t>({2, 3}) &&
+                non_contiguous.lhs_strides ==
+                    std::vector<std::size_t>({1, 2}) &&
+                non_contiguous.rhs_strides ==
+                    std::vector<std::size_t>({0, 2}),
+            "Broadcast planner changed valid non-contiguous strides");
+
+    auto source = labneura::Tensor::from_flat(
+        std::vector<float>{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}, {4, 3});
+    const auto view = source.slice_first_axis(1, 3);
+    const auto original_data = std::vector<float>(
+        source.data_fp32(), source.data_fp32() + source.size());
+    const float* const source_pointer = source.data_fp32();
+    const float* const view_pointer = view.data_fp32();
+    const std::size_t view_offset = view.storage_offset();
+    const auto view_plan = make_broadcast_plan(
+        view.shape(), view.strides(), {3}, {1});
+    require(view_plan.shape == std::vector<std::size_t>({2, 3}) &&
+                view_plan.lhs_strides == view.strides() &&
+                view_plan.rhs_strides == std::vector<std::size_t>({0, 1}) &&
+                source.data_fp32() == source_pointer &&
+                view.data_fp32() == view_pointer &&
+                view.storage_offset() == view_offset &&
+                std::vector<float>(
+                    source.data_fp32(), source.data_fp32() + source.size()) ==
+                    original_data,
+            "Broadcast planning mutated or replaced a view's storage");
+
+    require_throws<std::invalid_argument>(
+        [] { (void)make_broadcast_plan({2, 3}, {3}, {3}, {1}); },
+        "Left shape/stride rank mismatch");
+    require_throws<std::invalid_argument>(
+        [] { (void)make_broadcast_plan({2, 3}, {3, 1}, {4, 3}, {3, 1}); },
+        "Incompatible broadcast dimensions");
+    require_throws<std::overflow_error>(
+        [] {
+            const std::size_t max =
+                std::numeric_limits<std::size_t>::max();
+            (void)make_broadcast_plan({max, 2}, {2, 1}, {1, 2}, {2, 1});
+        },
+        "Broadcast output element-count overflow");
 }
 
 void check_first_axis_views(const std::string& backend) {
@@ -765,6 +870,7 @@ int main(int argc, char** argv) {
     try {
         if (argc != 2) throw std::invalid_argument("Expected GENERIC, AVX2 or NEON");
         const std::string backend = argv[1];
+        check_broadcast_planner();
         if (backend == "GENERIC") {
             run_backend(backend);
         } else if (backend == "AVX2") {

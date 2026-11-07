@@ -187,21 +187,26 @@ class TestTensorErrors:
         """Adding tensors of different sizes raises error"""
         a = labneura.Tensor([1.0, 2.0])
         b = labneura.Tensor([1.0, 2.0, 3.0])
-        with pytest.raises(RuntimeError, match="size mismatch"):
+        with pytest.raises(RuntimeError, match="mismatch"):
             a.add_inplace(b)
 
     def test_sub_size_mismatch(self):
         """Subtracting tensors of different sizes raises error"""
         a = labneura.Tensor([1.0, 2.0, 3.0])
-        b = labneura.Tensor([1.0])
-        with pytest.raises(RuntimeError, match="size mismatch"):
+        b = labneura.Tensor([1.0, 2.0])
+        with pytest.raises(RuntimeError, match="mismatch"):
             a.sub_inplace(b)
 
     def test_mul_size_mismatch(self):
         """Multiplying tensors of different sizes raises error"""
         a = labneura.Tensor([1.0])
         b = labneura.Tensor([1.0, 2.0, 3.0])
-        with pytest.raises(RuntimeError, match="size mismatch"):
+        expected_error = (
+            "cannot expand"
+            if labneura.detect_backend() == "GENERIC"
+            else "size mismatch"
+        )
+        with pytest.raises(RuntimeError, match=expected_error):
             a.mul_inplace(b)
 
     def test_add_quantization_mode_mismatch(self):

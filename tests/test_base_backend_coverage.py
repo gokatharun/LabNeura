@@ -20,7 +20,7 @@ class TestBackendErrorHandling:
         t1 = labneura.Tensor([1.0, 2.0, 3.0], labneura.QuantizationMode.FP32)
         t2 = labneura.Tensor([4.0, 5.0], labneura.QuantizationMode.FP32)
         
-        with pytest.raises(RuntimeError, match="Tensor size mismatch"):
+        with pytest.raises(RuntimeError, match="mismatch"):
             t1.add_inplace(t2)
 
     def test_size_mismatch_sub(self):
@@ -28,15 +28,15 @@ class TestBackendErrorHandling:
         t1 = labneura.Tensor([10.0, 20.0], labneura.QuantizationMode.FP32)
         t2 = labneura.Tensor([1.0, 2.0, 3.0, 4.0], labneura.QuantizationMode.FP32)
         
-        with pytest.raises(RuntimeError, match="Tensor size mismatch"):
+        with pytest.raises(RuntimeError, match="mismatch"):
             t1.sub_inplace(t2)
 
     def test_size_mismatch_mul(self):
         """Test that mul_inplace throws on size mismatch"""
         t1 = labneura.Tensor([2.0, 3.0, 4.0], labneura.QuantizationMode.FP32)
-        t2 = labneura.Tensor([5.0], labneura.QuantizationMode.FP32)
+        t2 = labneura.Tensor([5.0, 6.0], labneura.QuantizationMode.FP32)
         
-        with pytest.raises(RuntimeError, match="Tensor size mismatch"):
+        with pytest.raises(RuntimeError, match="mismatch"):
             t1.mul_inplace(t2)
 
     def test_quantization_mode_mismatch_add(self):

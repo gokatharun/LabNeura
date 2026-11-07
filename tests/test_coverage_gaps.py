@@ -376,7 +376,7 @@ class TestBaseBackendMissingCoverage:
     def test_backend_add_inplace_size_mismatch(self):
         """add_inplace should validate size"""
         a = labneura.Tensor([1.0, 2.0], labneura.QuantizationMode.FP32)
-        b = labneura.Tensor([1.0], labneura.QuantizationMode.FP32)
+        b = labneura.Tensor([1.0, 2.0, 3.0], labneura.QuantizationMode.FP32)
         
         with pytest.raises(RuntimeError):
             a.add_inplace(b)

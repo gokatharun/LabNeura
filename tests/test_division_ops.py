@@ -412,8 +412,8 @@ def test_div_int8_various_sizes():
 def test_div_size_mismatch():
     """Division with size mismatch should raise error."""
     a = make_fp32([1.0, 2.0])
-    b = make_fp32([1.0])
-    with pytest.raises(RuntimeError, match="size mismatch"):
+    b = make_fp32([1.0, 2.0, 3.0])
+    with pytest.raises(RuntimeError, match="mismatch"):
         a.div_inplace(b)
 
 

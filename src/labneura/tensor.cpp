@@ -4,6 +4,7 @@
 #include "labneura/backends/cpu/avx2.h"
 #include "labneura/backends/common/backend_factory.h"
 #include "labneura/backends/common/dtype_validation.h"
+#include "labneura/detail/broadcast.h"
 #include "labneura/types.hpp"
 #include <cstring>
 #include <algorithm>
@@ -532,7 +533,41 @@ Tensor Tensor::div(const Tensor& other) const {
 
 Tensor Tensor::binary_op(const Tensor& other, OperationType op) const {
     if (backend_ && other.backend_) {
-        check_same_shape(other);
+        const auto* lhs_generic =
+            dynamic_cast<const GenericBackend*>(backend_.get());
+        const auto* rhs_generic =
+            dynamic_cast<const GenericBackend*>(other.backend_.get());
+        const bool generic_broadcast =
+            shape_ != other.shape_ &&
+            quantization_mode_ == other.quantization_mode_ &&
+            (quantization_mode_ == QuantizationMode::FP32 ||
+             quantization_mode_ == QuantizationMode::INT8) &&
+            lhs_generic && rhs_generic;
+        if (shape_ != other.shape_ && !generic_broadcast) {
+            check_same_shape(other);
+        }
+        if (generic_broadcast) {
+            detail::BroadcastPlan plan;
+            try {
+                plan = detail::make_broadcast_plan(
+                    shape_, strides_, other.shape_, other.strides_);
+            } catch (const std::invalid_argument& error) {
+                throw std::runtime_error(
+                    std::string("Tensor shape mismatch: ") + error.what());
+            }
+            if (quantization_mode_ != other.quantization_mode_) {
+                throw std::runtime_error("Quantization mode mismatch");
+            }
+            const std::size_t output_numel =
+                detail::checked_broadcast_numel(plan.shape);
+            auto output_backend =
+                std::make_unique<GenericBackend>(output_numel,
+                                                 quantization_mode_);
+            lhs_generic->operation_broadcast(
+                *rhs_generic, *output_backend, plan, op, numel(), other.numel());
+            return Tensor(quantization_mode_, std::move(output_backend),
+                          std::move(plan.shape));
+        }
         if (auto out = backend_->operation_new(*other.backend_, op)) {
             return Tensor(quantization_mode_, std::move(out), shape_);
         }
@@ -549,35 +584,74 @@ Tensor Tensor::binary_op(const Tensor& other, OperationType op) const {
 }
 
 void Tensor::add_inplace(const Tensor& other) {
-    if (!backend_) {
-        throw std::runtime_error("Tensor backend not initialized");
-    }
-    check_same_shape(other);
-    backend_->add_inplace(*other.backend_);
+    binary_inplace(other, OperationType::ADD);
 }
 
 void Tensor::mul_inplace(const Tensor& other) {
-    if (!backend_) {
-        throw std::runtime_error("Tensor backend not initialized");
-    }
-    check_same_shape(other);
-    backend_->mul_inplace(*other.backend_);
+    binary_inplace(other, OperationType::MUL);
 }   
 
 void Tensor::sub_inplace(const Tensor& other) {
-    if (!backend_) {
-        throw std::runtime_error("Tensor backend not initialized");
-    }
-    check_same_shape(other);
-    backend_->sub_inplace(*other.backend_);
+    binary_inplace(other, OperationType::SUB);
 }
 
 void Tensor::div_inplace(const Tensor& other) {
-    if (!backend_) {
+    binary_inplace(other, OperationType::DIV);
+}
+
+void Tensor::binary_inplace(const Tensor& other, OperationType op) {
+    if (!backend_ || !other.backend_) {
         throw std::runtime_error("Tensor backend not initialized");
     }
-    check_same_shape(other);
-    backend_->div_inplace(*other.backend_);
+    auto* lhs_backend = dynamic_cast<GenericBackend*>(backend_.get());
+    const auto* rhs_backend =
+        dynamic_cast<const GenericBackend*>(other.backend_.get());
+    const bool generic_broadcast =
+        shape_ != other.shape_ &&
+        quantization_mode_ == other.quantization_mode_ &&
+        (quantization_mode_ == QuantizationMode::FP32 ||
+         quantization_mode_ == QuantizationMode::INT8) &&
+        lhs_backend && rhs_backend;
+    if (shape_ == other.shape_ || !generic_broadcast) {
+        check_same_shape(other);
+        backend_->operation(*other.backend_, op);
+        return;
+    }
+
+    detail::BroadcastPlan plan;
+    try {
+        plan = detail::make_broadcast_plan(
+            shape_, strides_, other.shape_, other.strides_);
+    } catch (const std::invalid_argument& error) {
+        throw std::runtime_error(
+            std::string("Tensor shape mismatch: ") + error.what());
+    }
+    if (plan.shape != shape_) {
+        throw std::runtime_error(
+            "Tensor shape mismatch: in-place broadcasting cannot expand the destination");
+    }
+    if (quantization_mode_ != other.quantization_mode_) {
+        throw std::runtime_error("Quantization mode mismatch");
+    }
+    const bool shares_storage = storage_.get() == other.storage_.get();
+    if (shares_storage && size() != 0 && other.size() != 0) {
+        const std::size_t lhs_offset = storage_offset_;
+        const std::size_t rhs_offset = other.storage_offset_;
+        const bool overlaps =
+            lhs_offset <= rhs_offset
+                ? rhs_offset - lhs_offset < size()
+                : lhs_offset - rhs_offset < other.size();
+        const bool exact_elementwise_alias =
+            lhs_offset == rhs_offset &&
+            plan.lhs_strides == plan.rhs_strides;
+        if (overlaps && !exact_elementwise_alias) {
+            throw std::invalid_argument(
+                "In-place operation does not support partially overlapping tensor views");
+        }
+    }
+
+    lhs_backend->operation_broadcast(
+        *rhs_backend, *lhs_backend, plan, op, numel(), other.numel());
 }
 
 void Tensor::check_same_shape(const Tensor& other) const {

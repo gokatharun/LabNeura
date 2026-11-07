@@ -210,14 +210,42 @@ void check_shapes_and_errors(const std::string& label) {
     }
     require(threw, label + ": same-size different-shape must throw");
 
+    const labneura::Tensor row(std::vector<float>{1, 2, 3});
+    if (label == "GENERIC") {
+        const labneura::Tensor broadcast_sum = m1.add(row);
+        const std::vector<float> expected{2, 4, 6, 5, 7, 9};
+        require(broadcast_sum.shape() ==
+                    std::vector<std::size_t>({2, 3}),
+                label + ": matrix/vector broadcast shape");
+        for (std::size_t i = 0; i < expected.size(); ++i) {
+            require(broadcast_sum.data_fp32()[i] == expected[i],
+                    label + ": matrix/vector broadcast values");
+        }
+    } else {
+        threw = false;
+        try {
+            m1.add(row);
+        } catch (const std::runtime_error& error) {
+            threw =
+                std::string(error.what()).find("size mismatch") !=
+                    std::string::npos ||
+                std::string(error.what()).find("shape mismatch") !=
+                    std::string::npos;
+        }
+        require(threw, label + ": unsupported backend broadcast must throw");
+    }
+
     threw = false;
     try {
-        m1.add(labneura::Tensor(std::vector<float>{1, 2, 3}));
+        m1.add(labneura::Tensor(std::vector<std::vector<float>>{
+            {1, 2, 3}, {4, 5, 6}, {7, 8, 9}, {10, 11, 12}}));
     } catch (const std::runtime_error& error) {
-        threw = std::string(error.what()).find("size mismatch") != std::string::npos ||
-                std::string(error.what()).find("shape mismatch") != std::string::npos;
+        threw = std::string(error.what()).find("size mismatch") !=
+                    std::string::npos ||
+                std::string(error.what()).find("shape mismatch") !=
+                    std::string::npos;
     }
-    require(threw, label + ": size mismatch must throw");
+    require(threw, label + ": incompatible shape must throw");
 
     // INT8 keeps using the unchanged clone + in-place path.
     const labneura::Tensor i1(std::vector<float>{1, 2, 3, 4, 5, 6, 7, 8, 9},

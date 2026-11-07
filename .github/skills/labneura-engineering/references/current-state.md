@@ -214,8 +214,59 @@ deep copies with offset zero. Python data accessors still return copied lists.
 Exact in-place aliases are supported, while partially overlapping write ranges
 are rejected to avoid order-dependent mutation.
 
-Non-contiguous layouts, arbitrary-axis or reverse slicing, transpose/
-permutation and broadcasting remain unimplemented.
+The M3.1 internal broadcast planner combines two shapes and element-stride
+vectors into a result shape and effective operand strides. It aligns axes from
+the right, gives missing leading dimensions zero effective strides, and sets
+expanded singleton dimensions to zero stride. It supports scalar and zero-sized
+shapes, checks output element-count overflow, and does not allocate, mutate
+Tensor metadata, or touch storage. The pure planner accepts non-contiguous
+stride metadata, although Tensor currently exposes only contiguous views.
+
+M3.2.1 has defined the proposed semantics for ADD/SUB/MUL/DIV, same-dtype
+behavior, output dtype, saturation, integer and floating division, IEEE
+special values, in-place shape restrictions, and API errors. M3.2.2 implements
+FP32 ADD/SUB/MUL/DIV broadcasting on Generic; M3.2.3 adds Generic INT8
+ADD/SUB/MUL/DIV broadcasting. Both use the same typed iterator and M3.1
+planner. The iterator uses the M3.1
+`BroadcastPlan` output shape/effective strides and each backend alias's element
+storage offset; it indexes output in row-major order, checks accessed ranges
+against TensorStorage logical size, and does not materialize expanded inputs.
+Allocating unequal-shape results use independent Generic storage and contiguous
+output metadata. In-place broadcasting is allowed only if the result shape
+equals the destination shape; partial overlaps and broadcast scalar aliases
+that would be overwritten during iteration are rejected. INT8 ADD/SUB/MUL use
+int16 intermediates and clamp to `[-128, 127]`; DIV truncates toward zero,
+returns zero for a zero divisor, and safely saturates `-128 / -1` to `127`.
+Same-shape operations and non-Generic mismatch behavior retain their existing
+backend paths. NEON/AVX2 broadcasting and FP16/INT16 broadcasting remain
+unsupported.
+
+M3.2.3 validation on Apple Silicon:
+
+- Native full CTest: 16 passed, 6 AVX2-only tests skipped. The focused
+  `tensor_broadcast_generic` test passed.
+- Focused Python broadcast tests with `LABNEURA_BACKEND=GENERIC`: 88 passed,
+  2 intentional non-Generic-only behavior checks skipped.
+- Full Python suite on the normal host backend: 1020 passed, 116 skipped, and
+  3 existing pytest return-value warnings.
+- Full Python suite with `LABNEURA_BACKEND=GENERIC`: 875 passed, 147 skipped,
+  114 failed. The failures are FP16/INT16 cases that require backend data
+  access or arithmetic those dtypes do not support on Generic; none are
+  FP32/INT8 broadcast tests. The supported Generic broadcast/mismatch
+  regression selection passed 98 tests with 2 intentional skips.
+- AVX2 runtime validation is unavailable on this Apple Silicon host.
+
+M3.2.2 validation on Apple Silicon: focused native Generic broadcasting test
+passed; full CTest passed all 16 runnable tests with 6 AVX2-only tests skipped.
+Focused Python broadcasting tests with `LABNEURA_BACKEND=GENERIC` passed 51
+tests, with one intentional non-Generic-only case skipped. The full Python
+suite against the rebuilt local extension passed 1019 tests, skipped 79
+(including Generic-only cases when the normal NEON backend was selected), and
+reported 3 existing pytest return-value warnings. AVX2 was not runtime-tested
+on this ARM host.
+
+Non-contiguous Tensor layouts, arbitrary-axis or reverse slicing, and
+transpose/permutation remain unimplemented.
 
 ## Known limitations and unresolved validation
 
@@ -223,8 +274,9 @@ permutation and broadcasting remain unimplemented.
 - View APIs only support contiguous `reshape_view()` and first-axis
   slice/select operations. Negative/reverse slicing, arbitrary axes,
   non-contiguous views and transpose/permutation remain pending.
-- There are no non-contiguous layouts or broadcasting; arithmetic requires
-identical shapes.
+- Tensor views remain contiguous-only. Broadcasting is implemented only for
+  Generic FP32 unequal-shape operations; equal-shape operations retain existing
+  backend behavior. NEON/AVX2 and FP16/INT8/INT16 broadcasting remain pending.
 - Per-backend dtype/operation support is uneven. Generic FP16/INT16 are not
   supported for arithmetic; verify each backend operation rather than assuming
   every enum combination is implemented.
@@ -302,6 +354,23 @@ M2.3 first-axis slice/select validation on Apple Silicon:
   AVX2/F16C results for that commit, not for the current uncommitted M2.3
   changes; no workflow run can validate those changes until they are available
   to the remote runner.
+
+M3.1 broadcast shape/stride planner validation on Apple Silicon:
+
+- Native full CTest: 15 passed, 6 AVX2-only tests skipped. Focused
+  `tensor_nd_generic` and `tensor_nd_neon` passed.
+- Focused Python planner/nD tests: 64 passed, 1 unsupported-backend case
+  skipped. Full Python suite: 1018 passed, 28 skipped, and 3 existing
+  pytest return-value warnings.
+- Planner checks cover scalar, same- and different-rank, multi-axis,
+  singleton, zero-sized, non-contiguous stride metadata, offset-view
+  non-mutation, malformed ranks, incompatible dimensions, and output
+  element-count overflow.
+- The planner is backend-independent and allocates no Tensor storage.
+  AVX2-specific runtime validation was not available locally; the x86 CI
+  workflow must execute `tensor_nd_avx2` and the Python suite against this
+  change before CI validation is complete. Arithmetic broadcasting and actual
+  non-contiguous Tensor views remain unimplemented.
 
 The subsequent M2.1 reshape/flatten milestone was also validated on Apple
 Silicon:

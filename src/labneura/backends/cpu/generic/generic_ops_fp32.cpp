@@ -1,6 +1,9 @@
 #include "labneura/backends/cpu/generic.h"
 #include "labneura/runtime.h"
 #include <algorithm>
+#include <cstdint>
+#include <limits>
+#include <type_traits>
 
 namespace labneura {
 
@@ -13,6 +16,113 @@ void add_fp32_range(float* destination, const float* source,
                     std::size_t begin, std::size_t end) {
     for (std::size_t i = begin; i < end; ++i) {
         destination[i] += source[i];
+    }
+}
+
+std::size_t checked_stride_advance(std::size_t dimension,
+                                   std::size_t stride) {
+    if (dimension <= 1 || stride == 0) {
+        return 0;
+    }
+    if (dimension - 1 >
+        std::numeric_limits<std::size_t>::max() / stride) {
+        throw std::overflow_error("Broadcast input offset overflows size_t");
+    }
+    return (dimension - 1) * stride;
+}
+
+std::size_t checked_offset_add(std::size_t offset, std::size_t advance) {
+    if (offset > std::numeric_limits<std::size_t>::max() - advance) {
+        throw std::overflow_error("Broadcast input offset overflows size_t");
+    }
+    return offset + advance;
+}
+
+std::size_t maximum_broadcast_offset(
+    const std::vector<std::size_t>& shape,
+    const std::vector<std::size_t>& strides) {
+    if (shape.size() != strides.size()) {
+        throw std::invalid_argument("Broadcast output shape/stride rank mismatch");
+    }
+    std::size_t maximum = 0;
+    for (std::size_t axis = 0; axis < shape.size(); ++axis) {
+        maximum = checked_offset_add(
+            maximum, checked_stride_advance(shape[axis], strides[axis]));
+    }
+    return maximum;
+}
+
+void validate_broadcast_range(const TensorStorage& storage,
+                              std::size_t storage_offset,
+                              std::size_t maximum_relative_offset) {
+    if (storage_offset >= storage.logical_size ||
+        maximum_relative_offset >= storage.logical_size - storage_offset) {
+        throw std::out_of_range(
+            "Broadcast input accesses beyond storage logical elements");
+    }
+}
+
+template <typename Element>
+Element apply_broadcast_operation(OperationType op_type, Element lhs,
+                                  Element rhs) {
+    if constexpr (std::is_same_v<Element, int8_t>) {
+        int16_t result = 0;
+        switch (op_type) {
+            case OperationType::ADD:
+                result = static_cast<int16_t>(lhs) + static_cast<int16_t>(rhs);
+                break;
+            case OperationType::SUB:
+                result = static_cast<int16_t>(lhs) - static_cast<int16_t>(rhs);
+                break;
+            case OperationType::MUL:
+                result = static_cast<int16_t>(lhs) * static_cast<int16_t>(rhs);
+                break;
+            case OperationType::DIV:
+                if (rhs == 0) {
+                    return 0;
+                }
+                result = static_cast<int16_t>(lhs) / static_cast<int16_t>(rhs);
+                break;
+            default:
+                throw std::invalid_argument(
+                    "Unsupported broadcast arithmetic operation");
+        }
+        return static_cast<int8_t>(
+            std::max<int16_t>(-128, std::min<int16_t>(127, result)));
+    } else {
+        switch (op_type) {
+            case OperationType::ADD: return lhs + rhs;
+            case OperationType::SUB: return lhs - rhs;
+            case OperationType::MUL: return lhs * rhs;
+            case OperationType::DIV: return lhs / rhs;
+        }
+    }
+    throw std::invalid_argument("Unsupported broadcast arithmetic operation");
+}
+
+template <typename Element>
+void execute_broadcast(const Element* lhs_data, std::size_t lhs_storage_offset,
+                       const Element* rhs_data, std::size_t rhs_storage_offset,
+                       Element* output_data,
+                       std::size_t output_storage_offset,
+                       std::size_t output_numel,
+                       const detail::BroadcastPlan& plan,
+                       OperationType op_type) {
+    for (std::size_t linear_index = 0; linear_index < output_numel;
+         ++linear_index) {
+        std::size_t remainder = linear_index;
+        std::size_t lhs_offset = lhs_storage_offset;
+        std::size_t rhs_offset = rhs_storage_offset;
+        for (std::size_t axis = plan.shape.size(); axis > 0; --axis) {
+            const std::size_t dimension = plan.shape[axis - 1];
+            const std::size_t coordinate = remainder % dimension;
+            remainder /= dimension;
+            lhs_offset += coordinate * plan.lhs_strides[axis - 1];
+            rhs_offset += coordinate * plan.rhs_strides[axis - 1];
+        }
+        output_data[output_storage_offset + linear_index] =
+            apply_broadcast_operation(op_type, lhs_data[lhs_offset],
+                                      rhs_data[rhs_offset]);
     }
 }
 
@@ -71,6 +181,64 @@ bool GenericBackend::operation_into(const TensorBackend& other, TensorBackend& o
         add_range(0, size_);
     }
     return true;
+}
+
+void GenericBackend::operation_broadcast(
+    const GenericBackend& other, GenericBackend& output,
+    const detail::BroadcastPlan& plan, OperationType op_type,
+    std::size_t lhs_numel, std::size_t rhs_numel) const {
+    if (quantization_mode_ != other.quantization_mode_ ||
+        quantization_mode_ != output.quantization_mode_ ||
+        (quantization_mode_ != QuantizationMode::FP32 &&
+         quantization_mode_ != QuantizationMode::INT8)) {
+        throw std::runtime_error(
+            "Generic broadcasting supports matching FP32 or INT8 tensors");
+    }
+    if (size_ != lhs_numel || other.size_ != rhs_numel) {
+        throw std::runtime_error(
+            "Broadcast operand logical element count mismatch");
+    }
+    if (plan.shape.size() != plan.lhs_strides.size() ||
+        plan.shape.size() != plan.rhs_strides.size()) {
+        throw std::invalid_argument(
+            "Broadcast plan shape and stride ranks must match");
+    }
+
+    const std::size_t output_numel =
+        detail::checked_broadcast_numel(plan.shape);
+    if (output.size_ != output_numel) {
+        throw std::runtime_error(
+            "Broadcast output logical element count mismatch");
+    }
+    if (output_numel == 0) {
+        return;
+    }
+
+    const std::size_t lhs_max_offset =
+        maximum_broadcast_offset(plan.shape, plan.lhs_strides);
+    const std::size_t rhs_max_offset =
+        maximum_broadcast_offset(plan.shape, plan.rhs_strides);
+    validate_broadcast_range(*storage_, storage_offset_, lhs_max_offset);
+    validate_broadcast_range(*other.storage_, other.storage_offset_,
+                             rhs_max_offset);
+    validate_broadcast_range(*output.storage_, output.storage_offset_,
+                             output_numel - 1);
+
+    if (quantization_mode_ == QuantizationMode::FP32) {
+        execute_broadcast(
+            static_cast<const float*>(storage_->data()), storage_offset_,
+            static_cast<const float*>(other.storage_->data()),
+            other.storage_offset_,
+            static_cast<float*>(output.storage_->data()), output.storage_offset_,
+            output_numel, plan, op_type);
+    } else {
+        execute_broadcast(
+            static_cast<const int8_t*>(storage_->data()), storage_offset_,
+            static_cast<const int8_t*>(other.storage_->data()),
+            other.storage_offset_,
+            static_cast<int8_t*>(output.storage_->data()), output.storage_offset_,
+            output_numel, plan, op_type);
+    }
 }
 
 } // namespace labneura

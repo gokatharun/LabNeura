@@ -1,7 +1,10 @@
 #pragma once
 #include "labneura/backends/common/base.h"
+#include "labneura/detail/broadcast.h"
 
 namespace labneura {
+    class Tensor;
+
     class GenericBackend : public TensorBackend {
         public:
             explicit GenericBackend(std::size_t size, QuantizationMode mode);
@@ -21,6 +24,11 @@ namespace labneura {
             bool operation_into(const TensorBackend& other, TensorBackend& out,
                                 OperationType op_type) const override;
         private:
+            void operation_broadcast(
+                const GenericBackend& other, GenericBackend& output,
+                const detail::BroadcastPlan& plan, OperationType op_type,
+                std::size_t lhs_numel, std::size_t rhs_numel) const;
+
             GenericBackend(std::shared_ptr<TensorStorage> storage,
                            std::size_t logical_size,
                            std::size_t storage_offset);
@@ -30,5 +38,7 @@ namespace labneura {
             // Non-owning typed aliases; TensorStorage owns the allocation.
             float* data_fp32_{nullptr};
             int8_t* data_int8_{nullptr};
+
+            friend class Tensor;
     };
 }  // namespace labneura

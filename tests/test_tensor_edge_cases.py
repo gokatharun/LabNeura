@@ -18,8 +18,8 @@ def test_detect_backend_label():
 
 def test_size_mismatch_raises():
     a = make_fp32([1.0, 2.0])
-    b = make_fp32([1.0])
-    with pytest.raises(RuntimeError, match="size mismatch"):
+    b = make_fp32([1.0, 2.0, 3.0])
+    with pytest.raises(RuntimeError, match="mismatch"):
         a.add_inplace(b)
 
 

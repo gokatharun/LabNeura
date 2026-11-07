@@ -528,6 +528,17 @@ if(NOT SKBUILD)
       PROPERTIES SKIP_RETURN_CODE 77
     )
 
+    add_executable(labneura_tensor_broadcast_test
+      tests/tensor_broadcast_test.cpp
+    )
+    target_include_directories(labneura_tensor_broadcast_test PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+    target_link_libraries(labneura_tensor_broadcast_test PRIVATE labneura)
+    add_test(NAME tensor_broadcast_generic
+      COMMAND labneura_tensor_broadcast_test
+    )
+
     add_executable(labneura_aligned_allocation_safety_test
       tests/aligned_allocation_safety_test.cpp
     )
