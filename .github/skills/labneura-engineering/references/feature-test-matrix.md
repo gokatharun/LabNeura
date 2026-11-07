@@ -22,16 +22,32 @@ Use this checklist for every feature and every backend implementation.
 - [ ] Exact integer equality or documented floating tolerance.
 
 ### BOOL dtype foundation
-- [ ] Dedicated BOOL dtype, one `std::uint8_t` per logical element, canonical
+- [x] Dedicated BOOL dtype, one `std::uint8_t` per logical element, canonical
   0/1 storage, and no INT8 aliasing or `std::vector<bool>` storage.
-- [ ] Dtype byte-size validation, allocation/deallocation, backend accessors,
+- [x] Dtype byte-size validation, allocation/deallocation, backend accessors,
   clone/deep-copy, views/lifetime, and zero-sized storage.
-- [ ] Generic, NEON, and AVX2 explicitly selected construction/access tests;
-  verify logical size independently of SIMD-padded capacity.
-- [ ] C++ byte/numeric and Python bool/numeric inputs normalize to 0/1; Python
+- [x] Generic and NEON explicitly selected construction/access tests; verify
+  logical size independently of SIMD-padded capacity.
+- [ ] AVX2 construction/access runtime validation on an AVX2-capable host.
+- [x] C++ byte/numeric and Python bool/numeric inputs normalize to 0/1; Python
   rejects nonnumeric data and returns actual Python bool values.
 - [ ] BOOL arithmetic remains explicitly unsupported until separately
   implemented and tested.
+
+### Tensor comparisons
+- [x] Generic `eq`, `ne`, `lt`, `le`, `gt`, and `ge` return independent BOOL
+  tensors.
+- [x] Matching FP32, FP16, signed INT16, and signed INT8 inputs; mismatched
+  dtypes and unsupported BOOL comparisons fail clearly.
+- [x] Equal-shape, scalar, 2D/3D/nD, zero-sized, and offset-view cases reuse
+  `BroadcastPlan`; output shape and contiguous layout are checked.
+- [x] IEEE NaN/Inf/signed-zero cases and signed integer boundaries are covered;
+  FP16 compares decoded binary16 values.
+- [x] Generic and NEON tests explicitly select their backend; NEON parity covers
+  all operations and numeric dtypes, IEEE special values, signed integer
+  boundaries, broadcasting, scalar inputs, empty outputs, and offset views.
+- [ ] AVX2 no-fallback test on x86 hardware; add AVX2 comparison kernels and
+  explicit Generic-parity correctness tests before claiming AVX2 support.
 
 ## Broadcasting
 - [ ] Same shape.

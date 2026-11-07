@@ -308,6 +308,18 @@ PYBIND11_MODULE(labneura, m) {
              py::arg("index"))
         .def("flatten", &labneura::Tensor::flatten,
              "Return an independent one-dimensional copy in row-major order")
+        .def("eq", &labneura::Tensor::eq,
+             "Compare two tensors for equality; return a BOOL tensor")
+        .def("ne", &labneura::Tensor::ne,
+             "Compare two tensors for inequality; return a BOOL tensor")
+        .def("lt", &labneura::Tensor::lt,
+             "Compare whether this tensor is less than another")
+        .def("le", &labneura::Tensor::le,
+             "Compare whether this tensor is less than or equal to another")
+        .def("gt", &labneura::Tensor::gt,
+             "Compare whether this tensor is greater than another")
+        .def("ge", &labneura::Tensor::ge,
+             "Compare whether this tensor is greater than or equal to another")
         
         // Data access
         .def("data_fp32", [](labneura::Tensor& self) {

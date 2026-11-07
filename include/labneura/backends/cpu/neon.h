@@ -1,6 +1,7 @@
 #pragma once
 
 #include "labneura/backends/common/base.h"
+#include "labneura/detail/broadcast.h"
 
 namespace labneura {
 
@@ -37,6 +38,11 @@ namespace labneura {
             NEONBackend(std::shared_ptr<TensorStorage> storage,
                         std::size_t logical_size,
                         std::size_t storage_offset);
+            void compare_broadcast(
+                const NEONBackend& other, NEONBackend& output,
+                const detail::BroadcastPlan& plan,
+                ComparisonType comparison, std::size_t lhs_numel,
+                std::size_t rhs_numel) const;
 
             std::size_t size_;
             std::size_t aligned_size_;
@@ -48,6 +54,7 @@ namespace labneura {
             int16_t* data_int16_{nullptr};
             std::uint8_t* data_bool_{nullptr};
 
+            friend class Tensor;
     };
 
 } // namespace labneura

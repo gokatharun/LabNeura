@@ -51,6 +51,15 @@ enum OperationType {
     DIV
 };
 
+enum class ComparisonType {
+    EQ,
+    NE,
+    LT,
+    LE,
+    GT,
+    GE
+};
+
 // Forward declaration for backend implementation
 class TensorBackend;
 class TensorStorage;
@@ -141,6 +150,14 @@ public:
     Tensor sub(const Tensor& other) const;
     // Division: result = this / other
     Tensor div(const Tensor& other) const;
+
+    // Elementwise comparisons return a newly allocated BOOL Tensor.
+    Tensor eq(const Tensor& other) const;
+    Tensor ne(const Tensor& other) const;
+    Tensor lt(const Tensor& other) const;
+    Tensor le(const Tensor& other) const;
+    Tensor gt(const Tensor& other) const;
+    Tensor ge(const Tensor& other) const;
     
     // In-place addition: this += other
     void add_inplace(const Tensor& other);
@@ -165,6 +182,7 @@ private:
     // backend supports it, otherwise clones this tensor and runs the in-place kernel.
     Tensor(QuantizationMode mode, std::unique_ptr<TensorBackend> backend, std::vector<std::size_t> shape);
     Tensor binary_op(const Tensor& other, OperationType op) const;
+    Tensor comparison_op(const Tensor& other, ComparisonType op) const;
     void binary_inplace(const Tensor& other, OperationType op);
 
     // Helper to initialize backend based on hardware

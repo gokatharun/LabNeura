@@ -588,6 +588,100 @@ Tensor Tensor::div(const Tensor& other) const {
     return binary_op(other, OperationType::DIV);
 }
 
+Tensor Tensor::eq(const Tensor& other) const {
+    return comparison_op(other, ComparisonType::EQ);
+}
+
+Tensor Tensor::ne(const Tensor& other) const {
+    return comparison_op(other, ComparisonType::NE);
+}
+
+Tensor Tensor::lt(const Tensor& other) const {
+    return comparison_op(other, ComparisonType::LT);
+}
+
+Tensor Tensor::le(const Tensor& other) const {
+    return comparison_op(other, ComparisonType::LE);
+}
+
+Tensor Tensor::gt(const Tensor& other) const {
+    return comparison_op(other, ComparisonType::GT);
+}
+
+Tensor Tensor::ge(const Tensor& other) const {
+    return comparison_op(other, ComparisonType::GE);
+}
+
+Tensor Tensor::comparison_op(const Tensor& other, ComparisonType comparison) const {
+    if (!backend_ || !other.backend_) {
+        throw std::runtime_error("Tensor backend not initialized");
+    }
+    if (quantization_mode_ != other.quantization_mode_) {
+        throw std::runtime_error("Quantization mode mismatch");
+    }
+    if (quantization_mode_ == QuantizationMode::BOOL) {
+        throw std::runtime_error(
+            "Tensor comparisons are not supported for BOOL tensors");
+    }
+    if (quantization_mode_ != QuantizationMode::FP32 &&
+        quantization_mode_ != QuantizationMode::FP16 &&
+        quantization_mode_ != QuantizationMode::INT16 &&
+        quantization_mode_ != QuantizationMode::INT8) {
+        throw std::runtime_error(
+            "Tensor comparisons support FP32, FP16, INT16, and INT8 tensors");
+    }
+
+    const auto* lhs_generic =
+        dynamic_cast<const GenericBackend*>(backend_.get());
+    const auto* rhs_generic =
+        dynamic_cast<const GenericBackend*>(other.backend_.get());
+#if defined(LABNEURA_ENABLE_NEON)
+    const auto* lhs_neon = dynamic_cast<const NEONBackend*>(backend_.get());
+    const auto* rhs_neon =
+        dynamic_cast<const NEONBackend*>(other.backend_.get());
+    if ((!lhs_generic || !rhs_generic) && (!lhs_neon || !rhs_neon)) {
+        throw std::runtime_error(
+            "Tensor comparisons are only supported by the Generic and NEON backends");
+    }
+#else
+    if (!lhs_generic || !rhs_generic) {
+        throw std::runtime_error(
+            "Tensor comparisons are only supported by the Generic backend");
+    }
+#endif
+
+    detail::BroadcastPlan plan;
+    try {
+        plan = detail::make_broadcast_plan(
+            shape_, strides_, other.shape_, other.strides_);
+    } catch (const std::invalid_argument& error) {
+        throw std::runtime_error(
+            std::string("Tensor shape mismatch: ") + error.what());
+    }
+    const std::size_t output_numel =
+        detail::checked_broadcast_numel(plan.shape);
+    std::unique_ptr<TensorBackend> output_backend;
+    if (lhs_generic && rhs_generic) {
+        auto generic_output =
+            std::make_unique<GenericBackend>(output_numel,
+                                             QuantizationMode::BOOL);
+        lhs_generic->compare_broadcast(
+            *rhs_generic, *generic_output, plan, comparison, numel(),
+            other.numel());
+        output_backend = std::move(generic_output);
+#if defined(LABNEURA_ENABLE_NEON)
+    } else {
+        auto neon_output =
+            std::make_unique<NEONBackend>(output_numel, QuantizationMode::BOOL);
+        lhs_neon->compare_broadcast(*rhs_neon, *neon_output, plan, comparison,
+                                    numel(), other.numel());
+        output_backend = std::move(neon_output);
+#endif
+    }
+    return Tensor(QuantizationMode::BOOL, std::move(output_backend),
+                  std::move(plan.shape));
+}
+
 Tensor Tensor::binary_op(const Tensor& other, OperationType op) const {
     if (backend_ && other.backend_) {
         const auto* lhs_generic =

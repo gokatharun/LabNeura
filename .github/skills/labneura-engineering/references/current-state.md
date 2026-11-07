@@ -26,7 +26,10 @@ the immediate priorities; GPU implementation is not active work.
   operations are ADD, SUB, MUL, and DIV, but support is not uniform across every
   dtype/backend/operation combination: Generic arithmetic is implemented for
   FP32, INT8, and INT16, while NEON and AVX2 have additional FP16/INT16 code.
-  Check the relevant backend and tests before claiming a particular combination.
+  The six Tensor comparisons have Generic and NEON implementations for
+  matching FP32, FP16, INT16, and INT8 inputs, returning BOOL; AVX2 comparison
+  kernels remain pending. Check the relevant backend and tests before claiming
+  a particular combination.
 - Tensor supports contiguous arbitrary-rank construction using
   `Tensor::from_flat` / `Tensor.from_flat(data, shape, mode="auto")`, including
   1D and higher-rank shapes. Existing vector, scalar, and 2D nested-row
@@ -78,8 +81,8 @@ the immediate priorities; GPU implementation is not active work.
 - BOOL construction accepts bool or numeric sequences in Python and byte or
   numeric sequences in C++. Zero values normalize to 0 and nonzero values to 1.
   `data_bool()` exposes `std::uint8_t` storage in C++ and returns copied Python
-  bool values. BOOL arithmetic and logical/comparison operations are not
-  implemented.
+  bool values. BOOL arithmetic, BOOL-to-BOOL comparisons, logical operations,
+  and `where()` are not implemented.
 - `reshape` and `flatten` clone the backend before changing shape metadata and
   remain deep copies. `reshape_view`, `slice_first_axis`, and
   `select_first_axis` create storage-sharing views.
@@ -175,8 +178,59 @@ Mutable C++ `data_bool()` access canonicalizes existing logical elements
 before returning its pointer; callers must write only 0 or 1. Const access
 rejects noncanonical bytes if a retained mutable pointer was used to write an
 invalid value. BOOL deep copies and views preserve backend and storage lifetime.
-BOOL arithmetic, comparisons, logical operations, and `where()` remain
-unsupported.
+BOOL arithmetic, BOOL-to-BOOL comparisons, logical operations, and `where()`
+remain unsupported. Generic numeric comparisons are implemented as M3.3.3
+below; NEON numeric comparison kernels are implemented in M3.3.4. AVX2
+comparison kernels remain pending.
+
+### Tensor comparisons (M3.3.3 Generic; M3.3.4 NEON)
+
+`Tensor.eq/ne/lt/le/gt/ge` and the matching Python methods compare two tensors
+of the same FP32, FP16, INT16, or INT8 dtype and return a newly allocated,
+contiguous BOOL Tensor. Comparisons use the shared `BroadcastPlan`, support
+scalar through nD shapes, zero-sized outputs, and offset views, and do not
+mutate inputs. INT8/INT16 are signed; FP16 compares decoded binary16 values.
+FP32/FP16 use IEEE comparisons (NaN is unequal to itself and ordered
+comparisons with NaN are false; signed zeros compare equal). BOOL input
+comparisons and mixed-dtype promotion are rejected. Generic and NEON execute
+their own kernels; explicit AVX2 selection is rejected rather than routed
+through another backend. NEON vectorizes FP32 and decoded FP16 comparisons in
+four lanes, INT16 in eight lanes, and signed INT8 in sixteen lanes; tails are
+handled without over-reading. Broadcast coordinates are gathered using the
+shared plan, so scalar/rank extension, zero-sized outputs and offset views do
+not materialize inputs. FP16 binary16 values are decoded to FP32 before vector
+comparison, avoiding a dependency on ARM FP16 compare instructions. Both
+Generic and NEON comparison sources are built without fast-math to preserve
+IEEE NaN/Inf behavior.
+
+NEON comparison validation on Apple Silicon:
+
+- The native comparison test explicitly selects Generic and NEON and compares
+  all six operations across FP32, FP16, INT16 and INT8 for equal-shape,
+  broadcast, signed-boundary and floating special-value inputs.
+- Native NEON tests also cover scalar and higher-rank broadcasts, zero-sized
+  outputs, offset views, BOOL canonical values, and invalid inputs.
+- Python comparison tests explicitly select each backend and check NumPy
+  results plus Generic/NEON parity for all operations and dtypes.
+- AVX2 comparison support and x86 validation remain pending; do not claim full
+  SIMD completion until that milestone is implemented and tested on AVX2 hardware.
+
+Apple Silicon validation:
+
+- Focused native comparison CTest: Generic and NEON passed; AVX2 skipped
+  because this host is ARM64.
+- Focused native comparison/broadcast/BOOL/FP16 regression CTest: 8 passed,
+  3 AVX2-only tests skipped.
+- Full native CTest: 21 passed, 8 AVX2-specific tests skipped.
+- Focused Python comparison suite: 116 passed, including explicit Generic and
+  NEON selection and parity.
+- Focused Python broadcast/BOOL/FP16 regressions: 170 passed, 125 existing
+  backend-specific skips.
+- Full Python suite with the normal host backend confirmed as NEON: 1158
+  passed, 153 skipped, and 3 existing pytest return-value warnings.
+- `git diff --check` passed. AVX2 hardware/CI validation was not run; AVX2
+  comparison implementation remains future work, so SIMD comparison support is
+  not complete across all required CPU backends.
 
 Tensor metadata is separate from storage and execution. TensorStorage is
 shared-owned internally, while public Tensor copies still deep-copy. Backend

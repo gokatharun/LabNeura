@@ -152,9 +152,11 @@ add_library(labneura
   # CPU Generic backend (modular)
   src/labneura/backends/cpu/generic/generic_backend.cpp
   src/labneura/backends/cpu/generic/generic_ops_fp32.cpp
+  src/labneura/backends/cpu/generic/generic_ops_compare.cpp
   src/labneura/backends/cpu/generic/generic_ops_int8.cpp
   # CPU NEON backend (modular)
   src/labneura/backends/cpu/neon/neon_backend.cpp
+  src/labneura/backends/cpu/neon/neon_ops_compare.cpp
   src/labneura/backends/cpu/neon/neon_ops_fp32.cpp
   src/labneura/backends/cpu/neon/neon_ops_int8.cpp
   src/labneura/backends/cpu/neon/neon_ops_int16.cpp
@@ -222,10 +224,11 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
 endif()
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
-  # Generic is the numerical reference: under -ffast-math GCC lowers a / b to
-  # a * (1 / b), which is not correctly rounded (observed on x86_64 CI).
+  # Generic is the numerical reference. Preserve IEEE behavior in floating
+  # arithmetic and comparisons; fast-math assumes NaNs do not occur.
   set_source_files_properties(
     src/labneura/backends/cpu/generic/generic_ops_fp32.cpp
+    src/labneura/backends/cpu/generic/generic_ops_compare.cpp
     PROPERTIES COMPILE_FLAGS "-fno-fast-math"
   )
 endif()
@@ -236,6 +239,7 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
     # FP32 NEON division is IEEE (vdivq_f32 / scalar fdiv); keep NaN/Inf/denormal
     # semantics independent of the global -ffast-math.
     set_source_files_properties(
+      src/labneura/backends/cpu/neon/neon_ops_compare.cpp
       src/labneura/backends/cpu/neon/neon_ops_fp32.cpp
       PROPERTIES COMPILE_FLAGS "-fno-fast-math"
     )
@@ -540,6 +544,39 @@ if(NOT SKBUILD)
     )
     add_test(NAME tensor_broadcast_fp16_generic
       COMMAND labneura_tensor_broadcast_test FP16
+    )
+
+    add_executable(labneura_tensor_comparison_test
+      tests/tensor_comparison_test.cpp
+    )
+    target_include_directories(labneura_tensor_comparison_test PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+    target_link_libraries(labneura_tensor_comparison_test PRIVATE labneura)
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64"
+       AND LABNEURA_COMPILER_SUPPORTS_AVX2)
+      target_compile_definitions(labneura_tensor_comparison_test
+        PRIVATE LABNEURA_TEST_AVX2=1
+      )
+    endif()
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
+      target_compile_definitions(labneura_tensor_comparison_test
+        PRIVATE LABNEURA_TEST_NEON=1
+      )
+    endif()
+    add_test(NAME tensor_comparison_generic
+      COMMAND labneura_tensor_comparison_test GENERIC
+    )
+    add_test(NAME tensor_comparison_neon
+      COMMAND labneura_tensor_comparison_test NEON
+    )
+    add_test(NAME tensor_comparison_avx2
+      COMMAND labneura_tensor_comparison_test AVX2
+    )
+    set_tests_properties(
+      tensor_comparison_neon
+      tensor_comparison_avx2
+      PROPERTIES SKIP_RETURN_CODE 77
     )
 
     add_executable(labneura_bool_dtype_test

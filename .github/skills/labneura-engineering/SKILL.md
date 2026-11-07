@@ -136,6 +136,17 @@ For performance changes:
 - NEON and AVX2 must match Generic's documented behavior.
 - CPU thread pool/`parallel_for` and CPU allocators remain CPU-scoped.
 - Track support by operation × dtype × backend × layout × mode.
+- A Generic-only operation milestone is an explicitly partial backend stage,
+  not full feature/SIMD completion. Every operation must eventually have
+  Generic, NEON, and AVX2 implementations with explicit backend-specific tests;
+  validate NEON on ARM64 and AVX2 on capable x86 hardware before claiming those
+  backends.
+- Preserve IEEE NaN/Inf comparison behavior in Generic floating-point kernels;
+  do not compile them under fast-math assumptions.
+- SIMD comparison masks must be stored as canonical BOOL bytes (`0` or `1`).
+  FP16 comparisons decode binary16 values before comparing; never compare their
+  raw integer encodings. Broadcast kernels consume the shared plan's effective
+  strides and must explicitly test views, vector tails and Generic parity.
 - Unsupported combinations must fail clearly or use an explicitly documented dispatch fallback.
 - Do not force CPU workers and GPU queues into one scheduler abstraction.
 - Add Metal/CUDA/HIP only through a concrete vertical slice with actual hardware validation. Do not add speculative GPU frameworks now.

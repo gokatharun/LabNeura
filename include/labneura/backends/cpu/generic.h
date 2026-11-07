@@ -36,6 +36,10 @@ namespace labneura {
                 const GenericBackend& other, GenericBackend& output,
                 const detail::BroadcastPlan& plan, OperationType op_type,
                 std::size_t lhs_numel, std::size_t rhs_numel) const;
+            void compare_broadcast(
+                const GenericBackend& other, GenericBackend& output,
+                const detail::BroadcastPlan& plan, ComparisonType comparison,
+                std::size_t lhs_numel, std::size_t rhs_numel) const;
 
             GenericBackend(std::shared_ptr<TensorStorage> storage,
                            std::size_t logical_size,
