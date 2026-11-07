@@ -21,6 +21,8 @@ public:
 
     int8_t* data_int8() override;
     const int8_t* data_int8() const override;
+    std::uint8_t* data_bool() override;
+    const std::uint8_t* data_bool() const override;
 
     std::unique_ptr<TensorBackend> clone() const override;
     void operation_fp32(const TensorBackend& other, OperationType op_type) override;
@@ -49,6 +51,7 @@ private:
     int16_t* data_fp16_{nullptr};
     int16_t* data_int16_{nullptr};
     int8_t* data_int8_{nullptr};
+    std::uint8_t* data_bool_{nullptr};
 };
 
 } // namespace labneura

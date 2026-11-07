@@ -43,6 +43,9 @@ NEONBackend::NEONBackend(std::size_t size, QuantizationMode mode)
     } else if (mode == QuantizationMode::INT16) {
         data_int16_ = static_cast<int16_t*>(storage_->data());
         std::fill(data_int16_ + size_, data_int16_ + aligned_size_, static_cast<int16_t>(0));
+    } else if (mode == QuantizationMode::BOOL) {
+        data_bool_ = static_cast<std::uint8_t*>(storage_->data());
+        std::fill(data_bool_, data_bool_ + aligned_size_, std::uint8_t{0});
     } else {
         data_int8_ = static_cast<int8_t*>(storage_->data());
         std::fill(data_int8_ + size_, data_int8_ + aligned_size_, 0);
@@ -62,6 +65,8 @@ NEONBackend::NEONBackend(std::shared_ptr<TensorStorage> storage,
         data_fp16_ = data_at_storage_offset<int16_t>();
     } else if (quantization_mode_ == QuantizationMode::INT16) {
         data_int16_ = data_at_storage_offset<int16_t>();
+    } else if (quantization_mode_ == QuantizationMode::BOOL) {
+        data_bool_ = data_at_storage_offset<std::uint8_t>();
     } else {
         data_int8_ = data_at_storage_offset<int8_t>();
     }
@@ -139,6 +144,20 @@ const int16_t* NEONBackend::data_int16() const {
     return data_int16_;
 }
 
+std::uint8_t* NEONBackend::data_bool() {
+    if (quantization_mode_ != QuantizationMode::BOOL) {
+        throw std::runtime_error("Tensor is not in BOOL mode");
+    }
+    return canonicalize_bool_data(data_bool_);
+}
+
+const std::uint8_t* NEONBackend::data_bool() const {
+    if (quantization_mode_ != QuantizationMode::BOOL) {
+        throw std::runtime_error("Tensor is not in BOOL mode");
+    }
+    return validate_bool_data(data_bool_);
+}
+
 // =======================
 // Clone
 // =======================
@@ -151,6 +170,8 @@ std::unique_ptr<TensorBackend> NEONBackend::clone() const {
         std::copy(data_fp16_, data_fp16_ + size_, backend->data_fp16());
     } else if (quantization_mode_ == QuantizationMode::INT16) {
         std::copy(data_int16_, data_int16_ + size_, backend->data_int16());
+    } else if (quantization_mode_ == QuantizationMode::BOOL) {
+        std::copy(data_bool_, data_bool_ + size_, backend->data_bool());
     } else {
         std::copy(data_int8_, data_int8_ + size_, backend->data_int8());
     }

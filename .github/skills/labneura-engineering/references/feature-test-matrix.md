@@ -21,6 +21,18 @@ Use this checklist for every feature and every backend implementation.
 - [ ] Integer overflow/saturation boundaries.
 - [ ] Exact integer equality or documented floating tolerance.
 
+### BOOL dtype foundation
+- [ ] Dedicated BOOL dtype, one `std::uint8_t` per logical element, canonical
+  0/1 storage, and no INT8 aliasing or `std::vector<bool>` storage.
+- [ ] Dtype byte-size validation, allocation/deallocation, backend accessors,
+  clone/deep-copy, views/lifetime, and zero-sized storage.
+- [ ] Generic, NEON, and AVX2 explicitly selected construction/access tests;
+  verify logical size independently of SIMD-padded capacity.
+- [ ] C++ byte/numeric and Python bool/numeric inputs normalize to 0/1; Python
+  rejects nonnumeric data and returns actual Python bool values.
+- [ ] BOOL arithmetic remains explicitly unsupported until separately
+  implemented and tested.
+
 ## Broadcasting
 - [ ] Same shape.
 - [ ] Scalar with tensor.

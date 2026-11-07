@@ -11,6 +11,7 @@ inline void validate_tensor_dtype_supported(QuantizationMode mode) {
         case QuantizationMode::FP16:
         case QuantizationMode::INT16:
         case QuantizationMode::INT8:
+        case QuantizationMode::BOOL:
             return;
         case QuantizationMode::FP64:
             throw std::invalid_argument("Unsupported tensor dtype: FP64");

@@ -25,6 +25,8 @@ std::size_t dtype_size(QuantizationMode mode) {
             return sizeof(int16_t);
         case QuantizationMode::INT8:
             return sizeof(int8_t);
+        case QuantizationMode::BOOL:
+            return sizeof(std::uint8_t);
         case QuantizationMode::FP64:
             throw std::invalid_argument("Unsupported tensor dtype: FP64");
         case QuantizationMode::INT32:
@@ -147,12 +149,13 @@ Tensor::Tensor(const std::vector<float>& data, QuantizationMode mode)
                 int v = static_cast<int>(std::lrintf(data[i]));
                 int16_data[i] = static_cast<int16_t>(std::max(-32768, std::min(32767, v)));
             }
-        } else {
-            // Other modes: default to FP32
-            float* fp32_data = data_fp32();
+        } else if (mode == QuantizationMode::BOOL) {
+            std::uint8_t* bool_data = data_bool();
             for (std::size_t i = 0; i < data.size(); ++i) {
-                fp32_data[i] = data[i];
+                bool_data[i] = data[i] != 0.0f ? 1 : 0;
             }
+        } else {
+            throw std::invalid_argument("Unsupported tensor dtype");
         }
     }
 }
@@ -188,6 +191,26 @@ Tensor::Tensor(const std::vector<int>& data, QuantizationMode mode)
                 std::max(-32768, std::min(32767, data[i]))
             );
         }
+    } else if (mode == QuantizationMode::BOOL) {
+        std::uint8_t* bool_data = data_bool();
+        for (std::size_t i = 0; i < data.size(); ++i) {
+            bool_data[i] = data[i] != 0 ? 1 : 0;
+        }
+    }
+}
+
+Tensor::Tensor(const std::vector<std::uint8_t>& data, QuantizationMode mode)
+    : quantization_mode_(mode),
+      shape_{data.size()},
+      strides_(checked_contiguous_strides(shape_)) {
+    if (mode != QuantizationMode::BOOL) {
+        throw std::invalid_argument(
+            "std::uint8_t sequence construction requires BOOL dtype");
+    }
+    init_backend(data.size());
+    std::uint8_t* bool_data = data_bool();
+    for (std::size_t i = 0; i < data.size(); ++i) {
+        bool_data[i] = data[i] != 0 ? 1 : 0;
     }
 }
 
@@ -206,6 +229,26 @@ Tensor Tensor::from_flat(const std::vector<float>& data,
     Tensor tensor(data, mode);
     tensor.shape_ = shape;
     tensor.strides_ = strides;
+    return tensor;
+}
+
+Tensor Tensor::from_flat(const std::vector<std::uint8_t>& data,
+                         const std::vector<std::size_t>& shape,
+                         QuantizationMode mode) {
+    const std::size_t element_count = checked_numel(shape);
+    validate_allocation_size(element_count, mode);
+    if (element_count != data.size()) {
+        throw std::invalid_argument(
+            "Tensor shape element count does not match data length");
+    }
+    if (mode != QuantizationMode::BOOL) {
+        throw std::invalid_argument(
+            "std::uint8_t sequence construction requires BOOL dtype");
+    }
+
+    Tensor tensor(data, mode);
+    tensor.shape_ = shape;
+    tensor.strides_ = checked_contiguous_strides(shape);
     return tensor;
 }
 
@@ -358,8 +401,10 @@ Tensor::Tensor(float scalar, QuantizationMode mode)
     } else if (mode == QuantizationMode::INT16) {
         int v = static_cast<int>(std::lrintf(scalar));
         data_int16()[0] = static_cast<int16_t>(std::max(-32768, std::min(32767, v)));
+    } else if (mode == QuantizationMode::BOOL) {
+        data_bool()[0] = scalar != 0.0f ? 1 : 0;
     } else {
-        data_fp32()[0] = scalar;
+        throw std::invalid_argument("Unsupported tensor dtype");
     }
 }
 
@@ -381,6 +426,8 @@ Tensor::Tensor(int scalar, QuantizationMode mode)
         data_int16()[0] = static_cast<int16_t>(
             std::max(-32768, std::min(32767, scalar))
         );
+    } else if (mode == QuantizationMode::BOOL) {
+        data_bool()[0] = scalar != 0 ? 1 : 0;
     }
 }
 
@@ -471,6 +518,16 @@ int16_t* Tensor::data_int16() {
 
 const int16_t* Tensor::data_int16() const {
     return backend_ ? backend_->data_int16() : nullptr;
+}
+
+std::uint8_t* Tensor::data_bool() {
+    return backend_ ? backend_->data_bool() : nullptr;
+}
+
+const std::uint8_t* Tensor::data_bool() const {
+    return backend_
+               ? static_cast<const TensorBackend&>(*backend_).data_bool()
+               : nullptr;
 }
 
 Tensor Tensor::add(const Tensor& other) const {

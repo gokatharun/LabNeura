@@ -6,6 +6,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <cstring>
 #include <iostream>
 #include <limits>
 #include <stdexcept>
@@ -24,6 +26,12 @@ void require(bool condition, const std::string& message) {
 labneura::Tensor make_tensor(std::vector<float> values,
                              std::vector<std::size_t> shape) {
     return labneura::Tensor::from_flat(values, shape);
+}
+
+labneura::Tensor make_fp16_tensor(std::vector<float> values,
+                                  std::vector<std::size_t> shape) {
+    return labneura::Tensor::from_flat(
+        values, shape, labneura::QuantizationMode::FP16);
 }
 
 labneura::Tensor make_int8_tensor(std::vector<int> values,
@@ -178,6 +186,33 @@ void require_int16_values(const labneura::Tensor& actual,
     for (std::size_t i = 0; i < expected.size(); ++i) {
         require(actual.data_int16()[i] == expected[i],
                 context + ": value mismatch at " + std::to_string(i));
+    }
+}
+
+void require_fp16_bits(const labneura::Tensor& actual,
+                       const std::vector<std::size_t>& expected_shape,
+                       const std::vector<uint16_t>& expected,
+                       const std::string& context) {
+    require(actual.shape() == expected_shape, context + ": shape mismatch");
+    require(actual.quantization_mode() == labneura::QuantizationMode::FP16,
+            context + ": dtype mismatch");
+    require(actual.size() == expected.size(), context + ": size mismatch");
+    for (std::size_t i = 0; i < expected.size(); ++i) {
+        const uint16_t bits = static_cast<uint16_t>(actual.data_fp16()[i]);
+        require(bits == expected[i],
+                context + ": binary16 bits mismatch at " +
+                    std::to_string(i) + ", expected " +
+                    std::to_string(expected[i]) + ", got " +
+                    std::to_string(bits));
+    }
+}
+
+void set_fp16_bits(labneura::Tensor& tensor,
+                   const std::vector<uint16_t>& bits) {
+    require(tensor.size() == bits.size(),
+            "FP16 bit-pattern setup size mismatch");
+    for (std::size_t i = 0; i < bits.size(); ++i) {
+        std::memcpy(&tensor.data_fp16()[i], &bits[i], sizeof(bits[i]));
     }
 }
 
@@ -695,6 +730,161 @@ void test_int16_broadcasting() {
     }
 }
 
+void test_fp16_broadcasting() {
+    using labneura::OperationType;
+    using labneura::Tensor;
+    using labneura::QuantizationMode;
+
+    struct OperationCase {
+        OperationType operation;
+        const char* name;
+        std::vector<uint16_t> equal_shape;
+        std::vector<uint16_t> scalar;
+        std::vector<uint16_t> multi_axis;
+        std::vector<uint16_t> offset_view;
+    };
+    const std::vector<OperationCase> cases = {
+        {OperationType::ADD, "FP16 ADD",
+         {0x4200, 0x4400, 0x4500, 0x4600, 0x4700, 0x4800},
+         {0x4400, 0x4600, 0x4800},
+         {0x4400, 0x4600, 0x4800, 0x4600, 0x4800, 0x4900,
+          0x4900, 0x4A00, 0x4B00, 0x4A00, 0x4B00, 0x4C00},
+         {0x3C00, 0x4000, 0x4200, 0x4600, 0x4700, 0x4800,
+          0x4880, 0x4900, 0x4980, 0x4900, 0x4980, 0x4A00}},
+        {OperationType::SUB, "FP16 SUB",
+         {0xBC00, 0x0000, 0x3C00, 0x4000, 0x4200, 0x4400},
+         {0x0000, 0x4000, 0x4400},
+         {0x0000, 0x4000, 0x4400, 0xC000, 0x0000, 0x4000,
+          0x4600, 0x4800, 0x4900, 0x4400, 0x4600, 0x4800},
+         {0x3C00, 0x4000, 0x4200, 0x4000, 0x4200, 0x4400,
+          0x4500, 0x4600, 0x4700, 0x4900, 0x4980, 0x4A00}},
+        {OperationType::MUL, "FP16 MUL",
+         {0x4000, 0x4400, 0x4600, 0x4800, 0x4900, 0x4A00},
+         {0x4400, 0x4800, 0x4A00},
+         {0x4400, 0x4800, 0x4A00, 0x4800, 0x4C00, 0x4E00,
+          0x4C00, 0x4D00, 0x4E00, 0x5000, 0x5100, 0x5200},
+         {0x3C00, 0x4000, 0x4200, 0x4800, 0x4900, 0x4A00,
+          0x4B00, 0x4C00, 0x4C80, 0x4900, 0x4980, 0x4A00}},
+        {OperationType::DIV, "FP16 DIV",
+         {0x3800, 0x3C00, 0x3E00, 0x4000, 0x4100, 0x4200},
+         {0x3C00, 0x4000, 0x4200},
+         {0x3C00, 0x4000, 0x4200, 0x3800, 0x3C00, 0x3E00,
+          0x4400, 0x4500, 0x4600, 0x4000, 0x4100, 0x4200},
+         {0x3C00, 0x4000, 0x4200, 0x4000, 0x4100, 0x4200,
+          0x4300, 0x4400, 0x4480, 0x4900, 0x4980, 0x4A00}}
+    };
+
+    const std::vector<float> equal_lhs{1, 2, 3, 4, 5, 6};
+    const std::vector<float> equal_rhs{2, 2, 2, 2, 2, 2};
+    const std::vector<float> scalar_lhs{2, 4, 6};
+    const Tensor scalar_rhs = make_fp16_tensor({2}, {});
+    const std::vector<float> multi_lhs{2, 4, 6, 8, 10, 12};
+    const std::vector<float> multi_rhs{2, 4};
+
+    for (const auto& test : cases) {
+        const Tensor lhs =
+            make_fp16_tensor(equal_lhs, {2, 3});
+        const Tensor rhs =
+            make_fp16_tensor(equal_rhs, {2, 3});
+        Tensor allocated = lhs;
+        apply_operation(allocated, rhs, test.operation, false);
+        require_fp16_bits(allocated, {2, 3}, test.equal_shape,
+                          std::string(test.name) + " equal-shape allocating");
+        Tensor inplace = lhs;
+        apply_operation(inplace, rhs, test.operation, true);
+        require_fp16_bits(inplace, {2, 3}, test.equal_shape,
+                          std::string(test.name) + " equal-shape in-place");
+
+        const Tensor scalar_result =
+            [&]() {
+                Tensor result;
+                apply_operation(result = make_fp16_tensor(scalar_lhs, {3}),
+                                scalar_rhs, test.operation, false);
+                return result;
+            }();
+        require_fp16_bits(scalar_result, {3}, test.scalar,
+                          std::string(test.name) + " scalar broadcast");
+
+        const Tensor multi_result =
+            [&]() {
+                Tensor result;
+                apply_operation(
+                    result = make_fp16_tensor(multi_lhs, {2, 1, 3}),
+                    make_fp16_tensor(multi_rhs, {1, 2, 1}),
+                    test.operation, false);
+                return result;
+            }();
+        require_fp16_bits(multi_result, {2, 2, 3}, test.multi_axis,
+                          std::string(test.name) +
+                              " multi-axis 3-D broadcast");
+
+        Tensor source = make_fp16_tensor(
+            {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}, {4, 3});
+        Tensor view = source.slice_first_axis(1, 3);
+        require(view.storage_offset() == 3,
+                "FP16 view did not have a nonzero storage offset");
+        const Tensor view_rhs = make_fp16_tensor({2}, {});
+        apply_operation(view, view_rhs, test.operation, true);
+        require_fp16_bits(source, {4, 3}, test.offset_view,
+                          std::string(test.name) +
+                              " in-place offset-view shared mutation");
+    }
+
+    for (const auto operation : {OperationType::ADD, OperationType::SUB,
+                                 OperationType::MUL, OperationType::DIV}) {
+        Tensor empty = make_fp16_tensor({}, {0, 3});
+        const Tensor row = make_fp16_tensor({1, 2, 3}, {1, 3});
+        Tensor result = empty;
+        apply_operation(result, row, operation, false);
+        require(result.size() == 0 &&
+                    result.shape() == std::vector<std::size_t>({0, 3}) &&
+                    result.quantization_mode() == QuantizationMode::FP16,
+                "FP16 zero-sized allocating broadcast changed metadata");
+        apply_operation(empty, row, operation, true);
+        require(empty.size() == 0 &&
+                    empty.shape() == std::vector<std::size_t>({0, 3}),
+                "FP16 zero-sized in-place broadcast changed metadata");
+
+        Tensor scalar_destination = make_fp16_tensor({1}, {});
+        try {
+            apply_operation(
+                scalar_destination,
+                make_fp16_tensor({1, 2}, {2}), operation, true);
+            throw std::runtime_error(
+                "FP16 in-place destination expansion was accepted");
+        } catch (const std::runtime_error& error) {
+            require(std::string(error.what()).find("cannot expand") !=
+                        std::string::npos,
+                    "FP16 destination-expansion error was not actionable");
+        }
+    }
+
+    Tensor raw_lhs = make_fp16_tensor({0}, {});
+    Tensor raw_rhs = make_fp16_tensor({0}, {});
+    set_fp16_bits(raw_lhs, {0x3C00});
+    set_fp16_bits(raw_rhs, {0x3800});
+    require_fp16_bits(raw_lhs, {}, {0x3C00}, "FP16 raw lhs bits");
+    require_fp16_bits(raw_rhs, {}, {0x3800}, "FP16 raw rhs bits");
+    require_fp16_bits(raw_lhs.add(raw_rhs), {}, {0x3E00},
+                      "FP16 storage bits interpreted as binary16 values");
+
+    Tensor original = make_fp16_tensor(equal_lhs, {2, 3});
+    Tensor independent = original.add(
+        make_fp16_tensor(equal_rhs, {2, 3}));
+    independent.add_inplace(make_fp16_tensor({1}, {}));
+    require_fp16_bits(original, {2, 3},
+                      {0x3C00, 0x4000, 0x4200, 0x4400, 0x4500, 0x4600},
+                      "FP16 allocating input independence");
+}
+
+void run_fp16_generic_tests() {
+    labneura::test::ScopedEnvironmentVariable backend_override(
+        "LABNEURA_BACKEND", "GENERIC");
+    require(labneura::detect_backend() == "GENERIC",
+            "Generic backend was not selected for FP16 broadcasting");
+    test_fp16_broadcasting();
+}
+
 void run_generic_tests() {
     labneura::test::ScopedEnvironmentVariable backend_override(
         "LABNEURA_BACKEND", "GENERIC");
@@ -706,14 +896,22 @@ void run_generic_tests() {
     test_errors_aliases_and_ieee_values();
     test_int8_broadcasting();
     test_int16_broadcasting();
+    test_fp16_broadcasting();
 }
 
 }  // namespace
 
-int main() {
+int main(int argc, char** argv) {
     try {
-        run_generic_tests();
-        std::cout << "GENERIC: FP32, INT8, and INT16 broadcasting tests passed\n";
+        if (argc == 2 && std::string(argv[1]) == "FP16") {
+            run_fp16_generic_tests();
+            std::cout << "GENERIC: FP16 broadcasting tests passed\n";
+        } else if (argc == 1) {
+            run_generic_tests();
+            std::cout << "GENERIC: FP32, FP16, INT8, and INT16 broadcasting tests passed\n";
+        } else {
+            throw std::invalid_argument("Expected no argument or FP16");
+        }
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "Broadcasting test failed: " << error.what() << '\n';

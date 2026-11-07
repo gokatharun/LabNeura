@@ -538,6 +538,42 @@ if(NOT SKBUILD)
     add_test(NAME tensor_broadcast_generic
       COMMAND labneura_tensor_broadcast_test
     )
+    add_test(NAME tensor_broadcast_fp16_generic
+      COMMAND labneura_tensor_broadcast_test FP16
+    )
+
+    add_executable(labneura_bool_dtype_test
+      tests/bool_dtype_test.cpp
+    )
+    target_include_directories(labneura_bool_dtype_test PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+    target_link_libraries(labneura_bool_dtype_test PRIVATE labneura)
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64"
+       AND LABNEURA_COMPILER_SUPPORTS_AVX2)
+      target_compile_definitions(labneura_bool_dtype_test
+        PRIVATE LABNEURA_TEST_AVX2=1
+      )
+    endif()
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
+      target_compile_definitions(labneura_bool_dtype_test
+        PRIVATE LABNEURA_TEST_NEON=1
+      )
+    endif()
+    add_test(NAME bool_dtype_generic
+      COMMAND labneura_bool_dtype_test GENERIC
+    )
+    add_test(NAME bool_dtype_neon
+      COMMAND labneura_bool_dtype_test NEON
+    )
+    add_test(NAME bool_dtype_avx2
+      COMMAND labneura_bool_dtype_test AVX2
+    )
+    set_tests_properties(
+      bool_dtype_neon
+      bool_dtype_avx2
+      PROPERTIES SKIP_RETURN_CODE 77
+    )
 
     add_executable(labneura_aligned_allocation_safety_test
       tests/aligned_allocation_safety_test.cpp

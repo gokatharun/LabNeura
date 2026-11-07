@@ -19,6 +19,8 @@ std::size_t dtype_size(QuantizationMode dtype) {
             return sizeof(int16_t);
         case QuantizationMode::INT8:
             return sizeof(int8_t);
+        case QuantizationMode::BOOL:
+            return sizeof(std::uint8_t);
         case QuantizationMode::FP64:
         case QuantizationMode::INT32:
             throw std::invalid_argument("Unsupported tensor dtype");
@@ -36,6 +38,8 @@ void* allocate_data(std::size_t count, QuantizationMode dtype,
             return util::allocate_aligned<int16_t>(count, alignment);
         case QuantizationMode::INT8:
             return util::allocate_aligned<int8_t>(count, alignment);
+        case QuantizationMode::BOOL:
+            return util::allocate_aligned<std::uint8_t>(count, alignment);
         case QuantizationMode::FP64:
         case QuantizationMode::INT32:
             throw std::invalid_argument("Unsupported tensor dtype");

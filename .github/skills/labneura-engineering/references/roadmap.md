@@ -102,6 +102,7 @@ Record dtype, operation, shape, allocating/in-place, layout, cache regime, backe
 | M3.2.3 | Generic INT8 arithmetic with broadcasting | Saturating ADD/SUB/MUL, safe integer DIV, allocating/in-place and NumPy parity |
 | M3.2.4 | Generic INT16 arithmetic with broadcasting | Widened saturating ADD/SUB/MUL, safe integer DIV, allocating/in-place and NumPy parity |
 | M3.2.5+ | Remaining dtype/backend broadcast kernels | Generic FP16 decision, then NEON/AVX2 with explicit backend parity |
+| M3.3.2 | BOOL dtype foundation | Canonical one-byte storage, construction/access/copy/lifetime across Generic, NEON, and AVX2 |
 | M3 (later) | Comparison and logical operations | Shared planner, separately defined dtype/result semantics and backend parity |
 | M4 | Reductions | Axis/keepdims/dtype/edge tests |
 | M5 | Dot and matmul | 2D and batched semantics, dedicated kernels |

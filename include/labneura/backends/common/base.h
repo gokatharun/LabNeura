@@ -45,6 +45,8 @@ public:
     virtual const float* data_fp32() const = 0;
     virtual int8_t* data_int8() = 0;
     virtual const int8_t* data_int8() const = 0;
+    virtual std::uint8_t* data_bool();
+    virtual const std::uint8_t* data_bool() const;
     // Optional FP16/INT16 accessors (default throw)
     virtual int16_t* data_fp16();
     virtual const int16_t* data_fp16() const;
@@ -75,6 +77,9 @@ protected:
     Element* data_at_storage_offset() noexcept {
         return static_cast<Element*>(storage_->data()) + storage_offset_;
     }
+    std::uint8_t* canonicalize_bool_data(std::uint8_t* values) const;
+    const std::uint8_t* validate_bool_data(
+        const std::uint8_t* values) const;
 
     // Creates a distinct backend instance with this backend's type and shared
     // allocation, bounded by its logical size and element-based offset.

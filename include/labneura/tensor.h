@@ -41,6 +41,7 @@ enum class QuantizationMode {
     INT32,     // 32-bit signed integer quantization
     INT16,     // 16-bit signed integer quantization
     INT8,      // 8-bit signed integer quantization
+    BOOL,      // 8-bit canonical boolean storage
 };
 
 enum OperationType {
@@ -62,6 +63,8 @@ public:
     Tensor();
     explicit Tensor(const std::vector<float>& data, QuantizationMode mode = QuantizationMode::FP32);
     explicit Tensor(const std::vector<int>& data, QuantizationMode mode = QuantizationMode::FP32);
+    explicit Tensor(const std::vector<std::uint8_t>& data,
+                    QuantizationMode mode = QuantizationMode::BOOL);
     // 2-D tensor from equal-length rows (stored flat, row-major)
     explicit Tensor(const std::vector<std::vector<float>>& rows, QuantizationMode mode = QuantizationMode::FP32);
     explicit Tensor(float scalar, QuantizationMode mode = QuantizationMode::FP32);
@@ -75,6 +78,9 @@ public:
     static Tensor from_flat(const std::vector<int>& data,
                             const std::vector<std::size_t>& shape,
                             QuantizationMode mode = QuantizationMode::FP32);
+    static Tensor from_flat(const std::vector<std::uint8_t>& data,
+                            const std::vector<std::size_t>& shape,
+                            QuantizationMode mode = QuantizationMode::BOOL);
 
     // Return an independently owned contiguous copy with the requested shape.
     Tensor reshape(const std::vector<std::size_t>& shape) const;
@@ -118,6 +124,10 @@ public:
     const int16_t* data_fp16() const;
     int16_t* data_int16();
     const int16_t* data_int16() const;
+    // BOOL storage is canonicalized on mutable access; callers must write only
+    // 0 or 1. Const access rejects storage made noncanonical through a pointer.
+    std::uint8_t* data_bool();
+    const std::uint8_t* data_bool() const;
 
     // Operations
     // Addition: result = this + other

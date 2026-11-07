@@ -19,6 +19,9 @@ GenericBackend::GenericBackend(std::size_t size, QuantizationMode mode)
         data_int8_ = static_cast<int8_t*>(storage_->data());
     } else if (mode == QuantizationMode::INT16) {
         data_int16_ = static_cast<int16_t*>(storage_->data());
+    } else if (mode == QuantizationMode::BOOL) {
+        data_bool_ = static_cast<std::uint8_t*>(storage_->data());
+        std::fill(data_bool_, data_bool_ + size_, std::uint8_t{0});
     }
 }
 
@@ -36,6 +39,8 @@ GenericBackend::GenericBackend(std::shared_ptr<TensorStorage> storage,
         data_int8_ = data_at_storage_offset<int8_t>();
     } else if (quantization_mode_ == QuantizationMode::INT16) {
         data_int16_ = data_at_storage_offset<int16_t>();
+    } else if (quantization_mode_ == QuantizationMode::BOOL) {
+        data_bool_ = data_at_storage_offset<std::uint8_t>();
     }
 }
 
@@ -103,6 +108,20 @@ const int16_t* GenericBackend::data_int16() const {
     return data_int16_;
 }
 
+std::uint8_t* GenericBackend::data_bool() {
+    if (quantization_mode_ != QuantizationMode::BOOL) {
+        throw std::runtime_error("Tensor is not in BOOL mode");
+    }
+    return canonicalize_bool_data(data_bool_);
+}
+
+const std::uint8_t* GenericBackend::data_bool() const {
+    if (quantization_mode_ != QuantizationMode::BOOL) {
+        throw std::runtime_error("Tensor is not in BOOL mode");
+    }
+    return validate_bool_data(data_bool_);
+}
+
 std::unique_ptr<TensorBackend> GenericBackend::create_storage_alias(
     std::size_t logical_size, std::size_t storage_offset) const {
     return std::unique_ptr<TensorBackend>(
@@ -123,6 +142,8 @@ std::unique_ptr<TensorBackend> GenericBackend::clone() const {
     } else if (quantization_mode_ == QuantizationMode::INT16) {
         std::copy(data_int16_, data_int16_ + size_,
                  backend->data_int16());
+    } else if (quantization_mode_ == QuantizationMode::BOOL) {
+        std::copy(data_bool_, data_bool_ + size_, backend->data_bool());
     }
     return backend;
 }

@@ -572,3 +572,145 @@ def test_non_generic_backend_does_not_silently_run_generic_int16_broadcast():
     rhs = _int16_tensor([10, 20, 30], [3])
     with pytest.raises(RuntimeError, match="Tensor size mismatch"):
         lhs.add(rhs)
+
+
+def _fp16_tensor(values, shape):
+    return labneura.Tensor.from_flat(
+        values, shape, labneura.QuantizationMode.FP16
+    )
+
+
+def _fp16_reference_bits(op_name, lhs_values, lhs_shape, rhs_values, rhs_shape):
+    lhs = np.asarray(lhs_values, dtype=np.float16).reshape(lhs_shape).astype(
+        np.float32
+    )
+    rhs = np.asarray(rhs_values, dtype=np.float16).reshape(rhs_shape).astype(
+        np.float32
+    )
+    with np.errstate(all="ignore"):
+        result = OPERATIONS[op_name][0](lhs, rhs).astype(np.float16)
+    return result.view(np.uint16)
+
+
+def _assert_fp16_bits(tensor, expected_bits, expected_shape):
+    assert tensor.shape == expected_shape
+    assert tensor.quantization_mode() == labneura.QuantizationMode.FP16
+    actual_bits = np.asarray(tensor.data_fp16(), dtype=np.uint16)
+    np.testing.assert_array_equal(actual_bits, np.asarray(expected_bits).reshape(-1))
+
+
+def _force_generic_backend(monkeypatch):
+    monkeypatch.setenv("LABNEURA_BACKEND", "GENERIC")
+    assert labneura.detect_backend() == "GENERIC"
+
+
+@pytest.mark.parametrize("op_name", sorted(OPERATIONS))
+def test_generic_fp16_equal_shape_arithmetic_and_bits(op_name, monkeypatch):
+    _force_generic_backend(monkeypatch)
+    lhs_values = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+    rhs_values = [2.0] * 6
+    lhs = _fp16_tensor(lhs_values, [2, 3])
+    rhs = _fp16_tensor(rhs_values, [2, 3])
+    lhs_before = list(lhs.data_fp16())
+    rhs_before = list(rhs.data_fp16())
+
+    expected = _fp16_reference_bits(op_name, lhs_values, [2, 3], rhs_values, [2, 3])
+    result = getattr(lhs, op_name)(rhs)
+    _assert_fp16_bits(result, expected, (2, 3))
+    assert lhs.data_fp16() == lhs_before
+    assert rhs.data_fp16() == rhs_before
+
+    inplace = _fp16_tensor(lhs_values, [2, 3])
+    getattr(inplace, OPERATIONS[op_name][1])(rhs)
+    _assert_fp16_bits(inplace, expected, (2, 3))
+
+    if op_name == "add":
+        assert lhs.data_fp16()[:3] == [0x3C00, 0x4000, 0x4200]
+        assert result.data_fp16()[:3] == [0x4200, 0x4400, 0x4500]
+
+
+@pytest.mark.parametrize("op_name", sorted(OPERATIONS))
+def test_generic_fp16_scalar_and_multi_axis_broadcast(op_name, monkeypatch):
+    _force_generic_backend(monkeypatch)
+    scalar_lhs_values = [2.0, 4.0, 6.0]
+    scalar_rhs_values = [2.0]
+    scalar_result = getattr(
+        _fp16_tensor(scalar_lhs_values, [3]),
+        op_name,
+    )(_fp16_tensor(scalar_rhs_values, []))
+    scalar_expected = _fp16_reference_bits(
+        op_name, scalar_lhs_values, [3], scalar_rhs_values, []
+    )
+    _assert_fp16_bits(scalar_result, scalar_expected, (3,))
+
+    lhs_values = [2.0, 4.0, 6.0, 8.0, 10.0, 12.0]
+    rhs_values = [2.0, 4.0]
+    lhs = _fp16_tensor(lhs_values, [2, 1, 3])
+    rhs = _fp16_tensor(rhs_values, [1, 2, 1])
+    result = getattr(lhs, op_name)(rhs)
+    expected = _fp16_reference_bits(
+        op_name, lhs_values, [2, 1, 3], rhs_values, [1, 2, 1]
+    )
+    _assert_fp16_bits(result, expected, (2, 2, 3))
+
+
+@pytest.mark.parametrize("op_name", sorted(OPERATIONS))
+def test_generic_fp16_broadcast_views_zero_dimensions_and_inplace_rules(
+    op_name, monkeypatch
+):
+    _force_generic_backend(monkeypatch)
+    original = list(map(float, range(1, 13)))
+    rhs_values = [2.0, 3.0, 4.0]
+    source = _fp16_tensor(original, [4, 3])
+    view = source.slice_first_axis(1, 3)
+    rhs = _fp16_tensor(rhs_values, [3])
+    assert view.storage_offset == 3
+
+    expected_view = _fp16_reference_bits(
+        op_name, original[3:9], [2, 3], rhs_values, [3]
+    )
+    allocated = getattr(view, op_name)(rhs)
+    _assert_fp16_bits(allocated, expected_view, (2, 3))
+    assert source.data_fp16() == _fp16_tensor(original, [4, 3]).data_fp16()
+
+    expected_source_values = np.asarray(original, dtype=np.float16).reshape(4, 3)
+    expected_source_values[1:3] = np.asarray(expected_view, dtype=np.uint16).view(
+        np.float16
+    ).reshape(2, 3)
+    getattr(view, OPERATIONS[op_name][1])(rhs)
+    _assert_fp16_bits(
+        source,
+        expected_source_values.view(np.uint16),
+        (4, 3),
+    )
+    assert rhs.data_fp16() == _fp16_tensor(rhs_values, [3]).data_fp16()
+
+    empty = _fp16_tensor([], [0, 3])
+    row = _fp16_tensor([1.0, 2.0, 3.0], [1, 3])
+    empty_result = getattr(empty, op_name)(row)
+    _assert_fp16_bits(empty_result, [], (0, 3))
+    getattr(empty, OPERATIONS[op_name][1])(row)
+    assert empty.shape == (0, 3)
+    assert empty.data_fp16() == []
+
+    with pytest.raises(RuntimeError, match="cannot expand"):
+        getattr(_fp16_tensor([1.0], []), OPERATIONS[op_name][1])(
+            _fp16_tensor([1.0, 2.0], [2])
+        )
+
+
+def test_generic_fp16_storage_is_binary16_bits_and_allocating_output_is_independent(
+    monkeypatch,
+):
+    _force_generic_backend(monkeypatch)
+    lhs = _fp16_tensor([1.0], [])
+    rhs = _fp16_tensor([0.5], [])
+    assert lhs.data_fp16() == [0x3C00]
+    assert rhs.data_fp16() == [0x3800]
+    result = lhs.add(rhs)
+    assert result.data_fp16() == [0x3E00]
+
+    result.add_inplace(_fp16_tensor([1.0], []))
+    assert result.data_fp16() == [0x4100]
+    assert lhs.data_fp16() == [0x3C00]
+    assert rhs.data_fp16() == [0x3800]

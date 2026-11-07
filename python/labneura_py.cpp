@@ -110,14 +110,47 @@ labneura::QuantizationMode parse_tensor_mode(py::handle mode) {
     return py::cast<labneura::QuantizationMode>(mode);
 }
 
-labneura::Tensor tensor_from_flat(py::sequence data,
-                                  py::handle shape,
-                                  py::handle mode) {
-    const std::vector<std::size_t> dimensions = parse_tensor_shape(shape);
+std::vector<std::uint8_t> parse_bool_values(py::sequence data) {
     const auto count = PySequence_Size(data.ptr());
     if (count < 0) {
         throw py::error_already_set();
     }
+    std::vector<std::uint8_t> values;
+    values.reserve(static_cast<std::size_t>(count));
+    for (Py_ssize_t i = 0; i < count; ++i) {
+        py::object item = py::reinterpret_steal<py::object>(
+            PySequence_GetItem(data.ptr(), i));
+        if (!item) {
+            throw py::error_already_set();
+        }
+        if (!PyBool_Check(item.ptr()) && !PyLong_Check(item.ptr()) &&
+            !PyFloat_Check(item.ptr())) {
+            throw py::type_error(
+                "BOOL Tensor data must contain bool or numeric values");
+        }
+        const int truth = PyObject_IsTrue(item.ptr());
+        if (truth < 0) {
+            throw py::error_already_set();
+        }
+        values.push_back(truth ? 1 : 0);
+    }
+    return values;
+}
+
+labneura::Tensor tensor_from_flat(py::sequence data,
+                                  py::handle shape,
+                                  py::handle mode) {
+    const std::vector<std::size_t> dimensions = parse_tensor_shape(shape);
+    const auto dtype = parse_tensor_mode(mode);
+    const auto count = PySequence_Size(data.ptr());
+    if (count < 0) {
+        throw py::error_already_set();
+    }
+    if (dtype == labneura::QuantizationMode::BOOL) {
+        const std::vector<std::uint8_t> values = parse_bool_values(data);
+        return labneura::Tensor::from_flat(values, dimensions, dtype);
+    }
+
     const bool integer_data = [&] {
         for (Py_ssize_t i = 0; i < count; ++i) {
             py::object item = py::reinterpret_steal<py::object>(
@@ -129,13 +162,22 @@ labneura::Tensor tensor_from_flat(py::sequence data,
         }
         return true;
     }();
-    const auto dtype = parse_tensor_mode(mode);
     if (integer_data) {
         return labneura::Tensor::from_flat(
             py::cast<std::vector<int>>(data), dimensions, dtype);
     }
     return labneura::Tensor::from_flat(
         py::cast<std::vector<float>>(data), dimensions, dtype);
+}
+
+labneura::Tensor tensor_from_bool_sequence(py::sequence data,
+                                           labneura::QuantizationMode dtype) {
+    if (dtype != labneura::QuantizationMode::BOOL) {
+        throw py::type_error(
+            "The dtype-keyword sequence constructor requires BOOL dtype");
+    }
+    const std::vector<std::uint8_t> values = parse_bool_values(data);
+    return labneura::Tensor(values, dtype);
 }
 
 }  // namespace
@@ -196,7 +238,8 @@ PYBIND11_MODULE(labneura, m) {
         .value("FP32", labneura::QuantizationMode::FP32)
         .value("FP16", labneura::QuantizationMode::FP16)
         .value("INT16", labneura::QuantizationMode::INT16)
-        .value("INT8", labneura::QuantizationMode::INT8);
+        .value("INT8", labneura::QuantizationMode::INT8)
+        .value("BOOL", labneura::QuantizationMode::BOOL);
 
     // Tensor class
     py::class_<labneura::Tensor>(m, "Tensor")
@@ -204,6 +247,9 @@ PYBIND11_MODULE(labneura, m) {
         .def("__copy__", [](const labneura::Tensor& self) {
             return labneura::Tensor(self);
         })
+        .def(py::init(&tensor_from_bool_sequence),
+             "Construct a BOOL tensor from a Boolean sequence",
+             py::arg("data"), py::kw_only(), py::arg("dtype"))
         .def(py::init<const std::vector<float>&, labneura::QuantizationMode>(),
              "Constructor from float vector", py::arg("data"), py::arg("mode") = labneura::QuantizationMode::FP32)
         .def(py::init<const std::vector<int>&, labneura::QuantizationMode>(),
@@ -294,6 +340,18 @@ PYBIND11_MODULE(labneura, m) {
             }
             return result;
         }, "Get INT16 data as list")
+
+        .def("data_bool", [](labneura::Tensor& self) {
+            if (self.quantization_mode() != labneura::QuantizationMode::BOOL) {
+                throw std::runtime_error("Tensor is not in BOOL mode");
+            }
+            const std::uint8_t* values = self.data_bool();
+            py::list result;
+            for (std::size_t i = 0; i < self.size(); ++i) {
+                result.append(values[i] != 0);
+            }
+            return result;
+        }, "Get BOOL data as Python bool values")
 
         .def("data_fp16", [](labneura::Tensor& self) {
             // Return as Python list of uint16 values for FP16 mode

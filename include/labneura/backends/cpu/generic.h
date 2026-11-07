@@ -18,6 +18,8 @@ namespace labneura {
             const int16_t* data_fp16() const override;
             int16_t* data_int16() override;
             const int16_t* data_int16() const override;
+            std::uint8_t* data_bool() override;
+            const std::uint8_t* data_bool() const override;
             std::unique_ptr<TensorBackend> clone() const override;
             void operation_fp32(const TensorBackend& other, OperationType op_type) override;
             void operation_fp16(const TensorBackend& other, OperationType op_type) override;
@@ -46,6 +48,7 @@ namespace labneura {
             int8_t* data_int8_{nullptr};
             int16_t* data_fp16_{nullptr};
             int16_t* data_int16_{nullptr};
+            std::uint8_t* data_bool_{nullptr};
 
             friend class Tensor;
     };

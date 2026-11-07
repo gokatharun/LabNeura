@@ -20,9 +20,10 @@ the immediate priorities; GPU implementation is not active work.
   supports explicit backend selection through `LABNEURA_BACKEND`. A backend
   must be both compiled and supported by the current CPU before it can be
   selected.
-- Tensor modes implemented at the library boundary are FP32, FP16, INT16, and
-  INT8. FP64 and INT32 are explicitly rejected. Arithmetic operations are
-  ADD, SUB, MUL, and DIV, but support is not uniform across every
+- Numeric Tensor modes implemented at the library boundary are FP32, FP16,
+  INT16, and INT8; BOOL is also available as a distinct one-byte dtype for
+  canonical boolean storage. FP64 and INT32 are explicitly rejected. Arithmetic
+  operations are ADD, SUB, MUL, and DIV, but support is not uniform across every
   dtype/backend/operation combination: Generic arithmetic is implemented for
   FP32, INT8, and INT16, while NEON and AVX2 have additional FP16/INT16 code.
   Check the relevant backend and tests before claiming a particular combination.
@@ -74,6 +75,11 @@ the immediate priorities; GPU implementation is not active work.
   nonzero offset.
 - Python exposes shape as a tuple. Existing `data_*` accessors return Python
   lists, which copy values out; they are not zero-copy views of Tensor storage.
+- BOOL construction accepts bool or numeric sequences in Python and byte or
+  numeric sequences in C++. Zero values normalize to 0 and nonzero values to 1.
+  `data_bool()` exposes `std::uint8_t` storage in C++ and returns copied Python
+  bool values. BOOL arithmetic and logical/comparison operations are not
+  implemented.
 - `reshape` and `flatten` clone the backend before changing shape metadata and
   remain deep copies. `reshape_view`, `slice_first_axis`, and
   `select_first_axis` create storage-sharing views.
@@ -155,6 +161,22 @@ TensorStorage: dtype + logical size + padded capacity + alignment
 CPU runtime: thread configuration + parallel_for + persistent worker pool
             (not currently used by Tensor arithmetic)
 ```
+
+### BOOL dtype foundation (M3.3.2)
+
+BOOL is a distinct Tensor dtype backed by one `std::uint8_t` per logical
+element. The shared storage control block accounts for BOOL element width and
+deallocation; Generic, NEON, and AVX2 allocations retain separate logical
+element counts and backend padding. Constructors normalize zero values to 0 and
+nonzero byte or numeric values to 1. Python sequence construction accepts bool
+or numeric values, and Python `data_bool()` returns copied Python bools.
+
+Mutable C++ `data_bool()` access canonicalizes existing logical elements
+before returning its pointer; callers must write only 0 or 1. Const access
+rejects noncanonical bytes if a retained mutable pointer was used to write an
+invalid value. BOOL deep copies and views preserve backend and storage lifetime.
+BOOL arithmetic, comparisons, logical operations, and `where()` remain
+unsupported.
 
 Tensor metadata is separate from storage and execution. TensorStorage is
 shared-owned internally, while public Tensor copies still deep-copy. Backend
@@ -321,6 +343,17 @@ transpose/permutation remain unimplemented.
   aligned-allocator hardening. See the allocation-safety note above.
 
 ## Validation snapshot
+
+M3.3.2 BOOL dtype foundation was validated on Apple Silicon:
+
+- Native BOOL CTest: Generic and NEON passed; AVX2 skipped because the host is
+  ARM64.
+- Full native CTest: 19 passed, 7 AVX2-specific skips.
+- Focused BOOL Python tests: 7 passed with Generic explicitly selected.
+- Full Generic-selected Python suite using the rebuilt extension: 1003 passed,
+  191 skipped, with 3 existing pytest return-value warnings.
+- No sanitizer option/configuration was found in the repository; sanitizer
+  validation was not run. AVX2 runtime validation remains pending x86 CI.
 
 On the Apple Silicon development machine, M2.2.3 validation completed with:
 

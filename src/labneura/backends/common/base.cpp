@@ -27,6 +27,10 @@ void TensorBackend::operation(const TensorBackend& other, OperationType op) {
     if (quantization_mode() != other.quantization_mode()) {
         throw std::runtime_error("Quantization mode mismatch");
     }
+    if (quantization_mode() == QuantizationMode::BOOL) {
+        throw std::runtime_error(
+            "Arithmetic operations are not supported for BOOL tensors");
+    }
 
     if (storage_.get() == other.storage_.get() &&
         storage_offset_ != other.storage_offset_) {
@@ -61,6 +65,10 @@ std::unique_ptr<TensorBackend> TensorBackend::operation_new(const TensorBackend&
     if (quantization_mode() != other.quantization_mode()) {
         throw std::runtime_error("Quantization mode mismatch");
     }
+    if (quantization_mode() == QuantizationMode::BOOL) {
+        throw std::runtime_error(
+            "Arithmetic operations are not supported for BOOL tensors");
+    }
 
     auto out = create_output();
     if (!out) {
@@ -86,6 +94,25 @@ bool TensorBackend::operation_into(const TensorBackend&, TensorBackend&, Operati
     return false;
 }
 
+std::uint8_t* TensorBackend::canonicalize_bool_data(
+    std::uint8_t* values) const {
+    for (std::size_t i = 0; i < size(); ++i) {
+        values[i] = values[i] != 0 ? 1 : 0;
+    }
+    return values;
+}
+
+const std::uint8_t* TensorBackend::validate_bool_data(
+    const std::uint8_t* values) const {
+    for (std::size_t i = 0; i < size(); ++i) {
+        if (values[i] > 1) {
+            throw std::runtime_error(
+                "BOOL storage contains a noncanonical value");
+        }
+    }
+    return values;
+}
+
 int16_t* TensorBackend::data_fp16() {
     throw std::runtime_error("FP16 data access not implemented for this backend");
 }
@@ -100,6 +127,14 @@ int16_t* TensorBackend::data_int16() {
 
 const int16_t* TensorBackend::data_int16() const {
     throw std::runtime_error("INT16 data access not implemented for this backend");
+}
+
+std::uint8_t* TensorBackend::data_bool() {
+    throw std::runtime_error("BOOL data access not implemented for this backend");
+}
+
+const std::uint8_t* TensorBackend::data_bool() const {
+    throw std::runtime_error("BOOL data access not implemented for this backend");
 }
 
 void TensorBackend::operation_fp16(const TensorBackend&, OperationType) {
