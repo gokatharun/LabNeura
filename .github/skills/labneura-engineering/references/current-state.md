@@ -62,18 +62,20 @@ the immediate priorities; GPU implementation is not active work.
   independent storage. Move operations transfer ownership.
 - Backend `clone()` allocates fresh storage and copies only logical elements,
   retaining padded capacity and alignment. The shared control block can outlive
-  one owner, but no Tensor view API currently shares it.
+  one owner; reshape and first-axis slice/select views explicitly share it.
 - M2.2.1 ownership validation passed on Apple Silicon: the full native CTest
   run reported 15 passed and 6 AVX2-specific skips; the full Python suite
   reported 991 passed, 27 hardware/backend skips, and 3 pytest return-value
   warnings. Python tests used the freshly rebuilt extension.
-- Storage is a flat, row-major contiguous buffer. Each Tensor records
-  row-major strides in elements and a zero storage offset. Non-contiguous
-  layouts and Tensor views are not supported.
+- Storage is a flat, row-major contiguous buffer. Each Tensor records strides
+  and a storage offset in elements. Constructors use row-major strides and
+  offset zero; contiguous reshape and first-axis slice/select views may have a
+  nonzero offset.
 - Python exposes shape as a tuple. Existing `data_*` accessors return Python
   lists, which copy values out; they are not zero-copy views of Tensor storage.
-- `reshape` and `flatten` clone the backend before changing shape metadata;
-  neither operation creates a view or aliases the source.
+- `reshape` and `flatten` clone the backend before changing shape metadata and
+  remain deep copies. `reshape_view`, `slice_first_axis`, and
+  `select_first_axis` create storage-sharing views.
 
 ### Allocation safety
 
@@ -132,7 +134,7 @@ Python API (pybind11)
           │
           ▼
 Tensor
-  ├─ shape, row-major strides, zero storage offset; contiguous-only
+  ├─ shape, row-major strides, element-based offset; contiguous-only layouts
   ├─ shared TensorStorage owner + unique TensorBackend execution object
   └─ shape validation and elementwise operation entry points
           │
@@ -163,9 +165,8 @@ memory abstraction.
 These remain roadmap items, not implemented capabilities:
 
 - `transpose` and axis permutation.
-- Tensor views and their lifetime/alias semantics (shared storage ownership is
-  implemented, but no public view API uses it yet).
-- Non-contiguous strides, nonzero offsets, indexing, and slicing.
+- Non-contiguous strides and layouts.
+- Arbitrary-axis, negative-stride, reverse, and advanced indexing.
 - Shared broadcasting and broadcast-aware elementwise operations.
 - Reductions.
 - Vector/matrix and batched matrix operations.
@@ -175,7 +176,7 @@ These remain roadmap items, not implemented capabilities:
 The detailed feature sequence remains in [roadmap.md](roadmap.md); avoid
 prebuilding GPU abstractions before an actual backend requires them.
 
-## Storage/layout metadata and contiguous reshape views (M2.2.1–M2.2.3 complete)
+## Storage/layout metadata and contiguous views (M2.2.1–M2.3 implemented)
 
 M2.2.1 introduces a non-virtual shared `TensorStorage` control block that owns
 one backend-allocated buffer and its deleter. Each Tensor keeps its own shape
@@ -186,33 +187,42 @@ for kernel access. Ordinary Tensor copy construction/assignment and existing
 The control block separates logical element count from physical allocation
 capacity and records dtype and alignment. Backend kernels continue to operate
 on flat buffers and do not interpret Tensor shape metadata. M2.2.2 adds
-per-Tensor row-major strides and a zero storage offset, both derived/initialized
-for supported constructors and shape transforms. `numel()` is calculated from
-shape. Stride suffix products use checked arithmetic; shapes whose row-major
-strides cannot be represented are rejected with overflow. `is_contiguous()`
-reports true for all currently representable Tensor layouts.
+per-Tensor row-major strides and an element-based storage offset. Constructors
+start at offset zero; `numel()` is calculated from shape. Stride suffix
+products use checked arithmetic; shapes whose row-major strides cannot be
+represented are rejected with overflow. `is_contiguous()` describes strides
+independently of the storage offset.
 
-`reshape_view(shape)` is available in C++ and Python for contiguous source
-tensors. It shares the `TensorStorage` allocation but creates a distinct
-backend execution object and independent shape/stride metadata. Its backend
-retains the view's logical element count separately from the storage's logical
-extent and padded physical capacity. The shape must have exactly the source
-element count, and bounds are checked against logical storage, not padded
-capacity. The view retains storage after the source is destroyed, and
-mutations through either Tensor are visible through the other. Ordinary Tensor
-copy construction/assignment and existing `reshape()`/`flatten()` remain deep
-copies. Python data accessors still return copied lists.
+`reshape_view(shape)`, `slice_first_axis(start, stop)`, and
+`select_first_axis(index)` are available in C++ and Python. They share the
+`TensorStorage` allocation but create distinct backend execution objects and
+independent shape/stride/offset metadata. A backend alias carries its logical
+element count and storage offset centrally; the base validates the requested
+range against storage's logical extent, never its padded capacity. Backend
+data pointers address the view's first element, while kernels remain bounded
+by the view's logical size. AVX2 FP32 and INT16 kernels select aligned or
+unaligned accesses from the actual backend data-pointer alignment, so valid
+element offsets do not violate SIMD alignment assumptions.
 
-Only contiguous reshape aliases are supported. Non-contiguous strides,
-nonzero-offset layouts, slicing, transpose/permutation and broadcasting remain
-unimplemented.
+`reshape_view` requires a contiguous source and an equal element count.
+`slice_first_axis` accepts half-open forward ranges and preserves rank;
+`select_first_axis` removes the first dimension and produces a scalar for a
+1D source. These first-axis views remain contiguous and retain storage after
+the source is destroyed. Mutations through views are shared. Ordinary Tensor
+copy construction/assignment, `reshape()`, and `flatten()` remain independent
+deep copies with offset zero. Python data accessors still return copied lists.
+Exact in-place aliases are supported, while partially overlapping write ranges
+are rejected to avoid order-dependent mutation.
+
+Non-contiguous layouts, arbitrary-axis or reverse slicing, transpose/
+permutation and broadcasting remain unimplemented.
 
 ## Known limitations and unresolved validation
 
 - No speculative GPU abstractions or GPU implementation are present.
-- `reshape_view()` only supports contiguous aliases with the existing zero
-  offset. Slicing, non-contiguous views, transpose/permutation and
-  view-specific indexing remain pending.
+- View APIs only support contiguous `reshape_view()` and first-axis
+  slice/select operations. Negative/reverse slicing, arbitrary axes,
+  non-contiguous views and transpose/permutation remain pending.
 - There are no non-contiguous layouts or broadcasting; arithmetic requires
 identical shapes.
 - Per-backend dtype/operation support is uneven. Generic FP16/INT16 are not
@@ -234,6 +244,13 @@ identical shapes.
   comparable NumPy/PyTorch CPU path on agreed workloads. This has not been
   established broadly. FP32 performance optimization is intentionally paused;
   do not resume it without a concrete request or new evidence.
+- M2.3 AVX2 first-axis view runtime coverage remains pending. Successful x86
+  CI run `42331993081` (commit `88dce7a21716af43f2c3d5adc81493c78fac4a0c`)
+  executed AVX2 tests, but that committed revision does not contain the
+  uncommitted `slice_first_axis()`/`select_first_axis()` API or regression
+  tests. Its results therefore do not validate M2.3. After the M2.3 changes
+  are available to CI, `tensor_nd_avx2` must run and pass before AVX2
+  slice/select behavior is considered validated.
 - GenericBackend's separate raw allocation helper is not covered by the shared
   aligned-allocator hardening. See the allocation-safety note above.
 
@@ -255,6 +272,36 @@ AVX2. The new reshape-view tests ran on Generic and NEON; AVX2 reshape-view
 behavior remains unverified locally. See
 [feature-test-matrix.md](feature-test-matrix.md) for per-feature definition of
 done.
+
+M2.3 first-axis slice/select validation on Apple Silicon:
+
+- Native full CTest: 15 passed, 6 AVX2-only tests skipped. Focused
+  `tensor_nd_generic` and `tensor_nd_neon` passed, including offset aliases,
+  lifetime, mutation, dtype, range-boundary, odd-sized tail, exact-alias, and
+  partial-overlap rejection cases.
+- Full Python suite using the rebuilt extension: 1007 passed, 28 skipped, and
+  3 existing pytest return-value warnings. Focused `tests/test_tensor_nd.py`:
+  53 passed and 1 unsupported-backend case skipped.
+- Partial-overlap checks reject in-place writes and `add_into` when the output
+  overlaps an input view; exact in-place aliases remain supported. The full
+  native and Python suites passed after these guards were added.
+- AVX2 is not available on this Apple M1 host. The x86 CI workflow has explicit
+  AVX2 dispatch and full CTest/Python validation, but no new x86 run was
+  observed for this milestone. AVX2 offset-view behavior remains unverified
+  at runtime.
+- The latest available x86 CI log was inspected: run `42331993081`, job
+  `Native SIMD tests and benchmarks (x86_64)`, on commit
+  `88dce7a21716af43f2c3d5adc81493c78fac4a0c`. It reported an AMD EPYC 9V45
+  96-Core Processor, AVX2 and F16C CPU support, and GNU 13.3.0. With
+  `LABNEURA_BACKEND=AVX2`, the native backend-selection check passed; the
+  Python package reported `Selected backend: AVX2`; the full native CTest
+  command reported 0 failures out of 21 tests; and the focused verbose
+  `tensor_nd_avx2`, `avx2_allocation_safety`, `fp16_f16c_dispatch`, and
+  `avx2_fp16_arithmetic` tests all passed (4/4). The F16C arithmetic log
+  explicitly reported the F16C vector kernel running. These are verified
+  AVX2/F16C results for that commit, not for the current uncommitted M2.3
+  changes; no workflow run can validate those changes until they are available
+  to the remote runner.
 
 The subsequent M2.1 reshape/flatten milestone was also validated on Apple
 Silicon:

@@ -16,6 +16,18 @@ public:
             throw std::invalid_argument("TensorBackend requires storage");
         }
     }
+    TensorBackend(std::shared_ptr<TensorStorage> storage,
+                  std::size_t logical_size, std::size_t storage_offset)
+        : storage_(std::move(storage)), storage_offset_(storage_offset) {
+        if (!storage_) {
+            throw std::invalid_argument("TensorBackend requires storage");
+        }
+        if (storage_offset_ > storage_->logical_size ||
+            logical_size > storage_->logical_size - storage_offset_) {
+            throw std::invalid_argument(
+                "Backend alias exceeds the storage logical element range");
+        }
+    }
     virtual ~TensorBackend() = default;
 
     // ---- Metadata ----
@@ -57,11 +69,17 @@ public:
 
 protected:
     std::shared_ptr<TensorStorage> storage_;
+    std::size_t storage_offset_{0};
+
+    template <typename Element>
+    Element* data_at_storage_offset() noexcept {
+        return static_cast<Element*>(storage_->data()) + storage_offset_;
+    }
 
     // Creates a distinct backend instance with this backend's type and shared
-    // allocation. The requested size is the alias's logical element count.
+    // allocation, bounded by its logical size and element-based offset.
     virtual std::unique_ptr<TensorBackend> create_storage_alias(
-        std::size_t logical_size) const;
+        std::size_t logical_size, std::size_t storage_offset) const;
 
     // ---- Optional direct-output hooks (defaults: unsupported) ----
     // Returns an uninitialised output backend of the same type, size and mode, or

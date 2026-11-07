@@ -58,6 +58,22 @@ void check_allocation_size(std::size_t size, QuantizationMode mode) {
     }
 }
 
+std::size_t checked_offset_advance(std::size_t index,
+                                   std::size_t stride) {
+    if (stride != 0 &&
+        index > std::numeric_limits<std::size_t>::max() / stride) {
+        throw std::overflow_error("Tensor storage offset overflows size_t");
+    }
+    return index * stride;
+}
+
+std::size_t checked_offset_add(std::size_t offset, std::size_t advance) {
+    if (offset > std::numeric_limits<std::size_t>::max() - advance) {
+        throw std::overflow_error("Tensor storage offset overflows size_t");
+    }
+    return offset + advance;
+}
+
 std::vector<float> flatten_rows(const std::vector<std::vector<float>>& rows,
                                 QuantizationMode mode) {
     validate_tensor_dtype_supported(mode);
@@ -227,6 +243,7 @@ Tensor Tensor::reshape(const std::vector<std::size_t>& shape) const {
     Tensor result(*this);
     result.shape_ = shape;
     result.strides_ = strides;
+    result.storage_offset_ = 0;
     return result;
 }
 
@@ -245,18 +262,78 @@ Tensor Tensor::reshape_view(const std::vector<std::size_t>& shape) const {
             "reshape_view requires the new shape to have the same number of elements");
     }
     validate_allocation_size(requested_numel, quantization_mode_);
-    if (storage_offset_ > storage_->logical_size ||
-        requested_numel > storage_->logical_size - storage_offset_) {
-        throw std::out_of_range(
-            "reshape_view shape exceeds the backing storage logical size");
-    }
     const std::vector<std::size_t> strides =
         checked_contiguous_strides(shape);
 
     Tensor result(quantization_mode_,
-                  backend_->create_storage_alias(requested_numel), shape);
+                  backend_->create_storage_alias(requested_numel,
+                                                 storage_offset_),
+                  shape);
     result.strides_ = strides;
     result.storage_offset_ = storage_offset_;
+    return result;
+}
+
+Tensor Tensor::slice_first_axis(std::size_t start, std::size_t stop) const {
+    if (!backend_ || !storage_) {
+        throw std::runtime_error("Tensor backend not initialized");
+    }
+    if (shape_.empty()) {
+        throw std::invalid_argument(
+            "slice_first_axis requires a tensor with at least one dimension");
+    }
+    if (!is_contiguous()) {
+        throw std::invalid_argument(
+            "slice_first_axis requires a contiguous source tensor");
+    }
+    if (start > stop) {
+        throw std::invalid_argument(
+            "slice_first_axis requires start <= stop");
+    }
+    if (stop > shape_[0]) {
+        throw std::out_of_range(
+            "slice_first_axis range exceeds the first dimension");
+    }
+
+    std::vector<std::size_t> shape = shape_;
+    shape[0] = stop - start;
+    const std::size_t logical_size = checked_numel(shape);
+    const std::size_t offset = checked_offset_add(
+        storage_offset_, checked_offset_advance(start, strides_[0]));
+
+    Tensor result(quantization_mode_,
+                  backend_->create_storage_alias(logical_size, offset),
+                  std::move(shape));
+    result.storage_offset_ = offset;
+    return result;
+}
+
+Tensor Tensor::select_first_axis(std::size_t index) const {
+    if (!backend_ || !storage_) {
+        throw std::runtime_error("Tensor backend not initialized");
+    }
+    if (shape_.empty()) {
+        throw std::invalid_argument(
+            "select_first_axis requires a tensor with at least one dimension");
+    }
+    if (!is_contiguous()) {
+        throw std::invalid_argument(
+            "select_first_axis requires a contiguous source tensor");
+    }
+    if (index >= shape_[0]) {
+        throw std::out_of_range(
+            "select_first_axis index exceeds the first dimension");
+    }
+
+    std::vector<std::size_t> shape(shape_.begin() + 1, shape_.end());
+    const std::size_t logical_size = checked_numel(shape);
+    const std::size_t offset = checked_offset_add(
+        storage_offset_, checked_offset_advance(index, strides_[0]));
+
+    Tensor result(quantization_mode_,
+                  backend_->create_storage_alias(logical_size, offset),
+                  std::move(shape));
+    result.storage_offset_ = offset;
     return result;
 }
 
@@ -314,7 +391,7 @@ Tensor::Tensor(const Tensor& other)
       storage_(backend_ ? backend_->storage_ : nullptr),
       shape_(other.shape_),
       strides_(other.strides_),
-      storage_offset_(other.storage_offset_) {}
+      storage_offset_(0) {}
 
 Tensor& Tensor::operator=(const Tensor& other) {
     if (this != &other) {
@@ -327,7 +404,7 @@ Tensor& Tensor::operator=(const Tensor& other) {
         storage_ = backend_ ? backend_->storage_ : nullptr;
         shape_ = std::move(copied_shape);
         strides_ = std::move(copied_strides);
-        storage_offset_ = other.storage_offset_;
+        storage_offset_ = 0;
     }
     return *this;
 }
@@ -360,8 +437,7 @@ std::size_t Tensor::size() const {
 }
 
 bool Tensor::is_contiguous() const {
-    return storage_offset_ == 0 &&
-           strides_ == checked_contiguous_strides(shape_);
+    return strides_ == checked_contiguous_strides(shape_);
 }
 
 float* Tensor::data_fp32() {
@@ -419,6 +495,22 @@ void Tensor::add_into(const Tensor& other, Tensor& out) const {
         typeid(input_backend) != typeid(output_backend)) {
         throw std::invalid_argument(
             "add_into requires all tensors to use the same backend");
+    }
+    const auto partially_overlaps = [](const Tensor& lhs, const Tensor& rhs) {
+        if (lhs.storage_.get() != rhs.storage_.get() ||
+            lhs.storage_offset_ == rhs.storage_offset_) {
+            return false;
+        }
+        const std::size_t lhs_offset = lhs.storage_offset_;
+        const std::size_t rhs_offset = rhs.storage_offset_;
+        return lhs_offset < rhs_offset
+                   ? rhs_offset - lhs_offset < lhs.numel()
+                   : lhs_offset - rhs_offset < lhs.numel();
+    };
+    if (partially_overlaps(*this, out) ||
+        partially_overlaps(other, out)) {
+        throw std::invalid_argument(
+            "add_into does not support partially overlapping storage ranges");
     }
     if (!backend_->operation_into(*other.backend_, *out.backend_, OperationType::ADD)) {
         throw std::runtime_error(

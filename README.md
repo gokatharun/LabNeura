@@ -53,9 +53,24 @@ and contiguous. `numel` equals the product of the dimensions. An empty shape
 represents a scalar and requires one data element; any shape containing a zero
 dimension has zero elements. Data length must exactly equal `numel`, and
 element-count and allocation-byte overflows are rejected. Existing vector and
-nested 2D constructors remain available. Non-contiguous views, indexing,
-strides, and broadcasting are not supported yet; elementwise operations require
-identical shapes.
+nested 2D constructors remain available. `slice_first_axis(start, stop)` and
+`select_first_axis(index)` return contiguous views that share the source
+allocation. Their storage offsets are measured in elements; mutations through
+C++ in-place operations are visible through aliases, while ordinary Tensor
+copies remain independent. Selecting from a 1D tensor returns a scalar.
+Python `data_*` accessors return copied lists, not mutable aliases.
+Exact in-place aliases are supported; partially overlapping in-place ranges
+are rejected. `add_into` likewise rejects a partially overlapping output view.
+
+```python
+volume = labneura.Tensor.from_flat(list(map(float, range(24))), [4, 2, 3])
+rows = volume.slice_first_axis(1, 3)  # shape (2, 2, 3), offset 6
+plane = volume.select_first_axis(2)   # shape (2, 3), offset 12
+```
+
+Only forward ranges along the first axis are supported. Negative/reverse
+slicing, arbitrary-axis or non-contiguous indexing, transpose, and broadcasting
+are not supported; elementwise operations require identical shapes.
 
 ### Execution Thread Configuration
 

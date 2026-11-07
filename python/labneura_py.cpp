@@ -63,6 +63,40 @@ std::vector<std::size_t> parse_tensor_shape(py::handle shape) {
     return dimensions;
 }
 
+std::size_t parse_tensor_index(py::handle value, const char* argument_name) {
+    if (PyBool_Check(value.ptr()) || !PyIndex_Check(value.ptr())) {
+        throw py::type_error(std::string(argument_name) +
+                             " must be a non-negative integer");
+    }
+
+    py::object index = py::reinterpret_steal<py::object>(
+        PyNumber_Index(value.ptr()));
+    if (!index) {
+        throw py::error_already_set();
+    }
+    const py::int_ zero(0);
+    const int is_negative =
+        PyObject_RichCompareBool(index.ptr(), zero.ptr(), Py_LT);
+    if (is_negative < 0) {
+        throw py::error_already_set();
+    }
+    if (is_negative) {
+        throw py::value_error(std::string(argument_name) +
+                              " cannot be negative");
+    }
+
+    const unsigned long long parsed =
+        PyLong_AsUnsignedLongLong(index.ptr());
+    if (PyErr_Occurred()) {
+        throw py::error_already_set();
+    }
+    if (parsed > std::numeric_limits<std::size_t>::max()) {
+        throw std::overflow_error(std::string(argument_name) +
+                                  " exceeds size_t");
+    }
+    return static_cast<std::size_t>(parsed);
+}
+
 labneura::QuantizationMode parse_tensor_mode(py::handle mode) {
     if (py::isinstance<py::str>(mode)) {
         const std::string mode_name = py::cast<std::string>(mode);
@@ -150,6 +184,9 @@ PYBIND11_MODULE(labneura, m) {
     // Tensor class
     py::class_<labneura::Tensor>(m, "Tensor")
         .def(py::init<>(), "Default constructor")
+        .def("__copy__", [](const labneura::Tensor& self) {
+            return labneura::Tensor(self);
+        })
         .def(py::init<const std::vector<float>&, labneura::QuantizationMode>(),
              "Constructor from float vector", py::arg("data"), py::arg("mode") = labneura::QuantizationMode::FP32)
         .def(py::init<const std::vector<int>&, labneura::QuantizationMode>(),
@@ -190,6 +227,22 @@ PYBIND11_MODULE(labneura, m) {
             return self.reshape_view(parse_tensor_shape(shape));
         }, "Return a contiguous reshape that shares storage with this tensor",
            py::arg("shape"))
+        .def("slice_first_axis",
+             [](const labneura::Tensor& self, py::handle start,
+                py::handle stop) {
+                 return self.slice_first_axis(
+                     parse_tensor_index(start, "start"),
+                     parse_tensor_index(stop, "stop"));
+             },
+             "Return a first-axis range view that shares storage",
+             py::arg("start"), py::arg("stop"))
+        .def("select_first_axis",
+             [](const labneura::Tensor& self, py::handle index) {
+                 return self.select_first_axis(
+                     parse_tensor_index(index, "index"));
+             },
+             "Return a view selecting one element along the first axis",
+             py::arg("index"))
         .def("flatten", &labneura::Tensor::flatten,
              "Return an independent one-dimensional copy in row-major order")
         

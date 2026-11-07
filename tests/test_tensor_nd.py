@@ -1,4 +1,5 @@
 import gc
+import copy
 import sys
 
 import pytest
@@ -323,6 +324,196 @@ def test_reshape_view_rejects_mismatched_and_invalid_shapes():
         source.reshape_view(None)
     with pytest.raises(ValueError):
         source.reshape_view([-1])
+
+
+@pytest.mark.parametrize("backend", ["GENERIC", "NEON", "AVX2"])
+def test_first_axis_slice_and_selection_views(backend, monkeypatch):
+    monkeypatch.setenv("LABNEURA_BACKEND", backend)
+    try:
+        assert labneura.detect_backend() == backend
+    except ValueError:
+        pytest.skip(f"{backend} backend is not available on this host")
+
+    values = list(map(float, range(24)))
+    source = labneura.Tensor.from_flat(values, [4, 2, 3])
+    sliced = source.slice_first_axis(1, 3)
+    assert sliced.shape == (2, 2, 3)
+    assert sliced.strides == (6, 3, 1)
+    assert sliced.storage_offset == 6
+    assert sliced.is_contiguous()
+    assert sliced.numel() == 12
+    assert sliced.quantization_mode() == source.quantization_mode()
+    assert sliced.data_fp32() == values[6:18]
+    assert source.slice_first_axis(0, 4).data_fp32() == values
+    assert source.slice_first_axis(0, 1).data_fp32() == values[:6]
+    assert source.slice_first_axis(3, 4).data_fp32() == values[18:24]
+    assert source.select_first_axis(0).data_fp32() == values[:6]
+    assert source.select_first_axis(3).data_fp32() == values[18:24]
+
+    vector = labneura.Tensor.from_flat(list(map(float, range(6))), [6])
+    vector_slice = vector.slice_first_axis(1, 4)
+    assert vector_slice.shape == (3,)
+    assert vector_slice.storage_offset == 1
+    assert vector_slice.data_fp32() == [1.0, 2.0, 3.0]
+    matrix = labneura.Tensor.from_flat(list(map(float, range(12))), [3, 4])
+    matrix_slice = matrix.slice_first_axis(1, 3)
+    assert matrix_slice.shape == (2, 4)
+    assert matrix_slice.storage_offset == 4
+    assert matrix_slice.data_fp32() == list(map(float, range(4, 12)))
+
+    reshaped_view = sliced.reshape_view([4, 3])
+    assert reshaped_view.shape == (4, 3)
+    assert reshaped_view.storage_offset == 6
+    assert reshaped_view.data_fp32() == values[6:18]
+
+    selected = source.select_first_axis(2)
+    assert selected.shape == (2, 3)
+    assert selected.strides == (3, 1)
+    assert selected.storage_offset == 12
+    assert selected.data_fp32() == values[12:18]
+
+    rhs = labneura.Tensor.from_flat([10.0] * 6, [2, 3])
+    allocated = selected.add(rhs)
+    assert allocated.storage_offset == 0
+    assert allocated.data_fp32() == [value + 10.0 for value in values[12:18]]
+    allocated.add_inplace(rhs)
+    assert source.data_fp32() == values
+    selected.add_inplace(rhs)
+    expected_source = values[:]
+    expected_source[12:18] = [value + 10.0 for value in expected_source[12:18]]
+    assert source.data_fp32() == expected_source
+    assert sliced.data_fp32()[6:12] == expected_source[12:18]
+
+    nested = source.slice_first_axis(1, 4).slice_first_axis(1, 2)
+    assert nested.shape == (1, 2, 3)
+    assert nested.storage_offset == 12
+    assert nested.data_fp32() == expected_source[12:18]
+
+    assert source.slice_first_axis(0, 4).storage_offset == 0
+    assert source.slice_first_axis(0, 1).data_fp32() == expected_source[:6]
+    assert source.slice_first_axis(3, 4).data_fp32() == expected_source[18:24]
+    empty = source.slice_first_axis(2, 2)
+    assert empty.shape == (0, 2, 3)
+    assert empty.storage_offset == 12
+    assert empty.numel() == 0
+    assert empty.data_fp32() == []
+
+    scalar = labneura.Tensor.from_flat([7, 8, 9], [3]).select_first_axis(2)
+    assert scalar.shape == ()
+    assert scalar.strides == ()
+    assert scalar.storage_offset == 2
+    assert scalar.numel() == 1
+    assert scalar.quantization_mode() == labneura.QuantizationMode.FP32
+    assert scalar.data_fp32() == [9.0]
+
+    empty_source = labneura.Tensor.from_flat([], [4, 0, 3])
+    assert empty_source.slice_first_axis(1, 3).shape == (2, 0, 3)
+    assert empty_source.select_first_axis(3).shape == (0, 3)
+
+    def make_view():
+        owner = labneura.Tensor.from_flat(
+            [0.0, 1.0, 2.0, 3.0, 4.0, 5.0], [3, 2]
+        )
+        return owner.slice_first_axis(1, 3)
+
+    survivor = make_view()
+    gc.collect()
+    assert survivor.storage_offset == 2
+    assert survivor.data_fp32() == [2.0, 3.0, 4.0, 5.0]
+
+    retained_source = labneura.Tensor.from_flat(
+        [0.0, 1.0, 2.0, 3.0], [2, 2]
+    )
+    temporary_view = retained_source.select_first_axis(1)
+    temporary_view.add_inplace(labneura.Tensor.from_flat([1.0, 1.0], [2]))
+    del temporary_view
+    assert retained_source.data_fp32() == [0.0, 1.0, 3.0, 4.0]
+
+    # Python data accessors return copies; mutation is done through tensor ops.
+    copied_view = copy.copy(sliced)
+    copied_view.add_inplace(
+        labneura.Tensor.from_flat([1.0] * 12, [2, 2, 3])
+    )
+    assert copied_view.storage_offset == 0
+    assert copied_view.data_fp32() != sliced.data_fp32()
+    assert sliced.data_fp32() == expected_source[6:18]
+
+
+@pytest.mark.parametrize(
+    ("start", "stop", "exception"),
+    [
+        (-1, 1, ValueError),
+        (0, -1, ValueError),
+        (1.5, 2, TypeError),
+        (0, True, TypeError),
+    ],
+)
+def test_slice_first_axis_rejects_invalid_index_types(
+    start, stop, exception
+):
+    source = labneura.Tensor.from_flat([1.0, 2.0, 3.0], [3])
+    with pytest.raises(exception):
+        source.slice_first_axis(start, stop)
+
+
+def test_first_axis_slice_and_select_reject_invalid_bounds_and_scalar_sources():
+    source = labneura.Tensor.from_flat([1.0, 2.0, 3.0], [3])
+    with pytest.raises(ValueError, match="start <= stop"):
+        source.slice_first_axis(2, 1)
+    with pytest.raises(IndexError, match="range"):
+        source.slice_first_axis(0, 4)
+    with pytest.raises(IndexError, match="range"):
+        source.slice_first_axis(4, 4)
+    with pytest.raises(IndexError, match="index"):
+        source.select_first_axis(3)
+
+    empty = labneura.Tensor.from_flat([], [0])
+    with pytest.raises(IndexError):
+        empty.select_first_axis(0)
+
+    scalar = labneura.Tensor.from_flat([42.0], [])
+    with pytest.raises(ValueError, match="at least one dimension"):
+        scalar.slice_first_axis(0, 0)
+    with pytest.raises(ValueError, match="at least one dimension"):
+        scalar.select_first_axis(0)
+
+
+def test_partially_overlapping_views_are_rejected_for_writes():
+    source = labneura.Tensor.from_flat(
+        [1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [6]
+    )
+    lhs = source.slice_first_axis(0, 4)
+    overlapping_rhs = source.slice_first_axis(1, 5)
+    with pytest.raises(ValueError, match="partially overlapping"):
+        lhs.add_inplace(overlapping_rhs)
+
+    exact_alias = source.slice_first_axis(0, 4)
+    exact_alias.add_inplace(exact_alias)
+    assert source.data_fp32() == [2.0, 4.0, 6.0, 8.0, 5.0, 6.0]
+
+    output = source.slice_first_axis(1, 5)
+    rhs = labneura.Tensor.from_flat([1.0] * 4, [4])
+    with pytest.raises(ValueError, match="partially overlapping"):
+        labneura.add_into(lhs, rhs, output)
+
+
+def test_first_axis_slicing_preserves_integer_dtype_and_offset():
+    source = labneura.Tensor.from_flat(
+        list(range(99)), [3, 33], labneura.QuantizationMode.INT8
+    )
+    view = source.select_first_axis(2)
+    assert view.shape == (33,)
+    assert view.storage_offset == 66
+    assert view.quantization_mode() == labneura.QuantizationMode.INT8
+    assert view.data_int8() == list(range(66, 99))
+
+    view.add_inplace(
+        labneura.Tensor.from_flat(
+            [1] * 33, [33], labneura.QuantizationMode.INT8
+        )
+    )
+    assert source.data_int8()[:66] == list(range(66))
+    assert source.data_int8()[66:] == list(range(67, 100))
 
 
 def test_reshape_scalar_and_zero_sized_tensors():

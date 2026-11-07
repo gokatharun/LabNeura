@@ -26,13 +26,15 @@ namespace labneura {
 
         protected:
             std::unique_ptr<TensorBackend> create_storage_alias(
-                std::size_t logical_size) const override;
+                std::size_t logical_size,
+                std::size_t storage_offset) const override;
             std::unique_ptr<TensorBackend> create_output() const override;
             bool operation_into(const TensorBackend& other, TensorBackend& out, OperationType op_type) const override;
 
         private:
             NEONBackend(std::shared_ptr<TensorStorage> storage,
-                        std::size_t logical_size);
+                        std::size_t logical_size,
+                        std::size_t storage_offset);
 
             std::size_t size_;
             std::size_t aligned_size_;

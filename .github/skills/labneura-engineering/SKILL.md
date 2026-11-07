@@ -115,6 +115,7 @@ For performance changes:
 - Centralize shape/stride/overflow invariants.
 - Start with contiguous tensors; add non-contiguous views only with explicit alias/lifetime semantics.
 - Never assume `numel == storage_size` for views.
+- Backend aliases must carry their logical range and element offset centrally; kernels used by offset views must not assume the allocation base alignment applies to the view pointer.
 - Check shape-product and byte-size overflow.
 - Avoid accidental copies in reshape/transpose/view operations.
 - Treat raw host pointers as CPU-only; never expose opaque GPU memory as a normal host pointer.

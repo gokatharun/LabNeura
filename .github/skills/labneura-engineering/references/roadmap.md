@@ -36,6 +36,11 @@ Constructors from C++ vectors/Python sequences; `empty`, `zeros`, `ones`, `full`
 ### 2. Shape manipulation, views and indexing
 `reshape`, `flatten`, `squeeze`, `unsqueeze`, `transpose`, `permute`, basic slicing/select, `contiguous`, clone/copy. Later: gather, scatter, advanced indexing, concatenate, stack, split. A view must have defined shared-storage and lifetime semantics; reject unsupported views clearly.
 
+The initial basic-indexing slice/select surface is limited to contiguous first-
+axis ranges and selections. Views carry an element-based storage offset and a
+bounded logical size; backend data pointers address the view start. Other axes
+and negative strides remain unsupported.
+
 ### 3. Broadcasting and elementwise operations
 Build one shared trailing-dimension broadcast planner. Rules: equal dimensions or dimension 1 are compatible; missing leading dimensions behave as 1. Incompatible shapes error. In-place operations must reject expansion of the destination.
 Operations: add/sub/mul/div; later pow/mod; neg/abs/square/sqrt/exp/log/rounding; eq/ne/gt/ge/lt/le; logical and/or/xor/not; where/clamp/min/max. Support tensor-tensor and scalar-tensor forms; allocating/in-place where valid.
@@ -90,6 +95,7 @@ Record dtype, operation, shape, allocating/in-place, layout, cache regime, backe
 | M0 | Stabilize runtime and benchmark foundation | Reproducible baseline, tests green |
 | M1 | nD metadata/storage invariants | Rank/shape/stride/overflow tests |
 | M2 | Creation, views, shape transforms, basic indexing | Explicit alias/copy semantics |
+| M2.3 | First-axis slice/select views | Offset-aware contiguous views, bounds/lifetime and backend tests |
 | M3 | Broadcasting + elementwise arithmetic/comparison/logical | Shared planner, backend parity |
 | M4 | Reductions | Axis/keepdims/dtype/edge tests |
 | M5 | Dot and matmul | 2D and batched semantics, dedicated kernels |
@@ -100,6 +106,10 @@ Record dtype, operation, shape, allocating/in-place, layout, cache regime, backe
 | M10 | Autograd/training utilities if desired | Separate design and milestones |
 
 Backend optimization is continuous during M1–M7: Generic first, then optimized CPU backends with immediate tests.
+
+M2.3 first-axis slice/select implementation and Generic/NEON local tests are
+present in the current worktree. AVX2 runtime validation remains pending on an
+AVX2-capable x86_64 runner.
 
 ## Good agent task boundaries
 Good: "Define and test nD shape/numel overflow invariants; no operations."

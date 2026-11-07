@@ -80,6 +80,10 @@ public:
     Tensor reshape(const std::vector<std::size_t>& shape) const;
     // Return a contiguous reshape that explicitly shares storage with this tensor.
     Tensor reshape_view(const std::vector<std::size_t>& shape) const;
+    // Return a first-axis range view sharing storage with this tensor.
+    Tensor slice_first_axis(std::size_t start, std::size_t stop) const;
+    // Return a view selecting one element along the first axis.
+    Tensor select_first_axis(std::size_t index) const;
     // Return an independently owned one-dimensional copy in row-major order.
     Tensor flatten() const;
 

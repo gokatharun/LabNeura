@@ -19,18 +19,15 @@ GenericBackend::GenericBackend(std::size_t size, QuantizationMode mode)
 }
 
 GenericBackend::GenericBackend(std::shared_ptr<TensorStorage> storage,
-                               std::size_t logical_size)
-    : TensorBackend(std::move(storage)),
+                               std::size_t logical_size,
+                               std::size_t storage_offset)
+    : TensorBackend(std::move(storage), logical_size, storage_offset),
       size_(logical_size),
       quantization_mode_(storage_->dtype) {
-    if (logical_size > storage_->logical_size) {
-        throw std::invalid_argument(
-            "Backend alias exceeds the storage logical element count");
-    }
     if (quantization_mode_ == QuantizationMode::FP32) {
-        data_fp32_ = static_cast<float*>(storage_->data());
+        data_fp32_ = data_at_storage_offset<float>();
     } else if (quantization_mode_ == QuantizationMode::INT8) {
-        data_int8_ = static_cast<int8_t*>(storage_->data());
+        data_int8_ = data_at_storage_offset<int8_t>();
     }
 }
 
@@ -71,9 +68,9 @@ const int8_t* GenericBackend::data_int8() const {
 }
 
 std::unique_ptr<TensorBackend> GenericBackend::create_storage_alias(
-    std::size_t logical_size) const {
+    std::size_t logical_size, std::size_t storage_offset) const {
     return std::unique_ptr<TensorBackend>(
-        new GenericBackend(storage_, logical_size));
+        new GenericBackend(storage_, logical_size, storage_offset));
 }
 
 std::unique_ptr<TensorBackend> GenericBackend::clone() const {

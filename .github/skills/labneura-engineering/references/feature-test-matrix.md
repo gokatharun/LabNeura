@@ -36,11 +36,17 @@ Examples: `(3,1)+(1,4)->(3,4)`; `(5,3,1)+(1,4)->(5,3,4)`; `(2,3)+(4,3)` is incom
 ## Storage and views
 - [ ] Shape/stride/offset invariants and overflow.
 - [ ] Contiguous layout.
+- [ ] First-axis half-open range slices and first-axis selection.
+- [ ] Empty/full/first/last ranges and zero-sized dimensions.
+- [ ] Nested slicing/selection and scalar selection from a 1D tensor.
+- [ ] Bounds checking against logical storage extent, not padded capacity.
 - [ ] Transpose view correctness.
 - [ ] Reshape view only when legal.
 - [ ] Clone/copy independence.
 - [ ] View shares storage as documented.
 - [ ] Mutation and lifetime semantics.
+- [ ] Exact alias behavior and partial-overlap rejection.
+- [ ] Offset views preserve backend and dtype; SIMD alignment and tails are safe.
 - [ ] Sanitizer checks for lifetime/ownership changes.
 
 ## Backend-specific

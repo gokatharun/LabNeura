@@ -16,12 +16,14 @@ namespace labneura {
             void operation_int8(const TensorBackend& other, OperationType op_type) override;
         protected:
             std::unique_ptr<TensorBackend> create_storage_alias(
-                std::size_t logical_size) const override;
+                std::size_t logical_size,
+                std::size_t storage_offset) const override;
             bool operation_into(const TensorBackend& other, TensorBackend& out,
                                 OperationType op_type) const override;
         private:
             GenericBackend(std::shared_ptr<TensorStorage> storage,
-                           std::size_t logical_size);
+                           std::size_t logical_size,
+                           std::size_t storage_offset);
 
             std::size_t size_;
             QuantizationMode quantization_mode_;

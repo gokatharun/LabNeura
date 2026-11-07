@@ -46,17 +46,262 @@ void check_values(const labneura::Tensor& tensor,
 void check_layout(const labneura::Tensor& tensor,
                   const std::vector<std::size_t>& expected_shape,
                   const std::vector<std::size_t>& expected_strides,
-                  const std::string& context) {
+                  const std::string& context,
+                  std::size_t expected_offset = 0) {
     require(tensor.shape() == expected_shape,
             context + ": shape mismatch");
     require(tensor.strides() == expected_strides,
             context + ": strides mismatch");
-    require(tensor.storage_offset() == 0,
-            context + ": storage offset is not zero");
+    require(tensor.storage_offset() == expected_offset,
+            context + ": storage offset mismatch");
     require(tensor.is_contiguous(),
             context + ": contiguous tensor reported non-contiguous");
     require(tensor.numel() == tensor.size(),
             context + ": numel differs from logical element count");
+}
+
+void check_first_axis_views(const std::string& backend) {
+    std::vector<float> values(24);
+    for (std::size_t i = 0; i < values.size(); ++i) {
+        values[i] = static_cast<float>(i);
+    }
+    auto source = labneura::Tensor::from_flat(values, {4, 2, 3});
+
+    auto slice = source.slice_first_axis(1, 3);
+    check_layout(slice, {2, 2, 3}, {6, 3, 1},
+                 backend + ": first-axis 3-D slice", 6);
+    require(slice.storage_offset() == 6 &&
+                slice.data_fp32() == source.data_fp32() + 6,
+            backend + ": slice did not expose its logical storage offset");
+    for (std::size_t i = 0; i < slice.size(); ++i) {
+        require(slice.data_fp32()[i] == values[i + 6],
+                backend + ": 3-D slice returned incorrect row-major values");
+    }
+
+    const auto full = source.slice_first_axis(0, 4);
+    const auto empty = source.slice_first_axis(2, 2);
+    const auto first = source.slice_first_axis(0, 1);
+    const auto last = source.slice_first_axis(3, 4);
+    require(full.storage_offset() == 0 && full.size() == source.size() &&
+                first.storage_offset() == 0 && first.size() == 6 &&
+                last.storage_offset() == 18 && last.size() == 6,
+            backend + ": full, first, or last range slice metadata mismatch");
+    require(full.data_fp32()[23] == values[23] &&
+                first.data_fp32()[5] == values[5] &&
+                last.data_fp32()[0] == values[18],
+            backend + ": full, first, or last range slice values mismatch");
+    require(empty.shape() == std::vector<std::size_t>({0, 2, 3}) &&
+                empty.numel() == 0 && empty.storage_offset() == 12 &&
+                empty.is_contiguous() &&
+                empty.data_fp32() == source.data_fp32() + 12,
+            backend + ": empty slice metadata or pointer mismatch");
+
+    const auto vector = labneura::Tensor::from_flat(
+        std::vector<float>{0, 1, 2, 3, 4, 5}, {6});
+    const auto vector_slice = vector.slice_first_axis(1, 4);
+    require(vector_slice.shape() == std::vector<std::size_t>({3}) &&
+                vector_slice.storage_offset() == 1 &&
+                vector_slice.data_fp32()[0] == 1.0f &&
+                vector_slice.data_fp32()[2] == 3.0f,
+            backend + ": 1-D range slice mismatch");
+
+    const auto matrix = labneura::Tensor::from_flat(
+        std::vector<float>{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}, {3, 4});
+    const auto matrix_slice = matrix.slice_first_axis(1, 3);
+    require(matrix_slice.shape() == std::vector<std::size_t>({2, 4}) &&
+                matrix_slice.storage_offset() == 4 &&
+                matrix_slice.data_fp32()[0] == 4.0f &&
+                matrix_slice.data_fp32()[7] == 11.0f,
+            backend + ": 2-D range slice mismatch");
+
+    auto selected = source.select_first_axis(2);
+    check_layout(selected, {2, 3}, {3, 1},
+                 backend + ": first-axis selection", 12);
+    require(selected.storage_offset() == 12 &&
+                selected.data_fp32() == source.data_fp32() + 12,
+            backend + ": selection did not advance to the selected sub-tensor");
+    const auto first_selection = source.select_first_axis(0);
+    const auto last_selection = source.select_first_axis(3);
+    require(first_selection.storage_offset() == 0 &&
+                first_selection.data_fp32()[0] == values[0] &&
+                last_selection.storage_offset() == 18 &&
+                last_selection.data_fp32()[5] == values[23],
+            backend + ": first/last valid selection mismatch");
+
+    auto reshaped_view = slice.reshape_view({4, 3});
+    require(reshaped_view.shape() == std::vector<std::size_t>({4, 3}) &&
+                reshaped_view.storage_offset() == 6 &&
+                reshaped_view.data_fp32() == source.data_fp32() + 6,
+            backend + ": reshape_view did not preserve a slice storage offset");
+
+    auto nested = source.slice_first_axis(1, 4).slice_first_axis(1, 2);
+    require(nested.shape() == std::vector<std::size_t>({1, 2, 3}) &&
+                nested.storage_offset() == 12 &&
+                nested.data_fp32() == source.data_fp32() + 12,
+            backend + ": nested slicing computed the wrong offset");
+
+    auto rhs = labneura::Tensor::from_flat(
+        std::vector<float>(6, 10.0f), {2, 3});
+    auto allocated = selected.add(rhs);
+    require(allocated.data_fp32() != selected.data_fp32() &&
+                allocated.storage_offset() == 0,
+            backend + ": allocating operation on a view reused its storage");
+    for (std::size_t i = 0; i < allocated.size(); ++i) {
+        require(allocated.data_fp32()[i] == values[i + 12] + 10.0f,
+                backend + ": allocating operation on a view returned bad values");
+    }
+    selected.add_inplace(rhs);
+    for (std::size_t i = 0; i < source.size(); ++i) {
+        const float expected = i >= 12 && i < 18
+                                   ? values[i] + 10.0f
+                                   : values[i];
+        require(source.data_fp32()[i] == expected,
+                backend + ": in-place slice operation changed the wrong range");
+    }
+
+    auto copied = slice;
+    require(copied.storage_offset() == 0 &&
+                copied.data_fp32() != slice.data_fp32(),
+            backend + ": copying a view must create independent offset-zero storage");
+    auto slice_rhs = labneura::Tensor::from_flat(
+        std::vector<float>(slice.size(), 1.0f), {2, 2, 3});
+    copied.add_inplace(slice_rhs);
+    require(slice.data_fp32()[0] == values[6] &&
+                copied.data_fp32()[0] == values[6] + 1.0f,
+            backend + ": copied view mutation was not independent");
+
+    auto surviving_view = [] {
+        auto owner = labneura::Tensor::from_flat(
+            std::vector<float>{0, 1, 2, 3, 4, 5}, {3, 2});
+        return owner.slice_first_axis(1, 3);
+    }();
+    require(surviving_view.storage_offset() == 2 &&
+                surviving_view.data_fp32()[0] == 2.0f &&
+                surviving_view.data_fp32()[3] == 5.0f,
+            backend + ": slice did not retain storage after source destruction");
+    {
+        auto temporary_view = source.slice_first_axis(0, 1);
+        temporary_view.add_inplace(labneura::Tensor::from_flat(
+            std::vector<float>(6, 1.0f), {1, 2, 3}));
+    }
+    require(source.data_fp32()[0] == 1.0f,
+            backend + ": destroying a view invalidated its source storage");
+
+    const auto scalar_source =
+        labneura::Tensor::from_flat(
+            std::vector<int>{7, 8, 9}, {3},
+            labneura::QuantizationMode::INT8);
+    auto scalar = scalar_source.select_first_axis(2);
+    require(scalar.shape().empty() && scalar.strides().empty() &&
+                scalar.storage_offset() == 2 && scalar.numel() == 1 &&
+                scalar.data_int8()[0] == 9,
+            backend + ": selecting a 1-D element did not produce a scalar view");
+
+    const auto zero_sized = labneura::Tensor::from_flat(
+        std::vector<float>{}, {4, 0, 3});
+    const auto zero_first_axis = labneura::Tensor::from_flat(
+        std::vector<float>{}, {0, 2, 3});
+    auto empty_rows = zero_sized.slice_first_axis(1, 3);
+    auto empty_selection = zero_sized.select_first_axis(3);
+    require(empty_rows.shape() == std::vector<std::size_t>({2, 0, 3}) &&
+                empty_rows.numel() == 0 &&
+                empty_selection.shape() == std::vector<std::size_t>({0, 3}) &&
+                empty_selection.numel() == 0,
+            backend + ": zero-sized first-axis views have incorrect shapes");
+
+    const auto scalar_tensor =
+        labneura::Tensor::from_flat(std::vector<float>{1.0f}, {});
+    require_throws<std::invalid_argument>(
+        [&] { (void)scalar_tensor.slice_first_axis(0, 0); },
+        backend + ": slicing a scalar must fail");
+    require_throws<std::invalid_argument>(
+        [&] { (void)scalar_tensor.select_first_axis(0); },
+        backend + ": selecting a scalar must fail");
+    require_throws<std::invalid_argument>(
+        [&] { (void)source.slice_first_axis(3, 2); },
+        backend + ": reversed first-axis range must fail");
+    require_throws<std::out_of_range>(
+        [&] { (void)source.slice_first_axis(0, 5); },
+        backend + ": out-of-range slice stop must fail");
+    require_throws<std::out_of_range>(
+        [&] { (void)source.select_first_axis(4); },
+        backend + ": out-of-range first-axis index must fail");
+    require_throws<std::out_of_range>(
+        [&] { (void)zero_first_axis.select_first_axis(0); },
+        backend + ": zero-sized first axis cannot be selected");
+
+    auto overlap_source = labneura::Tensor::from_flat(
+        std::vector<float>{1, 2, 3, 4, 5, 6}, {6});
+    auto overlap_lhs = overlap_source.slice_first_axis(0, 4);
+    auto overlap_rhs = overlap_source.slice_first_axis(1, 5);
+    require_throws<std::invalid_argument>(
+        [&] { overlap_lhs.add_inplace(overlap_rhs); },
+        backend + ": partially overlapping in-place views must fail");
+    auto exact_alias = overlap_source.slice_first_axis(0, 4);
+    exact_alias.add_inplace(exact_alias);
+    require(overlap_source.data_fp32()[0] == 2.0f &&
+                overlap_source.data_fp32()[3] == 8.0f &&
+                overlap_source.data_fp32()[4] == 5.0f,
+            backend + ": exact in-place view aliasing is incorrect");
+    auto add_into_output = overlap_source.slice_first_axis(1, 5);
+    const auto add_into_input = overlap_source.slice_first_axis(0, 4);
+    const auto add_into_rhs = labneura::Tensor::from_flat(
+        std::vector<float>(4, 1.0f), {4});
+    require_throws<std::invalid_argument>(
+        [&] { add_into_input.add_into(add_into_rhs, add_into_output); },
+        backend + ": partially overlapping add_into output must fail");
+
+    const std::vector<float> odd_values(3 * 33, 1.0f);
+    auto odd_source = labneura::Tensor::from_flat(odd_values, {3, 33});
+    auto odd_view = odd_source.select_first_axis(2);
+    require(odd_view.storage_offset() == 66 && odd_view.size() == 33 &&
+                odd_view.data_fp32() == odd_source.data_fp32() + 66,
+            backend + ": odd-sized selection range mismatch");
+    auto odd_rhs = labneura::Tensor::from_flat(
+        std::vector<float>(33, 2.0f), {33});
+    odd_view.add_inplace(odd_rhs);
+    for (std::size_t i = 0; i < odd_source.size(); ++i) {
+        require(odd_source.data_fp32()[i] == (i >= 66 && i < 99 ? 3.0f : 1.0f),
+                backend + ": odd view operation crossed its logical range");
+    }
+
+    auto int8_source = labneura::Tensor::from_flat(
+        std::vector<int>(3 * 33, 1), {3, 33},
+        labneura::QuantizationMode::INT8);
+    auto int8_view = int8_source.select_first_axis(2);
+    auto int8_rhs = labneura::Tensor::from_flat(
+        std::vector<int>(33, 2), {33}, labneura::QuantizationMode::INT8);
+    int8_view.add_inplace(int8_rhs);
+    for (std::size_t i = 0; i < int8_source.size(); ++i) {
+        require(int8_source.data_int8()[i] == (i >= 66 && i < 99 ? 3 : 1),
+                backend + ": INT8 slice operation crossed its logical range");
+    }
+
+    if (backend != "GENERIC") {
+        for (const auto dtype : {labneura::QuantizationMode::FP16,
+                                 labneura::QuantizationMode::INT16}) {
+            auto typed_source = labneura::Tensor::from_flat(
+                std::vector<int>(3 * 33, 1), {3, 33}, dtype);
+            auto typed_view = typed_source.select_first_axis(2);
+            auto typed_rhs = labneura::Tensor::from_flat(
+                std::vector<int>(33, 2), {33}, dtype);
+            typed_view.add_inplace(typed_rhs);
+            const int16_t* typed_data =
+                dtype == labneura::QuantizationMode::FP16
+                    ? typed_source.data_fp16()
+                    : typed_source.data_int16();
+            for (std::size_t i = 0; i < typed_source.size(); ++i) {
+                const int16_t expected = dtype == labneura::QuantizationMode::FP16
+                                             ? static_cast<int16_t>(
+                                                   labneura::quantize_fp16(
+                                                       i >= 66 && i < 99 ? 3.0f : 1.0f))
+                                             : static_cast<int16_t>(
+                                                   i >= 66 && i < 99 ? 3 : 1);
+                require(typed_data[i] == expected,
+                        backend + ": typed slice operation crossed its logical range");
+            }
+        }
+    }
 }
 
 void run_backend(const std::string& backend) {
@@ -64,6 +309,7 @@ void run_backend(const std::string& backend) {
         "LABNEURA_BACKEND", backend);
     require(labneura::detect_backend() == backend,
             "Requested backend " + backend + " was not selected");
+    check_first_axis_views(backend);
 
     const std::vector<float> values = [] {
         std::vector<float> result(24);
@@ -422,7 +668,7 @@ void run_backend(const std::string& backend) {
             backend + ": scalar reshape view did not share storage");
     const auto empty_view = empty.reshape_view({0, 14});
     check_layout(empty_view, {0, 14}, {14, 1},
-                 backend + ": zero-sized reshape view layout");
+                 backend + ": zero-sized reshape view layout", 0);
 }
 
 void check_invalid_inputs() {

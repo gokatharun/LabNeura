@@ -28,6 +28,20 @@ void TensorBackend::operation(const TensorBackend& other, OperationType op) {
         throw std::runtime_error("Quantization mode mismatch");
     }
 
+    if (storage_.get() == other.storage_.get() &&
+        storage_offset_ != other.storage_offset_) {
+        const std::size_t lhs_offset = storage_offset_;
+        const std::size_t rhs_offset = other.storage_offset_;
+        const bool overlaps =
+            lhs_offset < rhs_offset
+                ? rhs_offset - lhs_offset < size()
+                : lhs_offset - rhs_offset < size();
+        if (overlaps) {
+            throw std::invalid_argument(
+                "In-place operation does not support partially overlapping tensor views");
+        }
+    }
+
     if (quantization_mode() == QuantizationMode::FP32) {
         operation_fp32(other, op);
     } else if (quantization_mode() == QuantizationMode::FP16) {
@@ -63,7 +77,7 @@ std::unique_ptr<TensorBackend> TensorBackend::create_output() const {
 }
 
 std::unique_ptr<TensorBackend> TensorBackend::create_storage_alias(
-    std::size_t) const {
+    std::size_t, std::size_t) const {
     throw std::runtime_error(
         "Storage sharing is not implemented for this backend");
 }
