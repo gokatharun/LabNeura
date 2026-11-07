@@ -52,6 +52,7 @@ enum OperationType {
 
 // Forward declaration for backend implementation
 class TensorBackend;
+class TensorStorage;
 
 // Main Tensor class: handles mixed int/float input with architecture-aware storage
 class Tensor {
@@ -75,6 +76,13 @@ public:
                             const std::vector<std::size_t>& shape,
                             QuantizationMode mode = QuantizationMode::FP32);
 
+    // Return an independently owned contiguous copy with the requested shape.
+    Tensor reshape(const std::vector<std::size_t>& shape) const;
+    // Return a contiguous reshape that explicitly shares storage with this tensor.
+    Tensor reshape_view(const std::vector<std::size_t>& shape) const;
+    // Return an independently owned one-dimensional copy in row-major order.
+    Tensor flatten() const;
+
     // Destructor
     ~Tensor();
 
@@ -86,9 +94,13 @@ public:
 
     // Shape and size queries
     std::size_t size() const;
-    std::size_t numel() const { return size(); }
+    std::size_t numel() const { return backend_ ? checked_numel(shape_) : 0; }
     QuantizationMode quantization_mode() const { return quantization_mode_; }
     const std::vector<std::size_t>& shape() const { return shape_; }
+    // Strides and storage offset are measured in elements.
+    const std::vector<std::size_t>& strides() const { return strides_; }
+    std::size_t storage_offset() const { return storage_offset_; }
+    bool is_contiguous() const;
     std::size_t ndim() const { return shape_.size(); }
     std::size_t rows() const { return shape_.size() == 2 ? shape_[0] : 1; }
     std::size_t cols() const { return shape_.size() == 2 ? shape_[1] : size(); }
@@ -128,7 +140,10 @@ public:
 private:
     QuantizationMode quantization_mode_;
     std::unique_ptr<TensorBackend> backend_;
+    std::shared_ptr<TensorStorage> storage_;
     std::vector<std::size_t> shape_;
+    std::vector<std::size_t> strides_;
+    std::size_t storage_offset_{0};
 
     void check_same_shape(const Tensor& other) const;
 
@@ -140,6 +155,8 @@ private:
     // Helper to initialize backend based on hardware
     void init_backend(std::size_t size);
     static std::size_t checked_numel(const std::vector<std::size_t>& shape);
+    static std::vector<std::size_t> checked_contiguous_strides(
+        const std::vector<std::size_t>& shape);
     static void validate_allocation_size(std::size_t size,
                                          QuantizationMode mode);
 };

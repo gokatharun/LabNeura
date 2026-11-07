@@ -169,11 +169,29 @@ PYBIND11_MODULE(labneura, m) {
         .def_property_readonly("shape", [](const labneura::Tensor& self) {
             return py::tuple(py::cast(self.shape()));
         }, "Tensor shape as a tuple")
+        .def_property_readonly("strides", [](const labneura::Tensor& self) {
+            return py::tuple(py::cast(self.strides()));
+        }, "Tensor strides in elements")
+        .def_property_readonly("storage_offset",
+                               &labneura::Tensor::storage_offset,
+                               "Tensor offset in storage elements")
+        .def("is_contiguous", &labneura::Tensor::is_contiguous,
+             "Whether the tensor uses contiguous row-major storage")
         .def("ndim", &labneura::Tensor::ndim, "Number of dimensions")
         .def("rows", &labneura::Tensor::rows, "Number of rows (1 for 1-D)")
         .def("cols", &labneura::Tensor::cols, "Number of columns")
         .def("numel", &labneura::Tensor::numel, "Get number of elements (alias for size)")
         .def("quantization_mode", &labneura::Tensor::quantization_mode, "Get quantization mode")
+        .def("reshape", [](const labneura::Tensor& self, py::handle shape) {
+            return self.reshape(parse_tensor_shape(shape));
+        }, "Return an independent copy reshaped to the requested dimensions",
+           py::arg("shape"))
+        .def("reshape_view", [](const labneura::Tensor& self, py::handle shape) {
+            return self.reshape_view(parse_tensor_shape(shape));
+        }, "Return a contiguous reshape that shares storage with this tensor",
+           py::arg("shape"))
+        .def("flatten", &labneura::Tensor::flatten,
+             "Return an independent one-dimensional copy in row-major order")
         
         // Data access
         .def("data_fp32", [](labneura::Tensor& self) {

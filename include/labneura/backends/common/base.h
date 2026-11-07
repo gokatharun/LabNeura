@@ -1,17 +1,32 @@
 #pragma once
 #include <memory>
+#include <stdexcept>
+#include <utility>
 #include "labneura/tensor.h"
+#include "labneura/backends/common/tensor_storage.h"
 #include "labneura/visibility.h"
 
 namespace labneura {
 
 class LABNEURA_API TensorBackend {
 public:
+    explicit TensorBackend(std::shared_ptr<TensorStorage> storage)
+        : storage_(std::move(storage)) {
+        if (!storage_) {
+            throw std::invalid_argument("TensorBackend requires storage");
+        }
+    }
     virtual ~TensorBackend() = default;
 
     // ---- Metadata ----
     virtual std::size_t size() const = 0;
     virtual QuantizationMode quantization_mode() const = 0;
+    std::size_t allocation_capacity() const noexcept {
+        return storage_->allocation_capacity;
+    }
+    std::size_t storage_alignment() const noexcept {
+        return storage_->alignment;
+    }
 
     // ---- Raw data access ----
     virtual float* data_fp32() = 0;
@@ -41,6 +56,13 @@ public:
     std::unique_ptr<TensorBackend> operation_new(const TensorBackend& other, OperationType op) const;
 
 protected:
+    std::shared_ptr<TensorStorage> storage_;
+
+    // Creates a distinct backend instance with this backend's type and shared
+    // allocation. The requested size is the alias's logical element count.
+    virtual std::unique_ptr<TensorBackend> create_storage_alias(
+        std::size_t logical_size) const;
+
     // ---- Optional direct-output hooks (defaults: unsupported) ----
     // Returns an uninitialised output backend of the same type, size and mode, or
     // nullptr if operation_into() is not supported for this backend/mode.

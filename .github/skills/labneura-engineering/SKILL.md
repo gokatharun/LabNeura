@@ -11,6 +11,28 @@ Read the relevant references before substantial work:
 - `references/roadmap.md`: product scope, architecture and milestone order.
 - `references/feature-test-matrix.md`: required tests and definition of done.
 - `templates/feature-task.md`: template for splitting work into bounded tasks.
+- `references/current-state.md`: verified project architecture, completed work,
+  unresolved validation and current development priorities.
+
+## Project continuity and avoiding repeated work
+
+Before any substantial task:
+1. Read `references/current-state.md`.
+2. Inspect the actual repository and relevant worktree changes; the reference
+   can become outdated.
+3. Check current implementations and tests before proposing or adding new ones.
+4. Reuse existing helpers, test infrastructure and benchmark results.
+5. Avoid repeating completed audits or benchmarks unless code changes justify
+   rerunning them.
+6. Do not reopen explicitly paused optimization work without a concrete reason
+   tied to the current request or new evidence.
+7. Update `references/current-state.md` when a milestone is completed or the
+   architecture changes.
+8. Record newly discovered limitations and unresolved validation, clearly
+   separating verified results from assumptions.
+9. Keep each task narrowly scoped to one bounded feature or change.
+10. Do not repeatedly ask the user for information already documented in this
+    skill or its references.
 
 ## Mission
 

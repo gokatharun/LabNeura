@@ -1,9 +1,14 @@
 #include "labneura/utils/alignment.hpp"
+#include "labneura/backends/common/tensor_storage.h"
 
 #if defined(LABNEURA_TEST_AVX2)
 #include "labneura/backends/common/cpu_features.h"
 #include "labneura/backends/cpu/avx2.h"
 #endif
+#if defined(LABNEURA_TEST_NEON)
+#include "labneura/backends/cpu/neon.h"
+#endif
+#include "labneura/backends/cpu/generic.h"
 
 #include "labneura/types.hpp"
 
@@ -15,6 +20,13 @@
 #include <string>
 
 namespace {
+
+std::size_t storage_deletions = 0;
+
+void counted_free(void* pointer) {
+    ++storage_deletions;
+    labneura::util::aligned_free(pointer);
+}
 
 void require(bool condition, const std::string& message) {
     if (!condition) {
@@ -33,6 +45,52 @@ void require_throws(Function&& function, const std::string& message) {
                                  error.what());
     }
     throw std::runtime_error(message + ": no exception was thrown");
+}
+
+void check_tensor_storage() {
+    auto empty = labneura::TensorStorage::allocate(
+        0, 0, labneura::QuantizationMode::FP32,
+        labneura::util::DEFAULT_ALIGN);
+    require(empty->logical_size == 0 &&
+                empty->allocation_capacity == 0 &&
+                empty->dtype == labneura::QuantizationMode::FP32 &&
+                empty->data() != nullptr &&
+                labneura::util::is_aligned(
+                    empty->data(), labneura::util::DEFAULT_ALIGN),
+            "Zero-sized storage metadata or alignment is incorrect");
+
+    auto padded = labneura::TensorStorage::allocate(
+        9, 16, labneura::QuantizationMode::FP32,
+        labneura::util::AVX2_ALIGN);
+    require(padded->logical_size == 9 &&
+                padded->allocation_capacity == 16 &&
+                padded->dtype == labneura::QuantizationMode::FP32 &&
+                labneura::util::is_aligned(
+                    padded->data(), labneura::util::AVX2_ALIGN),
+            "Padded storage metadata or alignment is incorrect");
+
+    void* allocation =
+        labneura::util::allocate_aligned<std::uint8_t>(64, 64);
+    require(allocation != nullptr, "Test storage allocation failed");
+    storage_deletions = 0;
+    auto owner = labneura::TensorStorage::adopt(
+        allocation, 4, 8, labneura::QuantizationMode::FP32, 64,
+        counted_free);
+    auto retained_owner = owner;
+    owner.reset();
+    require(storage_deletions == 0,
+            "Shared storage was released while an owner remained");
+    retained_owner.reset();
+    require(storage_deletions == 1,
+            "Shared storage was not deallocated exactly once");
+
+    labneura::GenericBackend generic(
+        9, labneura::QuantizationMode::FP32);
+    require(generic.size() == 9 && generic.allocation_capacity() == 9 &&
+                generic.storage_alignment() == labneura::util::DEFAULT_ALIGN &&
+                labneura::util::is_aligned(
+                    generic.data_fp32(), generic.storage_alignment()),
+            "Generic backend storage metadata is inconsistent");
 }
 
 void check_checked_round_up() {
@@ -104,6 +162,11 @@ bool check_avx2_constructors() {
             labneura::AVX2Backend backend(size, dtype);
             require(backend.size() == size,
                     "AVX2 backend changed the logical element count");
+            require(backend.allocation_capacity() ==
+                        labneura::util::checked_round_up(size, 8) &&
+                        backend.storage_alignment() ==
+                            labneura::util::AVX2_ALIGN,
+                    "AVX2 storage capacity or alignment metadata is incorrect");
 
             const void* data = nullptr;
             switch (dtype) {
@@ -140,6 +203,25 @@ bool check_avx2_constructors() {
 }
 #endif
 
+#if defined(LABNEURA_TEST_NEON)
+void check_neon_constructors() {
+    const std::array<std::size_t, 9> sizes = {
+        0, 1, 7, 8, 9, 15, 16, 17, 31};
+    for (const std::size_t size : sizes) {
+        labneura::NEONBackend backend(
+            size, labneura::QuantizationMode::FP32);
+        require(backend.size() == size &&
+                    backend.allocation_capacity() ==
+                        labneura::util::checked_round_up(size, 8) &&
+                    backend.storage_alignment() ==
+                        labneura::util::NEON_ALIGN &&
+                    labneura::util::is_aligned(
+                        backend.data_fp32(), labneura::util::NEON_ALIGN),
+                "NEON storage capacity or alignment metadata is incorrect");
+    }
+}
+#endif
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -149,8 +231,12 @@ int main(int argc, char** argv) {
         }
         const std::string mode(argv[1]);
         if (mode == "UTILITY") {
+            check_tensor_storage();
             check_checked_round_up();
             check_aligned_allocator();
+#if defined(LABNEURA_TEST_NEON)
+            check_neon_constructors();
+#endif
             return 0;
         }
         if (mode == "AVX2") {

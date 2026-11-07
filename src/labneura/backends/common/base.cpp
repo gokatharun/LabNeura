@@ -62,6 +62,12 @@ std::unique_ptr<TensorBackend> TensorBackend::create_output() const {
     return nullptr;
 }
 
+std::unique_ptr<TensorBackend> TensorBackend::create_storage_alias(
+    std::size_t) const {
+    throw std::runtime_error(
+        "Storage sharing is not implemented for this backend");
+}
+
 bool TensorBackend::operation_into(const TensorBackend&, TensorBackend&, OperationType) const {
     return false;
 }

@@ -146,6 +146,7 @@ add_library(labneura
   src/labneura/runtime.cpp
   src/labneura/parallel.cpp
   src/labneura/backends/common/base.cpp
+  src/labneura/backends/common/tensor_storage.cpp
   src/labneura/backends/common/cpu_features.cpp
   src/labneura/backends/common/backend_factory.cpp
   # CPU Generic backend (modular)
@@ -537,6 +538,11 @@ if(NOT SKBUILD)
        AND LABNEURA_COMPILER_SUPPORTS_AVX2)
       target_compile_definitions(labneura_aligned_allocation_safety_test
         PRIVATE LABNEURA_TEST_AVX2=1
+      )
+    endif()
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
+      target_compile_definitions(labneura_aligned_allocation_safety_test
+        PRIVATE LABNEURA_TEST_NEON=1
       )
     endif()
     add_test(

@@ -80,20 +80,30 @@ std::vector<float> flatten_rows(const std::vector<std::vector<float>>& rows,
 }  // namespace
 
 // Tensor implementation
-Tensor::Tensor() : quantization_mode_(QuantizationMode::FP32), shape_{0} {
+Tensor::Tensor()
+    : quantization_mode_(QuantizationMode::FP32),
+      shape_{0},
+      strides_(checked_contiguous_strides(shape_)) {
     init_backend(0);
 }
 
 Tensor::Tensor(QuantizationMode mode, std::unique_ptr<TensorBackend> backend, std::vector<std::size_t> shape)
-    : quantization_mode_(mode), backend_(std::move(backend)), shape_(std::move(shape)) {}
+    : quantization_mode_(mode),
+      backend_(std::move(backend)),
+      storage_(backend_ ? backend_->storage_ : nullptr),
+      shape_(std::move(shape)),
+      strides_(checked_contiguous_strides(shape_)) {}
 
 Tensor::Tensor(const std::vector<std::vector<float>>& rows, QuantizationMode mode)
     : Tensor(flatten_rows(rows, mode), mode) {
     shape_ = {rows.size(), rows.empty() ? std::size_t{0} : rows.front().size()};
+    strides_ = checked_contiguous_strides(shape_);
 }
 
 Tensor::Tensor(const std::vector<float>& data, QuantizationMode mode)
-    : quantization_mode_(mode), shape_{data.size()} {
+    : quantization_mode_(mode),
+      shape_{data.size()},
+      strides_(checked_contiguous_strides(shape_)) {
     init_backend(data.size());
     if (!data.empty()) {
         if (mode == QuantizationMode::FP32) {
@@ -131,7 +141,9 @@ Tensor::Tensor(const std::vector<float>& data, QuantizationMode mode)
 }
 
 Tensor::Tensor(const std::vector<int>& data, QuantizationMode mode)
-    : quantization_mode_(mode), shape_{data.size()} {
+    : quantization_mode_(mode),
+      shape_{data.size()},
+      strides_(checked_contiguous_strides(shape_)) {
     init_backend(data.size());
     if (mode == QuantizationMode::FP32) {
         float* fp32_data = data_fp32();
@@ -172,8 +184,11 @@ Tensor Tensor::from_flat(const std::vector<float>& data,
             "Tensor shape element count does not match data length");
     }
 
+    const std::vector<std::size_t> strides =
+        checked_contiguous_strides(shape);
     Tensor tensor(data, mode);
     tensor.shape_ = shape;
+    tensor.strides_ = strides;
     return tensor;
 }
 
@@ -187,13 +202,72 @@ Tensor Tensor::from_flat(const std::vector<int>& data,
             "Tensor shape element count does not match data length");
     }
 
+    const std::vector<std::size_t> strides =
+        checked_contiguous_strides(shape);
     Tensor tensor(data, mode);
     tensor.shape_ = shape;
+    tensor.strides_ = strides;
     return tensor;
 }
 
+Tensor Tensor::reshape(const std::vector<std::size_t>& shape) const {
+    if (!backend_) {
+        throw std::runtime_error("Tensor backend not initialized");
+    }
+
+    const std::size_t requested_numel = checked_numel(shape);
+    if (requested_numel != size()) {
+        throw std::invalid_argument(
+            "reshape requires the new shape to have the same number of elements");
+    }
+    validate_allocation_size(requested_numel, quantization_mode_);
+    const std::vector<std::size_t> strides =
+        checked_contiguous_strides(shape);
+
+    Tensor result(*this);
+    result.shape_ = shape;
+    result.strides_ = strides;
+    return result;
+}
+
+Tensor Tensor::reshape_view(const std::vector<std::size_t>& shape) const {
+    if (!backend_ || !storage_) {
+        throw std::runtime_error("Tensor backend not initialized");
+    }
+    if (!is_contiguous()) {
+        throw std::invalid_argument(
+            "reshape_view requires a contiguous source tensor");
+    }
+
+    const std::size_t requested_numel = checked_numel(shape);
+    if (requested_numel != numel()) {
+        throw std::invalid_argument(
+            "reshape_view requires the new shape to have the same number of elements");
+    }
+    validate_allocation_size(requested_numel, quantization_mode_);
+    if (storage_offset_ > storage_->logical_size ||
+        requested_numel > storage_->logical_size - storage_offset_) {
+        throw std::out_of_range(
+            "reshape_view shape exceeds the backing storage logical size");
+    }
+    const std::vector<std::size_t> strides =
+        checked_contiguous_strides(shape);
+
+    Tensor result(quantization_mode_,
+                  backend_->create_storage_alias(requested_numel), shape);
+    result.strides_ = strides;
+    result.storage_offset_ = storage_offset_;
+    return result;
+}
+
+Tensor Tensor::flatten() const {
+    return reshape({size()});
+}
+
 Tensor::Tensor(float scalar, QuantizationMode mode)
-    : quantization_mode_(mode), shape_{1} {
+    : quantization_mode_(mode),
+      shape_{1},
+      strides_(checked_contiguous_strides(shape_)) {
     init_backend(1);
     if (mode == QuantizationMode::FP32) {
         data_fp32()[0] = scalar;
@@ -212,7 +286,9 @@ Tensor::Tensor(float scalar, QuantizationMode mode)
 }
 
 Tensor::Tensor(int scalar, QuantizationMode mode)
-    : quantization_mode_(mode), shape_{1} {
+    : quantization_mode_(mode),
+      shape_{1},
+      strides_(checked_contiguous_strides(shape_)) {
     init_backend(1);
     if (mode == QuantizationMode::FP32) {
         data_fp32()[0] = static_cast<float>(scalar);
@@ -235,13 +311,23 @@ Tensor::~Tensor() = default;
 Tensor::Tensor(const Tensor& other)
     : quantization_mode_(other.quantization_mode_),
       backend_(other.backend_ ? other.backend_->clone() : nullptr),
-      shape_(other.shape_) {}
+      storage_(backend_ ? backend_->storage_ : nullptr),
+      shape_(other.shape_),
+      strides_(other.strides_),
+      storage_offset_(other.storage_offset_) {}
 
 Tensor& Tensor::operator=(const Tensor& other) {
     if (this != &other) {
+        std::unique_ptr<TensorBackend> copied_backend =
+            other.backend_ ? other.backend_->clone() : nullptr;
+        std::vector<std::size_t> copied_shape = other.shape_;
+        std::vector<std::size_t> copied_strides = other.strides_;
         quantization_mode_ = other.quantization_mode_;
-        backend_ = other.backend_ ? other.backend_->clone() : nullptr;
-        shape_ = other.shape_;
+        backend_ = std::move(copied_backend);
+        storage_ = backend_ ? backend_->storage_ : nullptr;
+        shape_ = std::move(copied_shape);
+        strides_ = std::move(copied_strides);
+        storage_offset_ = other.storage_offset_;
     }
     return *this;
 }
@@ -249,19 +335,33 @@ Tensor& Tensor::operator=(const Tensor& other) {
 Tensor::Tensor(Tensor&& other) noexcept
     : quantization_mode_(other.quantization_mode_),
       backend_(std::move(other.backend_)),
-      shape_(std::move(other.shape_)) {}
+      storage_(std::move(other.storage_)),
+      shape_(std::move(other.shape_)),
+      strides_(std::move(other.strides_)),
+      storage_offset_(other.storage_offset_) {
+    other.storage_offset_ = 0;
+}
 
 Tensor& Tensor::operator=(Tensor&& other) noexcept {
     if (this != &other) {
         quantization_mode_ = other.quantization_mode_;
         backend_ = std::move(other.backend_);
+        storage_ = std::move(other.storage_);
         shape_ = std::move(other.shape_);
+        strides_ = std::move(other.strides_);
+        storage_offset_ = other.storage_offset_;
+        other.storage_offset_ = 0;
     }
     return *this;
 }
 
 std::size_t Tensor::size() const {
     return backend_ ? backend_->size() : 0;
+}
+
+bool Tensor::is_contiguous() const {
+    return storage_offset_ == 0 &&
+           strides_ == checked_contiguous_strides(shape_);
 }
 
 float* Tensor::data_fp32() {
@@ -399,10 +499,28 @@ void Tensor::init_backend(std::size_t size) {
     validate_tensor_dtype_supported(quantization_mode_);
     validate_allocation_size(size, quantization_mode_);
     backend_ = create_best_backend(size, quantization_mode_);
+    storage_ = backend_ ? backend_->storage_ : nullptr;
 }
 
 std::size_t Tensor::checked_numel(const std::vector<std::size_t>& shape) {
     return checked_shape_numel(shape);
+}
+
+std::vector<std::size_t> Tensor::checked_contiguous_strides(
+    const std::vector<std::size_t>& shape) {
+    std::vector<std::size_t> strides(shape.size());
+    std::size_t stride = 1;
+    for (std::size_t axis = shape.size(); axis > 0; --axis) {
+        const std::size_t index = axis - 1;
+        strides[index] = stride;
+        if (shape[index] != 0 &&
+            stride > std::numeric_limits<std::size_t>::max() / shape[index]) {
+            throw std::overflow_error(
+                "Tensor row-major stride overflows size_t");
+        }
+        stride *= shape[index];
+    }
+    return strides;
 }
 
 void Tensor::validate_allocation_size(std::size_t size,

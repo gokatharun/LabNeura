@@ -25,17 +25,23 @@ namespace labneura {
             void operation_int16(const TensorBackend& other, OperationType op_type) override;
 
         protected:
+            std::unique_ptr<TensorBackend> create_storage_alias(
+                std::size_t logical_size) const override;
             std::unique_ptr<TensorBackend> create_output() const override;
             bool operation_into(const TensorBackend& other, TensorBackend& out, OperationType op_type) const override;
 
         private:
+            NEONBackend(std::shared_ptr<TensorStorage> storage,
+                        std::size_t logical_size);
+
             std::size_t size_;
             std::size_t aligned_size_;
             QuantizationMode quantization_mode_;
-            std::unique_ptr<float, void(*)(float*)> data_fp32_{nullptr, nullptr};
-            std::unique_ptr<int8_t, void(*)(int8_t*)> data_int8_{nullptr, nullptr};
-            std::unique_ptr<int16_t, void(*)(int16_t*)> data_fp16_{nullptr, nullptr};
-            std::unique_ptr<int16_t, void(*)(int16_t*)> data_int16_{nullptr, nullptr};
+            // Non-owning typed aliases; TensorStorage owns the allocation.
+            float* data_fp32_{nullptr};
+            int8_t* data_int8_{nullptr};
+            int16_t* data_fp16_{nullptr};
+            int16_t* data_int16_{nullptr};
 
     };
 
