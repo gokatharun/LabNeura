@@ -306,7 +306,8 @@ class BenchmarkRunner:
 
     def __init__(self, torch: Any, sizes: Sequence[int] = REQUIRED_SIZES,
                  batches: int = 7, iterations: int = 50, seed: int = 1729,
-                 threads: int = 1):
+                 threads: int = 1, dtypes: Sequence[str] = DTYPES,
+                 memory_budget_mb: int = 32):
         if batches < 1 or iterations < 1:
             raise ValueError("batches and iterations must be positive")
         if threads < 1:
@@ -317,6 +318,13 @@ class BenchmarkRunner:
         self.iterations = iterations
         self.seed = seed
         self.threads = threads
+        unknown = [name for name in dtypes if name not in DTYPES]
+        if unknown or not dtypes:
+            raise ValueError(f"dtypes must be a non-empty subset of {DTYPES}")
+        if memory_budget_mb < 1:
+            raise ValueError("memory_budget_mb must be positive")
+        self.dtypes = list(dtypes)
+        self.memory_budget_bytes = memory_budget_mb * 1024 * 1024
         self.simd_backend = self._automatic_simd_backend()
 
     @staticmethod
@@ -436,7 +444,7 @@ class BenchmarkRunner:
             if library == "labneura":
                 return _tensor(lhs, dtype_name), _tensor(rhs, dtype_name)
             if library == "numpy":
-                return lhs.copy(), rhs
+                return lhs.copy(), rhs.copy()
             return (
                 _make_torch_values(lhs, self.torch),
                 _make_torch_values(rhs, self.torch),
@@ -498,13 +506,13 @@ class BenchmarkRunner:
         libraries = ("labneura", "numpy", "pytorch")
         self.torch.set_num_threads(self.threads)
 
-        for dtype_name in DTYPES:
+        for dtype_name in self.dtypes:
             for size in self.sizes:
                 lhs, rhs = generate_inputs(
                     dtype_name, size, self.seed + size + DTYPES.index(dtype_name) * 1000003
                 )
                 max_iterations_by_memory = max(
-                    3, (32 * 1024 * 1024) // (size * lhs.dtype.itemsize * 2)
+                    3, self.memory_budget_bytes // (size * lhs.dtype.itemsize * 2)
                 )
                 iterations = min(self.iterations, max_iterations_by_memory)
                 for backend_label, override in backend_modes:

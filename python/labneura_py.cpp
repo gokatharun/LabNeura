@@ -3,9 +3,107 @@
 #include "eda_bindings.h"
 #include "labneura/types.hpp"
 #include "labneura/tensor.h"
+#include "labneura/runtime.h"
 #include "labneura/backends/common/backend_factory.h"
 
+#include <limits>
+#include <vector>
+
 namespace py = pybind11;
+
+namespace {
+
+std::vector<std::size_t> parse_tensor_shape(py::handle shape) {
+    if (!PySequence_Check(shape.ptr()) || PyUnicode_Check(shape.ptr()) ||
+        PyBytes_Check(shape.ptr())) {
+        throw py::type_error("shape must be a sequence of non-negative integers");
+    }
+
+    py::object sequence = py::reinterpret_steal<py::object>(
+        PySequence_Fast(shape.ptr(), "shape must be a sequence"));
+    if (!sequence) {
+        throw py::error_already_set();
+    }
+
+    const py::int_ zero(0);
+    std::vector<std::size_t> dimensions;
+    const auto count = PySequence_Fast_GET_SIZE(sequence.ptr());
+    dimensions.reserve(static_cast<std::size_t>(count));
+    for (Py_ssize_t i = 0; i < count; ++i) {
+        PyObject* item = PySequence_Fast_GET_ITEM(sequence.ptr(), i);
+        if (PyBool_Check(item) || !PyIndex_Check(item)) {
+            throw py::type_error(
+                "shape dimensions must be non-negative integers");
+        }
+
+        py::object index = py::reinterpret_steal<py::object>(
+            PyNumber_Index(item));
+        if (!index) {
+            throw py::error_already_set();
+        }
+        const int is_negative =
+            PyObject_RichCompareBool(index.ptr(), zero.ptr(), Py_LT);
+        if (is_negative < 0) {
+            throw py::error_already_set();
+        }
+        if (is_negative) {
+            throw py::value_error("shape dimensions cannot be negative");
+        }
+
+        const unsigned long long dimension =
+            PyLong_AsUnsignedLongLong(index.ptr());
+        if (PyErr_Occurred()) {
+            throw py::error_already_set();
+        }
+        if (dimension > std::numeric_limits<std::size_t>::max()) {
+            throw std::overflow_error("shape dimension exceeds size_t");
+        }
+        dimensions.push_back(static_cast<std::size_t>(dimension));
+    }
+    return dimensions;
+}
+
+labneura::QuantizationMode parse_tensor_mode(py::handle mode) {
+    if (py::isinstance<py::str>(mode)) {
+        const std::string mode_name = py::cast<std::string>(mode);
+        if (mode_name == "auto") {
+            return labneura::QuantizationMode::FP32;
+        }
+        throw py::value_error(
+            "mode must be 'auto' or a labneura.QuantizationMode value");
+    }
+    return py::cast<labneura::QuantizationMode>(mode);
+}
+
+labneura::Tensor tensor_from_flat(py::sequence data,
+                                  py::handle shape,
+                                  py::handle mode) {
+    const std::vector<std::size_t> dimensions = parse_tensor_shape(shape);
+    const auto count = PySequence_Size(data.ptr());
+    if (count < 0) {
+        throw py::error_already_set();
+    }
+    const bool integer_data = [&] {
+        for (Py_ssize_t i = 0; i < count; ++i) {
+            py::object item = py::reinterpret_steal<py::object>(
+                PySequence_GetItem(data.ptr(), i));
+            if (!item) {
+                throw py::error_already_set();
+            }
+            if (!PyIndex_Check(item.ptr())) return false;
+        }
+        return true;
+    }();
+    const auto dtype = parse_tensor_mode(mode);
+    if (integer_data) {
+        return labneura::Tensor::from_flat(
+            py::cast<std::vector<int>>(data), dimensions, dtype);
+    }
+    return labneura::Tensor::from_flat(
+        py::cast<std::vector<float>>(data), dimensions, dtype);
+}
+
+}  // namespace
 
 PYBIND11_MODULE(labneura, m) {
     m.doc() = "LabNeura Python bindings with Tensor support";
@@ -34,6 +132,14 @@ PYBIND11_MODULE(labneura, m) {
           [](uint16_t h) { return labneura::dequantize_fp16(h); },
           "Dequantize a float16 to float32 (takes uint16_t as Python int)");
 
+    m.def("add_into",
+          [](const labneura::Tensor& a, const labneura::Tensor& b,
+             labneura::Tensor& out) {
+              a.add_into(b, out);
+          },
+          "Write FP32 a + b into the caller-provided output tensor",
+          py::arg("a"), py::arg("b"), py::arg("out"));
+
     // QuantizationMode enum
     py::enum_<labneura::QuantizationMode>(m, "QuantizationMode")
         .value("FP32", labneura::QuantizationMode::FP32)
@@ -54,6 +160,9 @@ PYBIND11_MODULE(labneura, m) {
              "Constructor from float scalar", py::arg("scalar"), py::arg("mode") = labneura::QuantizationMode::FP32)
         .def(py::init<int, labneura::QuantizationMode>(),
              "Constructor from int scalar", py::arg("scalar"), py::arg("mode") = labneura::QuantizationMode::FP32)
+        .def_static("from_flat", &tensor_from_flat,
+             "Construct a contiguous tensor from flat row-major data and a shape",
+             py::arg("data"), py::arg("shape"), py::arg("mode") = py::str("auto"))
         
         // Methods
         .def("size", &labneura::Tensor::size, "Get tensor size")
@@ -149,6 +258,16 @@ PYBIND11_MODULE(labneura, m) {
 
     // Backend detection
     m.def("detect_backend", &labneura::detect_backend, "Detect the preferred backend based on CPU features");
+    m.def("available_cpu_count", &labneura::available_cpu_count,
+          "Get the CPU count available to this process");
+    m.def("execution_thread_count", &labneura::execution_thread_count,
+          "Get LabNeura's configured execution thread count");
+    m.def("set_execution_thread_count", &labneura::set_execution_thread_count,
+          "Set LabNeura's configured execution thread count",
+          py::arg("count"));
+    m.def("set_execution_thread_count_auto",
+          &labneura::set_execution_thread_count_auto,
+          "Set LabNeura's configured execution thread count to all available CPUs");
 
     bind_eda(m);
 }

@@ -12,7 +12,9 @@ from typing import Any, Dict, List, Optional, Sequence
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+import labneura  # noqa: E402
 from benchmarking.benchmark_runner import (  # noqa: E402
+    DTYPES as ALL_DTYPES,
     REQUIRED_SIZES,
     BenchmarkRunner,
     collect_metadata,
@@ -25,6 +27,11 @@ def _arguments() -> argparse.Namespace:
                         help="Run a quick correctness and timing smoke test")
     parser.add_argument("--sizes", type=str,
                         help="Comma-separated tensor sizes (defaults to the required suite)")
+    parser.add_argument("--dtypes", type=str, default="FP32,INT8,FP16,INT16",
+                        help="Comma-separated dtypes to benchmark (default: all)")
+    parser.add_argument("--memory-budget-mb", type=int, default=32,
+                        help="Per-batch input memory budget; larger values allow more "
+                             "iterations per batch for big tensors")
     parser.add_argument("--batches", type=int, default=7)
     parser.add_argument("--iterations", type=int, default=50)
     parser.add_argument("--seed", type=int, default=1729)
@@ -70,7 +77,7 @@ def _plot_results(output_dir: Path, rows: Sequence[Dict[str, Any]]) -> None:
     comparisons = set(row["comparison_backend"] for row in rows)
     simd_backend = next(name for name in comparisons if name != "GENERIC")
 
-    for dtype in ("FP32", "INT8", "FP16", "INT16"):
+    for dtype in sorted({row["dtype"] for row in rows}, key=ALL_DTYPES.index):
         for operation in ("ADD", "SUB", "MUL", "DIV"):
             figure, axes = plt.subplots(1, 2, figsize=(12, 4.5), sharey=True)
             for axis, layer in zip(axes, ("allocating", "inplace")):
@@ -172,7 +179,7 @@ def _write_report(path: Path, metadata: Dict[str, Any], rows: Sequence[Dict[str,
         "Lab/NumPy | Lab/PyTorch |",
         "|---|---|---|---:|---|---:|---:|---:|---:|---:|",
     ]
-    for dtype in ("FP32", "INT8", "FP16", "INT16"):
+    for dtype in sorted({row["dtype"] for row in rows}, key=ALL_DTYPES.index):
         for operation in ("ADD", "SUB", "MUL", "DIV"):
             for layer in ("allocating", "inplace"):
                 for size in (min(sizes), max(sizes)):
@@ -204,7 +211,7 @@ def _write_report(path: Path, metadata: Dict[str, Any], rows: Sequence[Dict[str,
     lines.extend(["", "## Visualization", ""])
     lines.extend(
         f"- `{dtype.lower()}_{operation.lower()}.png`"
-        for dtype in ("FP32", "INT8", "FP16", "INT16")
+        for dtype in sorted({row["dtype"] for row in rows}, key=ALL_DTYPES.index)
         for operation in ("ADD", "SUB", "MUL", "DIV")
     )
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -225,6 +232,10 @@ def main() -> int:
         sizes = [10, 64, 1024]
     else:
         sizes = REQUIRED_SIZES
+
+    dtypes = [name.strip().upper() for name in args.dtypes.split(",") if name.strip()]
+    if not dtypes or any(name not in ALL_DTYPES for name in dtypes):
+        raise SystemExit(f"--dtypes must be a subset of {','.join(ALL_DTYPES)}")
 
     batches = 3 if args.smoke else args.batches
     iterations = 5 if args.smoke else args.iterations
@@ -250,12 +261,16 @@ def main() -> int:
         runner = BenchmarkRunner(
             torch=torch, sizes=sizes, batches=batches,
             iterations=iterations, seed=args.seed, threads=args.threads,
+            dtypes=dtypes, memory_budget_mb=args.memory_budget_mb,
         )
         metadata = collect_metadata(torch, thread_info, args.cmake_build_dir)
         metadata["pytorch_threads"] = torch.get_num_threads()
         metadata["seed"] = args.seed
         metadata["batches"] = batches
         metadata["iterations_per_batch"] = iterations
+        metadata["memory_budget_mb"] = args.memory_budget_mb
+        metadata["dtypes"] = dtypes
+        metadata["labneura_module"] = labneura.__file__
         metadata["simd_backend"] = runner.simd_backend
         output_dir = _prepare_output_dir(args.output_dir, metadata["git_commit"])
         rows = runner.run()
@@ -263,7 +278,7 @@ def main() -> int:
         payload = {
             "metadata": metadata,
             "methodology": {
-                "dtypes": ["FP32", "INT8", "FP16", "INT16"],
+                "dtypes": dtypes,
                 "operations": ["ADD", "SUB", "MUL", "DIV"],
                 "layers": ["construction", "allocating", "inplace"],
                 "sizes": sizes,

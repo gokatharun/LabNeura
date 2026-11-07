@@ -22,7 +22,7 @@ namespace labneura {
 NEONBackend::NEONBackend(std::size_t size, QuantizationMode mode)
     : size_(size), quantization_mode_(mode) {
 
-    aligned_size_ = ((size + 7) / 8) * 8;  // align to 8 elements for FP16/FP32 safety
+    aligned_size_ = labneura::util::checked_round_up(size, 8);
 
     if (mode == QuantizationMode::FP32) {
         float* p = labneura::util::allocate_aligned<float>(aligned_size_, labneura::util::NEON_ALIGN);
