@@ -18,8 +18,8 @@ AVX2Backend::AVX2Backend(std::size_t size, QuantizationMode mode)
     : size_(size), quantization_mode_(mode) {
     validate_tensor_dtype_supported(mode);
 
-    // AVX2: 256-bit registers → 8 FP32 elements
-    aligned_size_ = ((size + 7) / 8) * 8;
+    // Keep storage padded for the AVX2 kernels without overflowing size_t.
+    aligned_size_ = labneura::util::checked_round_up(size, 8);
 
     if (mode == QuantizationMode::FP32) {
         float* p = labneura::util::allocate_aligned<float>(aligned_size_, labneura::util::AVX2_ALIGN);

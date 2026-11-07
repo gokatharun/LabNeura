@@ -2,6 +2,7 @@
 
 #include "labneura/backends/cpu/neon.h"
 #include "neon_internal.h"
+#include "labneura/runtime.h"
 #include "labneura/utils/alignment.hpp"
 #include "labneura/types.hpp"
 #include <arm_neon.h>
@@ -12,6 +13,9 @@
 namespace labneura {
 
 namespace {
+
+constexpr std::size_t kParallelAddThreshold = 1000000;
+constexpr std::size_t kParallelAddGrainSize = 16384;
 
 // FP32 semantics: ADD/SUB/MUL/DIV are IEEE-754 single-precision on AArch64 (the vector
 // and scalar-tail paths both use exactly-rounded hardware operations, so signed zeros,
@@ -45,16 +49,20 @@ struct Fp32Div {
 
 // dst[i] = a[i] op b[i]. dst may equal a or b exactly (each element is loaded before
 // it is stored); partially overlapping buffers are not supported.
-template <typename Op>
+// ADD/SUB/MUL are bandwidth-bound and run faster without software prefetch (measured
+// on Apple M1), so prefetching is enabled only where Prefetch is true (DIV).
+template <typename Op, bool Prefetch = false>
 void fp32_kernel(float* dst, const float* a, const float* b, std::size_t n) {
     // 256 bytes ahead of the current block
     constexpr std::size_t PREFETCH_DISTANCE = 64;
     std::size_t i = 0;
     for (; i + 32 <= n; i += 32) {
-        if (i + PREFETCH_DISTANCE < n) {
-            __builtin_prefetch(&dst[i + PREFETCH_DISTANCE], 1, 1);
-            if (dst != a) __builtin_prefetch(&a[i + PREFETCH_DISTANCE], 0, 1);
-            if (dst != b) __builtin_prefetch(&b[i + PREFETCH_DISTANCE], 0, 1);
+        if constexpr (Prefetch) {
+            if (i + PREFETCH_DISTANCE < n) {
+                __builtin_prefetch(&dst[i + PREFETCH_DISTANCE], 1, 1);
+                if (dst != a) __builtin_prefetch(&a[i + PREFETCH_DISTANCE], 0, 1);
+                if (dst != b) __builtin_prefetch(&b[i + PREFETCH_DISTANCE], 0, 1);
+            }
         }
         const float32x4_t a0 = vld1q_f32(&a[i + 0]);
         const float32x4_t a1 = vld1q_f32(&a[i + 4]);
@@ -95,16 +103,33 @@ void fp32_dispatch(float* dst, const float* a, const float* b, std::size_t n, Op
     } else if (op == OperationType::MUL) {
         fp32_kernel<Fp32Mul>(dst, a, b, n);
     } else if (op == OperationType::DIV) {
-        fp32_kernel<Fp32Div>(dst, a, b, n);
+        fp32_kernel<Fp32Div, true>(dst, a, b, n);
     } else {
         fp32_kernel<Fp32Sub>(dst, a, b, n);
     }
+}
+
+void fp32_add_dispatch(float* dst, const float* a, const float* b,
+                       std::size_t n) {
+    if (n >= kParallelAddThreshold && execution_thread_count() > 1) {
+        parallel_for(0, n, kParallelAddGrainSize,
+                     [dst, a, b](std::size_t begin, std::size_t end) {
+                         fp32_kernel<Fp32Add>(dst + begin, a + begin, b + begin,
+                                              end - begin);
+                     });
+        return;
+    }
+    fp32_kernel<Fp32Add>(dst, a, b, n);
 }
 
 }  // namespace
 
 void NEONBackend::operation_fp32(const TensorBackend& other, OperationType op_type) {
     float* this_data = data_fp32();
+    if (op_type == OperationType::ADD) {
+        fp32_add_dispatch(this_data, this_data, other.data_fp32(), size_);
+        return;
+    }
     fp32_dispatch(this_data, this_data, other.data_fp32(), size_, op_type);
 }
 
@@ -122,7 +147,12 @@ bool NEONBackend::operation_into(const TensorBackend& other, TensorBackend& out,
     if (out.size() != size_ || out.quantization_mode() != quantization_mode_) {
         throw std::runtime_error("Output tensor does not match operand size or mode");
     }
-    fp32_dispatch(out.data_fp32(), data_fp32(), other.data_fp32(), size_, op_type);
+    if (op_type == OperationType::ADD) {
+        fp32_add_dispatch(out.data_fp32(), data_fp32(), other.data_fp32(), size_);
+    } else {
+        fp32_dispatch(out.data_fp32(), data_fp32(), other.data_fp32(), size_,
+                      op_type);
+    }
     return true;
 }
 

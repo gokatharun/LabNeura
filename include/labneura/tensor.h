@@ -66,6 +66,15 @@ public:
     explicit Tensor(float scalar, QuantizationMode mode = QuantizationMode::FP32);
     explicit Tensor(int scalar, QuantizationMode mode = QuantizationMode::FP32);
 
+    // Construct a contiguous tensor from flat row-major data and an explicit shape.
+    // An empty shape represents a scalar and therefore requires exactly one value.
+    static Tensor from_flat(const std::vector<float>& data,
+                            const std::vector<std::size_t>& shape,
+                            QuantizationMode mode = QuantizationMode::FP32);
+    static Tensor from_flat(const std::vector<int>& data,
+                            const std::vector<std::size_t>& shape,
+                            QuantizationMode mode = QuantizationMode::FP32);
+
     // Destructor
     ~Tensor();
 
@@ -97,6 +106,9 @@ public:
     // Operations
     // Addition: result = this + other
     Tensor add(const Tensor& other) const;
+    // Write this + other into an existing same-shape, same-backend FP32 tensor.
+    // Exact aliasing of out with either input is supported and overwrites it.
+    void add_into(const Tensor& other, Tensor& out) const;
     // Multiplication: result = this * other
     Tensor mul(const Tensor& other) const;
     // Subtraction: result = this - other
@@ -127,6 +139,9 @@ private:
 
     // Helper to initialize backend based on hardware
     void init_backend(std::size_t size);
+    static std::size_t checked_numel(const std::vector<std::size_t>& shape);
+    static void validate_allocation_size(std::size_t size,
+                                         QuantizationMode mode);
 };
 
 } // namespace labneura

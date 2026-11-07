@@ -9,17 +9,65 @@
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <limits>
+#include <typeinfo>
 
 namespace labneura {
 
 namespace {
+std::size_t dtype_size(QuantizationMode mode) {
+    switch (mode) {
+        case QuantizationMode::FP32:
+            return sizeof(float);
+        case QuantizationMode::FP16:
+        case QuantizationMode::INT16:
+            return sizeof(int16_t);
+        case QuantizationMode::INT8:
+            return sizeof(int8_t);
+        case QuantizationMode::FP64:
+            throw std::invalid_argument("Unsupported tensor dtype: FP64");
+        case QuantizationMode::INT32:
+            throw std::invalid_argument("Unsupported tensor dtype: INT32");
+        default:
+            throw std::invalid_argument("Unsupported tensor dtype: unknown");
+    }
+}
+
+std::size_t checked_shape_numel(const std::vector<std::size_t>& shape) {
+    if (std::find(shape.begin(), shape.end(), std::size_t{0}) != shape.end()) {
+        return 0;
+    }
+
+    std::size_t element_count = 1;
+    for (const std::size_t dimension : shape) {
+        if (element_count >
+            std::numeric_limits<std::size_t>::max() / dimension) {
+            throw std::overflow_error(
+                "Tensor shape element count overflows size_t");
+        }
+        element_count *= dimension;
+    }
+    return element_count;
+}
+
+void check_allocation_size(std::size_t size, QuantizationMode mode) {
+    validate_tensor_dtype_supported(mode);
+    const std::size_t element_bytes = dtype_size(mode);
+    if (size > std::numeric_limits<std::size_t>::max() / element_bytes) {
+        throw std::overflow_error("Tensor allocation byte size overflows size_t");
+    }
+}
+
 std::vector<float> flatten_rows(const std::vector<std::vector<float>>& rows,
                                 QuantizationMode mode) {
     validate_tensor_dtype_supported(mode);
     std::vector<float> flat;
     if (rows.empty()) return flat;
     const std::size_t cols = rows.front().size();
-    flat.reserve(rows.size() * cols);
+    const std::vector<std::size_t> shape{rows.size(), cols};
+    const std::size_t element_count = checked_shape_numel(shape);
+    check_allocation_size(element_count, mode);
+    flat.reserve(element_count);
     for (const auto& row : rows) {
         if (row.size() != cols) {
             throw std::invalid_argument(
@@ -112,6 +160,36 @@ Tensor::Tensor(const std::vector<int>& data, QuantizationMode mode)
             );
         }
     }
+}
+
+Tensor Tensor::from_flat(const std::vector<float>& data,
+                         const std::vector<std::size_t>& shape,
+                         QuantizationMode mode) {
+    const std::size_t element_count = checked_numel(shape);
+    validate_allocation_size(element_count, mode);
+    if (element_count != data.size()) {
+        throw std::invalid_argument(
+            "Tensor shape element count does not match data length");
+    }
+
+    Tensor tensor(data, mode);
+    tensor.shape_ = shape;
+    return tensor;
+}
+
+Tensor Tensor::from_flat(const std::vector<int>& data,
+                         const std::vector<std::size_t>& shape,
+                         QuantizationMode mode) {
+    const std::size_t element_count = checked_numel(shape);
+    validate_allocation_size(element_count, mode);
+    if (element_count != data.size()) {
+        throw std::invalid_argument(
+            "Tensor shape element count does not match data length");
+    }
+
+    Tensor tensor(data, mode);
+    tensor.shape_ = shape;
+    return tensor;
 }
 
 Tensor::Tensor(float scalar, QuantizationMode mode)
@@ -222,6 +300,32 @@ Tensor Tensor::add(const Tensor& other) const {
     return binary_op(other, OperationType::ADD);
 }
 
+void Tensor::add_into(const Tensor& other, Tensor& out) const {
+    if (quantization_mode_ != QuantizationMode::FP32 ||
+        other.quantization_mode_ != QuantizationMode::FP32 ||
+        out.quantization_mode_ != QuantizationMode::FP32) {
+        throw std::invalid_argument("add_into requires FP32 tensors");
+    }
+    if (!backend_ || !other.backend_ || !out.backend_) {
+        throw std::runtime_error("Tensor backend not initialized");
+    }
+    if (shape_ != other.shape_ || shape_ != out.shape_) {
+        throw std::invalid_argument("add_into requires identical tensor shapes");
+    }
+    const TensorBackend& input_backend = *backend_;
+    const TensorBackend& other_backend = *other.backend_;
+    const TensorBackend& output_backend = *out.backend_;
+    if (typeid(input_backend) != typeid(other_backend) ||
+        typeid(input_backend) != typeid(output_backend)) {
+        throw std::invalid_argument(
+            "add_into requires all tensors to use the same backend");
+    }
+    if (!backend_->operation_into(*other.backend_, *out.backend_, OperationType::ADD)) {
+        throw std::runtime_error(
+            "FP32 ADD into an existing output is not supported by this backend");
+    }
+}
+
 Tensor Tensor::mul(const Tensor& other) const {
     return binary_op(other, OperationType::MUL);
 }
@@ -285,7 +389,7 @@ void Tensor::div_inplace(const Tensor& other) {
 }
 
 void Tensor::check_same_shape(const Tensor& other) const {
-    // Differing sizes are reported by the backend ("size mismatch").
+    // Different element counts are reported by the backend as a size mismatch.
     if (size() == other.size() && shape_ != other.shape_) {
         throw std::runtime_error("Tensor shape mismatch");
     }
@@ -293,7 +397,17 @@ void Tensor::check_same_shape(const Tensor& other) const {
 
 void Tensor::init_backend(std::size_t size) {
     validate_tensor_dtype_supported(quantization_mode_);
+    validate_allocation_size(size, quantization_mode_);
     backend_ = create_best_backend(size, quantization_mode_);
+}
+
+std::size_t Tensor::checked_numel(const std::vector<std::size_t>& shape) {
+    return checked_shape_numel(shape);
+}
+
+void Tensor::validate_allocation_size(std::size_t size,
+                                      QuantizationMode mode) {
+    check_allocation_size(size, mode);
 }
 
 } // namespace labneura

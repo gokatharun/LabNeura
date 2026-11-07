@@ -14,6 +14,9 @@ namespace labneura {
             std::unique_ptr<TensorBackend> clone() const override;
             void operation_fp32(const TensorBackend& other, OperationType op_type) override;
             void operation_int8(const TensorBackend& other, OperationType op_type) override;
+        protected:
+            bool operation_into(const TensorBackend& other, TensorBackend& out,
+                                OperationType op_type) const override;
         private:
             std::size_t size_;
             QuantizationMode quantization_mode_;

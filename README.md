@@ -19,8 +19,93 @@ High-performance C++ tensor library with Python bindings, featuring **hardware-a
 - **Tensor Data Types**: FP32 and INT8 are supported by all backends; FP16 and INT16 are supported by AVX2 and NEON backends only. FP64 and INT32 enum values are reserved but unsupported; constructing either mode throws `std::invalid_argument`.
 - **In-place Operations**: `add_inplace()`, `mul_inplace()`, `sub_inplace()`, `div_inplace()` for memory efficiency
 - **Immutable Operations**: `add()`, `mul()`, `sub()`, `div()` return new tensors without modifying originals
+- **Reusable FP32 ADD output**: `add_into(a, b, out)` writes into a caller-owned output tensor without allocating a result on each call
 - **Quantization**: Built-in INT8/INT16 quantization with up to 4x memory reduction
 - **Advanced Math**: Floor division, element-wise operations with SIMD acceleration
+
+`labneura.add_into(a, b, out)` currently supports FP32 ADD on Generic, NEON, and
+AVX2. All tensors must have identical shapes and use the same backend. The call
+overwrites `out`; it may be the same tensor object as `a` or `b`, in which case
+that input is overwritten. Partial storage overlap is unsupported. Unsupported
+backend implementations raise an error instead of allocating a fallback result.
+
+### Contiguous nD Tensors
+
+`Tensor.from_flat(data, shape, mode="auto")` constructs arbitrary-rank
+contiguous tensors from flat row-major data. `"auto"` currently selects FP32;
+an explicit `QuantizationMode` can be supplied for other supported dtypes:
+
+```python
+matrix = labneura.Tensor.from_flat(
+    data=[1, 2, 3, 4, 5, 6],
+    shape=[2, 3],
+)
+cube = labneura.Tensor.from_flat(
+    data=[1, 2, 3, 4, 5, 6, 7, 8],
+    shape=[2, 2, 2],
+)
+assert matrix.shape == (2, 3)
+assert matrix.numel() == 6
+```
+
+The shape is metadata on the Tensor; backend storage and arithmetic remain flat
+and contiguous. `numel` equals the product of the dimensions. An empty shape
+represents a scalar and requires one data element; any shape containing a zero
+dimension has zero elements. Data length must exactly equal `numel`, and
+element-count and allocation-byte overflows are rejected. Existing vector and
+nested 2D constructors remain available. Non-contiguous views, indexing,
+strides, and broadcasting are not supported yet; elementwise operations require
+identical shapes.
+
+### Execution Thread Configuration
+
+LabNeura exposes a process-wide execution thread setting, initially one thread.
+The reusable `parallel_for` execution layer uses this setting, but Tensor
+arithmetic remains single-threaded and does not call `parallel_for`.
+
+The C++ API is declared in `labneura/runtime.h`:
+
+```cpp
+#include <labneura/runtime.h>
+
+const std::size_t available = labneura::available_cpu_count();
+labneura::set_execution_thread_count(2);
+const std::size_t configured = labneura::execution_thread_count();
+labneura::set_execution_thread_count_auto();  // use all detected available CPUs
+```
+
+The Python extension provides the corresponding
+`available_cpu_count()`, `execution_thread_count()`,
+`set_execution_thread_count(count)`, and
+`set_execution_thread_count_auto()` functions. Explicit counts must be between
+one and the detected available CPU count; an invalid count raises
+`std::invalid_argument` in C++ (`ValueError` in Python) and does not change the
+current setting. Availability detection uses macOS `sysctl` or Linux process
+CPU affinity and cgroup CPU quotas where available, with
+`std::thread::hardware_concurrency()` as a fallback. The setting is safe for
+concurrent reads and changes. `parallel_for(begin, end, grain_size, function)`
+partitions a range into disjoint chunks. Its worker pool is lazy and persistent;
+it resizes before the next parallel execution after the thread count changes.
+Workers may remain idle after selecting one thread and are shut down on resize
+or process exit. One-thread
+and small-range calls are synchronous, exceptions propagate to the caller, and
+nested calls run synchronously to avoid deadlocks. Concurrent calls are safe but
+serialized; callbacks within one call may execute concurrently and in any
+order. A call uses the execution thread count sampled at entry. For example:
+
+```cpp
+labneura::parallel_for(0, values.size(), 4096,
+                       [&](std::size_t begin, std::size_t end) {
+    for (std::size_t i = begin; i < end; ++i) {
+        output[i] = values[i] * scale;
+    }
+});
+```
+
+For FP32 ADD, Generic and NEON backends use `parallel_for` for tensors of at
+least 1,000,000 elements when the configured thread count is greater than one.
+The default remains one thread. Other operations, dtypes, and AVX2 arithmetic
+remain serial.
 
 ### Python Integration
 - **Easy Installation**: `pip install labneura`
@@ -90,6 +175,12 @@ print(t1.data_fp32())  # [1.5, 2.5, 3.5, 4.5]
 
 # Non-destructive addition (returns new tensor)
 t3 = t1.add(t2)
+
+# Reusable FP32 output (overwrites out; may exactly alias either input)
+a = labneura.Tensor([1.0, 2.0], labneura.QuantizationMode.FP32)
+b = labneura.Tensor([0.5, 0.5], labneura.QuantizationMode.FP32)
+out = labneura.Tensor([0.0, 0.0], labneura.QuantizationMode.FP32)
+labneura.add_into(a, b, out)
 
 # Other operations
 t1.mul_inplace(t2)  # Element-wise multiplication

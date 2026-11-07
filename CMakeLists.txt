@@ -143,6 +143,8 @@ add_library(labneura
   src/labneura/eda/mapping/fpga/fpga_mapping.cpp
   src/labneura/eda/mapping/fpga/fpga_library.cpp
   src/labneura/tensor.cpp
+  src/labneura/runtime.cpp
+  src/labneura/parallel.cpp
   src/labneura/backends/common/base.cpp
   src/labneura/backends/common/cpu_features.cpp
   src/labneura/backends/common/backend_factory.cpp
@@ -329,6 +331,36 @@ if(NOT SKBUILD)
       COMMAND labneura_backend_selection_test
     )
 
+    add_executable(labneura_thread_config_test
+      tests/thread_config_test.cpp
+    )
+    target_include_directories(labneura_thread_config_test PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/labneura
+    )
+    target_link_libraries(labneura_thread_config_test PRIVATE
+      labneura Threads::Threads
+    )
+    add_test(NAME thread_configuration COMMAND labneura_thread_config_test)
+
+    add_executable(labneura_parallel_for_test
+      tests/parallel_for_test.cpp
+    )
+    target_link_libraries(labneura_parallel_for_test PRIVATE
+      labneura Threads::Threads
+    )
+    add_test(NAME parallel_for_execution COMMAND labneura_parallel_for_test)
+
+    add_executable(labneura_fp32_parallel_add_test
+      tests/fp32_parallel_add_test.cpp
+    )
+    target_link_libraries(labneura_fp32_parallel_add_test PRIVATE labneura)
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
+      target_compile_definitions(labneura_fp32_parallel_add_test
+        PRIVATE LABNEURA_TEST_NEON=1
+      )
+    endif()
+    add_test(NAME fp32_parallel_add COMMAND labneura_fp32_parallel_add_test)
+
     add_executable(labneura_unsupported_dtype_test
       tests/unsupported_tensor_dtype_test.cpp
     )
@@ -437,6 +469,86 @@ if(NOT SKBUILD)
     set_tests_properties(
       fp32_avx2_allocating
       fp32_neon_allocating
+      PROPERTIES SKIP_RETURN_CODE 77
+    )
+
+    add_executable(labneura_add_into_test
+      tests/add_into_test.cpp
+    )
+    target_include_directories(labneura_add_into_test PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+    target_link_libraries(labneura_add_into_test PRIVATE labneura)
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64"
+       AND LABNEURA_COMPILER_SUPPORTS_AVX2)
+      target_compile_definitions(labneura_add_into_test
+        PRIVATE LABNEURA_TEST_AVX2=1
+      )
+    endif()
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
+      target_compile_definitions(labneura_add_into_test
+        PRIVATE LABNEURA_TEST_NEON=1
+      )
+    endif()
+    add_test(NAME add_into_generic COMMAND labneura_add_into_test GENERIC)
+    add_test(NAME add_into_avx2 COMMAND labneura_add_into_test AVX2)
+    add_test(NAME add_into_neon COMMAND labneura_add_into_test NEON)
+    set_tests_properties(
+      add_into_avx2
+      add_into_neon
+      PROPERTIES SKIP_RETURN_CODE 77
+    )
+
+    add_executable(labneura_tensor_nd_test
+      tests/tensor_nd_test.cpp
+    )
+    target_include_directories(labneura_tensor_nd_test PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/labneura/backends/common
+    )
+    target_link_libraries(labneura_tensor_nd_test PRIVATE labneura)
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64"
+       AND LABNEURA_COMPILER_SUPPORTS_AVX2)
+      target_compile_definitions(labneura_tensor_nd_test
+        PRIVATE LABNEURA_TEST_AVX2=1
+      )
+    endif()
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
+      target_compile_definitions(labneura_tensor_nd_test
+        PRIVATE LABNEURA_TEST_NEON=1
+      )
+    endif()
+    add_test(NAME tensor_nd_generic COMMAND labneura_tensor_nd_test GENERIC)
+    add_test(NAME tensor_nd_avx2 COMMAND labneura_tensor_nd_test AVX2)
+    add_test(NAME tensor_nd_neon COMMAND labneura_tensor_nd_test NEON)
+    set_tests_properties(
+      tensor_nd_avx2
+      tensor_nd_neon
+      PROPERTIES SKIP_RETURN_CODE 77
+    )
+
+    add_executable(labneura_aligned_allocation_safety_test
+      tests/aligned_allocation_safety_test.cpp
+    )
+    target_link_libraries(labneura_aligned_allocation_safety_test
+      PRIVATE labneura
+    )
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64"
+       AND LABNEURA_COMPILER_SUPPORTS_AVX2)
+      target_compile_definitions(labneura_aligned_allocation_safety_test
+        PRIVATE LABNEURA_TEST_AVX2=1
+      )
+    endif()
+    add_test(
+      NAME aligned_allocation_safety
+      COMMAND labneura_aligned_allocation_safety_test UTILITY
+    )
+    add_test(
+      NAME avx2_allocation_safety
+      COMMAND labneura_aligned_allocation_safety_test AVX2
+    )
+    set_tests_properties(
+      avx2_allocation_safety
       PROPERTIES SKIP_RETURN_CODE 77
     )
 
