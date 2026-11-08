@@ -83,10 +83,10 @@ the immediate priorities; GPU implementation is not active work.
   numeric sequences in C++. Zero values normalize to 0 and nonzero values to 1.
   `data_bool()` exposes `std::uint8_t` storage in C++ and returns copied Python
   bool values. BOOL arithmetic and BOOL-to-BOOL comparisons are not implemented.
-  `logical_not` and `logical_and` have Generic, NEON, and AVX2 implementations;
-  AVX2 `logical_not` passed x86_64 runtime validation, while AVX2
-  `logical_and` still requires it. `logical_or` and `where()` remain
-  unsupported.
+  `logical_not`, `logical_and`, and `logical_or` have Generic, NEON, and AVX2
+  implementations. `logical_not` and `logical_and` passed x86_64 runtime
+  validation; `logical_or` still requires x86_64 runtime validation.
+  `where()` remains unsupported.
 - `reshape` and `flatten` clone the backend before changing shape metadata and
   remain deep copies. `reshape_view`, `slice_first_axis`, and
   `select_first_axis` create storage-sharing views.
@@ -256,7 +256,7 @@ x86_64 AVX2 validation:
 
 `git diff --check` passed for the documentation update.
 
-### BOOL logical operations (M3.4.1–M3.4.4)
+### BOOL logical operations (M3.4.1–M3.4.5)
 
 `Tensor::logical_not()` and Python `Tensor.logical_not()` accept BOOL tensors
 and return independent, contiguous BOOL tensors with the same shape. The
@@ -274,7 +274,9 @@ broadcast lanes before vector AND otherwise. All kernels retain canonical 0/1
 bytes and handle the scalar tail and zero-element outputs. Backend pairs must
 match; no Generic fallback is used. Existing Tensor views are contiguous
 offset views; arbitrary non-contiguous layouts are not currently provided.
-`logical_or` and `where()` remain unsupported.
+`Tensor::logical_or()` and Python `Tensor.logical_or()` follow the same BOOL,
+broadcasting, allocation, and backend-pair contract, using bytewise OR in the
+SIMD kernels and canonical BOOL output. `where()` remains unsupported.
 
 M3.4.2 validation on Apple Silicon:
 
@@ -299,13 +301,18 @@ support and selected the AVX2 backend; `bool_dtype_avx2` passed. Full native
 CTest reported 29 tests, 0 failures, and 7 expected NEON skips. The full
 AVX2-selected Python suite reported 1160 passed, 216 skipped, and 3 warnings.
 
-M3.4.4 `logical_and` implementations and backend-explicit tests are present.
-On the ARM64 development host, focused Generic and NEON native tests passed and
-the AVX2 test skipped; focused Python BOOL/comparison tests reported 130
-passed and 62 AVX2 skips. Full native CTest reported 21 passed, 8 AVX2 skips,
-and 0 failures; the full Python suite reported 1164 passed, 215 skipped, and 3
-existing warnings. The NEON tests executed on ARM64. AVX2 `logical_and` still
-requires an x86_64 AVX2 runtime run; no source changes were pushed for CI.
+M3.4.4 `logical_and` passed x86_64 AVX2 runtime validation in GitHub Actions
+run `42455884336`, commit
+`1089815717ce37815210ec425ec295678c2d96ef`. The runner reported x86_64 and
+AVX2 support; `bool_dtype_avx2` passed, full CTest reported 29 passed and 0
+failed, and the full AVX2-selected Python suite reported 1162 passed, 217
+skipped, and 3 existing warnings. The ARM64 development host also ran its
+Generic and NEON logical-and tests.
+
+M3.4.5 adds Generic, NEON, and AVX2 `logical_or` kernels with explicit
+backend tests. Focused native and Python BOOL tests passed on the ARM64
+development host; AVX2 cases were skipped because this build does not provide
+that backend. x86_64 runtime validation for `logical_or` remains pending.
 
 Tensor metadata is separate from storage and execution. TensorStorage is
 shared-owned internally, while public Tensor copies still deep-copy. Backend

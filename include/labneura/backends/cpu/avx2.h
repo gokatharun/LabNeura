@@ -51,6 +51,10 @@ private:
         const AVX2Backend& other, AVX2Backend& output,
         const detail::BroadcastPlan& plan, std::size_t lhs_numel,
         std::size_t rhs_numel) const;
+    void logical_or_broadcast(
+        const AVX2Backend& other, AVX2Backend& output,
+        const detail::BroadcastPlan& plan, std::size_t lhs_numel,
+        std::size_t rhs_numel) const;
 
     std::size_t size_;
     std::size_t aligned_size_;

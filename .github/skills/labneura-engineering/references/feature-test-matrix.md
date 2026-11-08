@@ -62,7 +62,7 @@ and scalar fallback tests passed. ARM64 Generic and NEON comparison CTests
 passed, with AVX2 skipped on ARM64. This validates correctness only; no
 performance improvement is claimed.
 
-### BOOL logical operations — M3.4.1–M3.4.4
+### BOOL logical operations — M3.4.1–M3.4.5
 - [x] Generic `logical_not` accepts BOOL only and returns an independent,
   canonical BOOL tensor with unchanged shape.
 - [x] Mixed values, all-false/all-true, scalar, empty, offset-view, repeated
@@ -86,16 +86,31 @@ performance improvement is claimed.
 - [x] Generic and NEON `logical_and` native tests and Python tests executed on
   ARM64. Full CTest: 21 passed, 8 AVX2 skips, 0 failures. Full Python suite:
   1164 passed, 215 skipped, 3 warnings.
-- [ ] Execute AVX2 `logical_and` native and Python cases on an x86_64 host
+- [x] `logical_and` AVX2 native and Python cases executed on x86_64 with AVX2
+  selected in CI run `42455884336` at commit
+  `1089815717ce37815210ec425ec295678c2d96ef`.
+- [x] `logical_or` requires BOOL operands, uses shared NumPy-style
+  broadcasting, returns an independent BOOL tensor, and rejects incompatible
+  shapes and non-BOOL inputs.
+- [x] Generic, NEON, and AVX2 `logical_or` native and Python tests cover the
+  truth table, same-shape and two-axis broadcasts, scalars, empty outputs,
+  offset views, BOOL dtype/canonical values, input immutability, and SIMD
+  vector boundaries/tails. Backend selection is explicitly checked; the
+  Python AVX2 case has a dedicated test.
+- [x] Generic and NEON `logical_or` native and Python cases passed on the
+  ARM64 development host.
+- [ ] Execute AVX2 `logical_or` native and Python cases on an x86_64 host
   with AVX2 support; ARM skips and cross-compilation do not count as runtime
   validation.
-- [ ] BOOL `logical_or` and `where()`.
+- [ ] BOOL `where()`.
 
 The current Tensor API creates contiguous layouts only; non-contiguous-view
 coverage is not applicable yet. M3.4.1 provides the Generic `logical_not`
 kernel and M3.4.2 adds NEON. M3.4.3 `logical_not` AVX2 runtime validation
-passed in CI run `42449211301`. M3.4.4 adds Generic, NEON, and AVX2
-`logical_and`; x86_64 runtime validation for `logical_and` is pending.
+passed in CI run `42449211301`. M3.4.4 `logical_and` passed x86_64 runtime
+validation in CI run `42455884336` at commit
+`1089815717ce37815210ec425ec295678c2d96ef`. M3.4.5 adds Generic, NEON, and
+AVX2 `logical_or`; x86_64 runtime validation for `logical_or` remains pending.
 Apple Silicon M3.4.2 results: focused CTests had 4 passes and 2
 AVX2 skips; focused Python tests had 128 passes and 61 AVX2 skips. The full
 native suite had 21 passes and 8 AVX2 skips; the full Python suite had 1162

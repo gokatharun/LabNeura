@@ -163,6 +163,8 @@ public:
     Tensor logical_not() const;
     // Elementwise logical AND for BOOL tensors; supports broadcasting.
     Tensor logical_and(const Tensor& other) const;
+    // Elementwise logical OR for BOOL tensors; supports broadcasting.
+    Tensor logical_or(const Tensor& other) const;
     
     // In-place addition: this += other
     void add_inplace(const Tensor& other);
@@ -174,6 +176,11 @@ public:
     void div_inplace(const Tensor& other);
 
 private:
+    enum class LogicalBinaryOperation {
+        And,
+        Or
+    };
+
     QuantizationMode quantization_mode_;
     std::unique_ptr<TensorBackend> backend_;
     std::shared_ptr<TensorStorage> storage_;
@@ -188,6 +195,8 @@ private:
     Tensor(QuantizationMode mode, std::unique_ptr<TensorBackend> backend, std::vector<std::size_t> shape);
     Tensor binary_op(const Tensor& other, OperationType op) const;
     Tensor comparison_op(const Tensor& other, ComparisonType op) const;
+    Tensor logical_binary_op(const Tensor& other,
+                             LogicalBinaryOperation operation) const;
     void binary_inplace(const Tensor& other, OperationType op);
 
     // Helper to initialize backend based on hardware

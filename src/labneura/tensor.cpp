@@ -649,13 +649,25 @@ Tensor Tensor::logical_not() const {
 }
 
 Tensor Tensor::logical_and(const Tensor& other) const {
+    return logical_binary_op(other, LogicalBinaryOperation::And);
+}
+
+Tensor Tensor::logical_or(const Tensor& other) const {
+    return logical_binary_op(other, LogicalBinaryOperation::Or);
+}
+
+Tensor Tensor::logical_binary_op(
+    const Tensor& other, LogicalBinaryOperation operation) const {
+    const char* operation_name =
+        operation == LogicalBinaryOperation::And ? "logical_and" : "logical_or";
     if (!backend_ || !other.backend_) {
         throw std::runtime_error("Tensor backend not initialized");
     }
     if (quantization_mode_ != QuantizationMode::BOOL ||
         other.quantization_mode_ != QuantizationMode::BOOL) {
         throw std::runtime_error(
-            "Tensor logical_and requires BOOL input tensors");
+            std::string("Tensor ") + operation_name +
+            " requires BOOL input tensors");
     }
 
     const auto* lhs_generic =
@@ -688,7 +700,8 @@ Tensor Tensor::logical_and(const Tensor& other) const {
 #endif
     ) {
         throw std::runtime_error(
-            "Tensor logical_and requires both inputs to use the same Generic, NEON, or AVX2 backend");
+            std::string("Tensor ") + operation_name +
+            " requires both inputs to use the same Generic, NEON, or AVX2 backend");
     }
 
     detail::BroadcastPlan plan;
@@ -705,23 +718,38 @@ Tensor Tensor::logical_and(const Tensor& other) const {
     if (generic_pair) {
         auto output =
             std::make_unique<GenericBackend>(output_numel, QuantizationMode::BOOL);
-        lhs_generic->logical_and_broadcast(*rhs_generic, *output, plan,
-                                           numel(), other.numel());
+        if (operation == LogicalBinaryOperation::And) {
+            lhs_generic->logical_and_broadcast(*rhs_generic, *output, plan,
+                                               numel(), other.numel());
+        } else {
+            lhs_generic->logical_or_broadcast(*rhs_generic, *output, plan,
+                                              numel(), other.numel());
+        }
         output_backend = std::move(output);
 #if defined(LABNEURA_ENABLE_NEON)
     } else if (neon_pair) {
         auto output =
             std::make_unique<NEONBackend>(output_numel, QuantizationMode::BOOL);
-        lhs_neon->logical_and_broadcast(*rhs_neon, *output, plan,
-                                        numel(), other.numel());
+        if (operation == LogicalBinaryOperation::And) {
+            lhs_neon->logical_and_broadcast(*rhs_neon, *output, plan,
+                                            numel(), other.numel());
+        } else {
+            lhs_neon->logical_or_broadcast(*rhs_neon, *output, plan,
+                                           numel(), other.numel());
+        }
         output_backend = std::move(output);
 #endif
 #if defined(LABNEURA_ENABLE_AVX2)
     } else if (avx2_pair) {
         auto output =
             std::make_unique<AVX2Backend>(output_numel, QuantizationMode::BOOL);
-        lhs_avx2->logical_and_broadcast(*rhs_avx2, *output, plan,
-                                        numel(), other.numel());
+        if (operation == LogicalBinaryOperation::And) {
+            lhs_avx2->logical_and_broadcast(*rhs_avx2, *output, plan,
+                                            numel(), other.numel());
+        } else {
+            lhs_avx2->logical_or_broadcast(*rhs_avx2, *output, plan,
+                                           numel(), other.numel());
+        }
         output_backend = std::move(output);
 #endif
     }

@@ -45,6 +45,10 @@ namespace labneura {
                 const GenericBackend& other, GenericBackend& output,
                 const detail::BroadcastPlan& plan, std::size_t lhs_numel,
                 std::size_t rhs_numel) const;
+            void logical_or_broadcast(
+                const GenericBackend& other, GenericBackend& output,
+                const detail::BroadcastPlan& plan, std::size_t lhs_numel,
+                std::size_t rhs_numel) const;
 
             GenericBackend(std::shared_ptr<TensorStorage> storage,
                            std::size_t logical_size,
