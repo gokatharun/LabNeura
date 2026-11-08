@@ -28,7 +28,7 @@ Use this checklist for every feature and every backend implementation.
   clone/deep-copy, views/lifetime, and zero-sized storage.
 - [x] Generic and NEON explicitly selected construction/access tests; verify
   logical size independently of SIMD-padded capacity.
-- [ ] AVX2 construction/access runtime validation on an AVX2-capable host.
+- [x] AVX2 construction/access runtime validation on an AVX2-capable host.
 - [x] C++ byte/numeric and Python bool/numeric inputs normalize to 0/1; Python
   rejects nonnumeric data and returns actual Python bool values.
 - [ ] BOOL arithmetic remains explicitly unsupported until separately
@@ -49,8 +49,42 @@ Use this checklist for every feature and every backend implementation.
 - [x] AVX2 kernels and explicit tests cover all operations/dtypes, Generic
   parity, special values, signed boundaries, broadcast/scalar/nested views,
   empty outputs, canonical BOOL bytes, and width-boundary tails.
-- [ ] Execute AVX2 native/Python comparison and regression tests on an
+- [x] Execute AVX2 native/Python comparison and regression tests on an
   AVX2-capable x86 host; confirm runtime detection and no fallback.
+
+M3.3.5 runtime validation passed in GitHub Actions run `42390563490` on
+implementation commit `895b7633e1cd6f48b1459397cd664ee1d4dd2c08`. The
+`tensor_comparison_avx2` native CTest and AVX2 comparison Python tests passed.
+The full native CTest run had 29 registered tests, 0 failures, and 7 expected
+NEON-only skips; the full Python suite with AVX2 selected reported 1156 passed,
+215 skipped, and 3 warnings. AVX2 arithmetic regression and FP16/F16C vector
+and scalar fallback tests passed. ARM64 Generic and NEON comparison CTests
+passed, with AVX2 skipped on ARM64. This validates correctness only; no
+performance improvement is claimed.
+
+### BOOL logical operations — M3.4.1/M3.4.2/M3.4.3 `logical_not`
+- [x] Generic `logical_not` accepts BOOL only and returns an independent,
+  canonical BOOL tensor with unchanged shape.
+- [x] Mixed values, all-false/all-true, scalar, empty, offset-view, repeated
+  calls, input immutability, and output-storage independence are tested.
+- [x] Non-BOOL input is rejected; Generic backend selection is asserted.
+- [x] NEON explicitly selected; vector chunks, all scalar-tail remainders,
+  scalar/empty tensors, offset views, canonical output, immutability, and
+  independent output storage are tested.
+- [x] AVX2 kernel and explicit tests cover vector boundaries, all 32 scalar
+  tail remainders, scalar/empty inputs, offset views, canonical output,
+  immutability, repeated calls, and independent storage.
+- [ ] Execute AVX2 tests on an x86_64 host with AVX2 support; ARM skips and
+  cross-compilation do not count as runtime validation.
+- [ ] AVX2 `logical_and`, `logical_or`, and `where()`.
+
+The current Tensor API creates contiguous layouts only; non-contiguous-view
+coverage is not applicable yet. M3.4.1 provides the Generic kernel and M3.4.2
+adds NEON. M3.4.3 adds AVX2 implementation and tests; x86_64 runtime validation
+is pending. Apple Silicon M3.4.2 results: focused CTests had 4 passes and 2
+AVX2 skips; focused Python tests had 128 passes and 61 AVX2 skips. The full
+native suite had 21 passes and 8 AVX2 skips; the full Python suite had 1162
+passes, 214 skips, and 3 existing warnings. The NEON tests executed on ARM64.
 
 ## Broadcasting
 - [ ] Same shape.

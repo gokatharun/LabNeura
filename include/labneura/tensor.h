@@ -158,6 +158,9 @@ public:
     Tensor le(const Tensor& other) const;
     Tensor gt(const Tensor& other) const;
     Tensor ge(const Tensor& other) const;
+
+    // Elementwise logical NOT for BOOL tensors; returns independent storage.
+    Tensor logical_not() const;
     
     // In-place addition: this += other
     void add_inplace(const Tensor& other);

@@ -612,6 +612,42 @@ Tensor Tensor::ge(const Tensor& other) const {
     return comparison_op(other, ComparisonType::GE);
 }
 
+Tensor Tensor::logical_not() const {
+    if (!backend_) {
+        throw std::runtime_error("Tensor backend not initialized");
+    }
+    if (quantization_mode_ != QuantizationMode::BOOL) {
+        throw std::runtime_error(
+            "Tensor logical_not requires a BOOL input tensor");
+    }
+
+    if (const auto* generic =
+            dynamic_cast<const GenericBackend*>(backend_.get())) {
+        auto output =
+            std::make_unique<GenericBackend>(numel(), QuantizationMode::BOOL);
+        generic->logical_not_into(*output);
+        return Tensor(QuantizationMode::BOOL, std::move(output), shape_);
+    }
+#if defined(LABNEURA_ENABLE_NEON)
+    if (const auto* neon = dynamic_cast<const NEONBackend*>(backend_.get())) {
+        auto output =
+            std::make_unique<NEONBackend>(numel(), QuantizationMode::BOOL);
+        neon->logical_not_into(*output);
+        return Tensor(QuantizationMode::BOOL, std::move(output), shape_);
+    }
+#endif
+#if defined(LABNEURA_ENABLE_AVX2)
+    if (const auto* avx2 = dynamic_cast<const AVX2Backend*>(backend_.get())) {
+        auto output =
+            std::make_unique<AVX2Backend>(numel(), QuantizationMode::BOOL);
+        avx2->logical_not_into(*output);
+        return Tensor(QuantizationMode::BOOL, std::move(output), shape_);
+    }
+#endif
+    throw std::runtime_error(
+        "Tensor logical_not is only supported by the Generic, NEON, and AVX2 backends");
+}
+
 Tensor Tensor::comparison_op(const Tensor& other, ComparisonType comparison) const {
     if (!backend_ || !other.backend_) {
         throw std::runtime_error("Tensor backend not initialized");

@@ -40,6 +40,7 @@ namespace labneura {
                 const GenericBackend& other, GenericBackend& output,
                 const detail::BroadcastPlan& plan, ComparisonType comparison,
                 std::size_t lhs_numel, std::size_t rhs_numel) const;
+            void logical_not_into(GenericBackend& output) const;
 
             GenericBackend(std::shared_ptr<TensorStorage> storage,
                            std::size_t logical_size,

@@ -43,6 +43,7 @@ namespace labneura {
                 const detail::BroadcastPlan& plan,
                 ComparisonType comparison, std::size_t lhs_numel,
                 std::size_t rhs_numel) const;
+            void logical_not_into(NEONBackend& output) const;
 
             std::size_t size_;
             std::size_t aligned_size_;

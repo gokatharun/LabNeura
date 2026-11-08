@@ -1,6 +1,6 @@
 # LabNeura Current Project State
 
-Last verified: 2026-11-07. Treat this as a continuity reference, not a
+Last verified: 2026-11-08. Treat this as a continuity reference, not a
 substitute for inspecting the current source, tests, worktree, and benchmark
 artifacts.
 
@@ -27,9 +27,10 @@ the immediate priorities; GPU implementation is not active work.
   dtype/backend/operation combination: Generic arithmetic is implemented for
   FP32, INT8, and INT16, while NEON and AVX2 have additional FP16/INT16 code.
   The six Tensor comparisons have Generic, NEON, and AVX2 implementations for
-  matching FP32, FP16, INT16, and INT8 inputs, returning BOOL. AVX2 kernels
-  and explicit tests are present, but require runtime validation on an AVX2-
-  capable x86 host before claiming validated AVX2 support.
+  matching FP32, FP16, INT16, and INT8 inputs, returning BOOL. AVX2 comparison
+  runtime validation passed on an x86_64 AVX2 host in GitHub Actions run
+  `42390563490` for implementation commit
+  `895b7633e1cd6f48b1459397cd664ee1d4dd2c08`.
 - Tensor supports contiguous arbitrary-rank construction using
   `Tensor::from_flat` / `Tensor.from_flat(data, shape, mode="auto")`, including
   1D and higher-rank shapes. Existing vector, scalar, and 2D nested-row
@@ -81,8 +82,9 @@ the immediate priorities; GPU implementation is not active work.
 - BOOL construction accepts bool or numeric sequences in Python and byte or
   numeric sequences in C++. Zero values normalize to 0 and nonzero values to 1.
   `data_bool()` exposes `std::uint8_t` storage in C++ and returns copied Python
-  bool values. BOOL arithmetic, BOOL-to-BOOL comparisons, logical operations,
-  and `where()` are not implemented.
+  bool values. BOOL arithmetic, BOOL-to-BOOL comparisons, `logical_and`,
+  `logical_or`, and `where()` are not implemented. `logical_not` has Generic,
+  NEON, and AVX2 implementations; AVX2 x86 runtime validation is pending.
 - `reshape` and `flatten` clone the backend before changing shape metadata and
   remain deep copies. `reshape_view`, `slice_first_axis`, and
   `select_first_axis` create storage-sharing views.
@@ -181,8 +183,8 @@ invalid value. BOOL deep copies and views preserve backend and storage lifetime.
 BOOL arithmetic, BOOL-to-BOOL comparisons, logical operations, and `where()`
 remain unsupported. Generic numeric comparisons are implemented as M3.3.3
 below; NEON numeric comparison kernels are implemented in M3.3.4. AVX2
-numeric comparison kernels are implemented in M3.3.5; their x86 runtime
-validation remains pending.
+numeric comparison kernels and x86_64 runtime validation are complete in
+M3.3.5.
 
 ### Tensor comparisons (M3.3.3 Generic; M3.3.4 NEON; M3.3.5 AVX2)
 
@@ -215,14 +217,6 @@ NEON comparison validation on Apple Silicon:
   outputs, offset views, BOOL canonical values, and invalid inputs.
 - Python comparison tests explicitly select each backend and check NumPy
   results plus Generic/NEON parity for all operations and dtypes.
-- AVX2 comparison kernels and explicit parity tests are implemented. The AVX2
-  kernel and Tensor dispatch passed x86_64-targeted Clang syntax checks from
-  this ARM host.
-- AVX2 CPU detection is unavailable on this Apple arm64 machine. AVX2 CTest
-  and Python cases are architecture-gated and skipped locally. Compilation
-  with x86 CMake flags, runtime selection, actual AVX2 comparisons, and AVX2
-  arithmetic/FP16 regression tests remain pending on an x86_64 AVX2 host.
-  M3.3.5 is not runtime-validated.
 
 Apple Silicon validation:
 
@@ -238,9 +232,63 @@ Apple Silicon validation:
 - Full Python suite on the normal ARM host: 1158 passed, 213 skipped, and 3
   existing pytest return-value warnings. AVX2-specific tests account for
   architecture-gated skips.
-- `git diff --check` passed. AVX2 x86 hardware/CI validation was not run; the
-  implementation exists but is not runtime-validated, so complete SIMD
-  comparison support remains pending.
+- AVX2-specific tests were skipped locally because this host is ARM64.
+
+x86_64 AVX2 validation:
+
+- GitHub Actions run `42390563490` on implementation commit
+  `895b7633e1cd6f48b1459397cd664ee1d4dd2c08` completed successfully.
+- The explicit `tensor_comparison_avx2` native CTest passed. The full native
+  CTest run had 29 registered tests, 0 failures, and 7 expected NEON-only
+  skips on x86_64.
+- The full Python suite ran with AVX2 selected: 1156 passed, 215 skipped, and
+  3 warnings. AVX2 comparison Python tests passed; the skips include
+  platform/backend-specific cases.
+- AVX2 arithmetic regression passed. FP16/F16C dispatch and AVX2 FP16
+  arithmetic passed, with logs confirming both the F16C vector kernel and
+  scalar fallback ran.
+- The ARM64 CI job passed its Generic and NEON comparison CTests; AVX2 was
+  skipped on ARM64 as expected.
+- These are functional correctness results; no comparison performance
+  improvement is claimed.
+
+`git diff --check` passed for the documentation update.
+
+### BOOL logical_not (M3.4.1 Generic, M3.4.2 NEON, M3.4.3 AVX2)
+
+`Tensor::logical_not()` and Python `Tensor.logical_not()` accept BOOL tensors
+and return independent, contiguous BOOL tensors with the same shape. The
+Generic inverts canonical values (`0` to `1`, `1` to `0`) without mutation or
+conversion. NEON uses 16-byte vector comparisons and canonicalizes each vector
+mask to BOOL bytes, followed by a scalar tail. AVX2 uses 32-byte unaligned
+loads/stores, compares against zero, masks with one to produce canonical BOOL
+bytes, and handles the remaining elements with a scalar tail. All backends
+support scalar and zero-element tensors and contiguous offset views.
+Non-contiguous Tensor layouts are not currently provided. `logical_and`,
+`logical_or`, and `where()` remain unsupported.
+
+M3.4.2 validation on Apple Silicon:
+
+- Focused BOOL/comparison CTests: 4 passed and 2 AVX2 tests skipped. Generic
+  and NEON tests executed; `bool_dtype_neon` passed.
+- Focused BOOL/comparison Python tests: 128 passed and 61 AVX2 cases skipped.
+  The explicit NEON test executed, not skipped.
+- Native BOOL CTests explicitly select Generic and NEON and test sizes 0–33,
+  all vector tail lengths, scalar and empty tensors, canonical output,
+  immutability, independent output storage, and an offset view whose storage
+  offset exercises unaligned vector loads.
+- Python BOOL tests explicitly select Generic and NEON and cover equivalent
+  vector-boundary, scalar, empty, offset-view, repeat-call, and immutability
+  cases.
+- Full native CTest: 21 passed, 8 AVX2-specific tests skipped, 0 failed.
+- Full Python suite: 1162 passed, 214 skipped, 3 existing warnings.
+
+M3.4.3 AVX2 tests and dispatch have been added. Native and Python cases
+explicitly select AVX2 and cover sizes 0–66 (including all 32 tail remainders),
+canonical output, scalar/empty inputs, independent results, input immutability,
+repeated calls, and an offset-33 view. This development host is ARM64, so the
+AVX2 CTest and Python case are skipped here. An x86_64 host with AVX2 support
+must run those tests before M3.4.3 can be marked complete.
 
 Tensor metadata is separate from storage and execution. TensorStorage is
 shared-owned internally, while public Tensor copies still deep-copy. Backend
@@ -385,13 +433,13 @@ transpose/permutation remain unimplemented.
   AVX2 native regression suite on an AVX2-capable x86_64 runner after relevant
   backend changes.
 - The F16C-specific AVX2 FP16 path is conditionally selected by feature
-  detection and has a dedicated regression test, but durable local artifacts
-  do not prove that the F16C vector path executed on a feature-capable runner.
-  Confirm that path from an x86_64 CI/test log or a suitable host before
-  claiming F16C runtime validation.
+  detection and has a dedicated regression test. GitHub Actions run
+  `42390563490` confirmed F16C support and logged execution of both the vector
+  kernel and scalar fallback; see the M3.3.5 validation record above.
 - The most recent Apple Silicon native allocation-safety run skipped AVX2
   cases. Its utility test passed; it does not establish AVX2 constructor
-  runtime safety.
+  runtime safety. The x86_64 run above validates AVX2 constructor/allocation
+  tests for the M3.3.5 implementation revision.
 - The FP32 performance objective remains at least 10% faster than the faster
   comparable NumPy/PyTorch CPU path on agreed workloads. This has not been
   established broadly. FP32 performance optimization is intentionally paused;
@@ -417,7 +465,7 @@ M3.3.2 BOOL dtype foundation was validated on Apple Silicon:
 - Full Generic-selected Python suite using the rebuilt extension: 1003 passed,
   191 skipped, with 3 existing pytest return-value warnings.
 - No sanitizer option/configuration was found in the repository; sanitizer
-  validation was not run. AVX2 runtime validation remains pending x86 CI.
+  validation was not run. M3.3.5 AVX2 runtime validation is recorded above.
 
 On the Apple Silicon development machine, M2.2.3 validation completed with:
 

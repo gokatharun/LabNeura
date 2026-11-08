@@ -41,6 +41,293 @@ void require_throws(Function&& function, const std::string& context) {
     throw std::runtime_error(context + ": expected exception");
 }
 
+void check_logical_not_result(
+    const labneura::Tensor& result,
+    const std::vector<std::size_t>& expected_shape,
+    const std::vector<std::uint8_t>& expected_values,
+    const std::string& context) {
+    require(result.quantization_mode() == labneura::QuantizationMode::BOOL,
+            context + ": result dtype was not BOOL");
+    require(result.shape() == expected_shape,
+            context + ": result shape mismatch");
+    require(result.numel() == expected_values.size(),
+            context + ": result element count mismatch");
+    require(result.is_contiguous(), context + ": result is not contiguous");
+    const std::uint8_t* actual = result.data_bool();
+    for (std::size_t i = 0; i < expected_values.size(); ++i) {
+        require(actual[i] == expected_values[i] && actual[i] <= 1,
+                context + ": value mismatch at index " +
+                    std::to_string(i));
+    }
+}
+
+void check_generic_logical_not() {
+    using labneura::QuantizationMode;
+    using labneura::Tensor;
+
+    labneura::test::ScopedEnvironmentVariable backend_override(
+        "LABNEURA_BACKEND", "GENERIC");
+    require(labneura::detect_backend() == "GENERIC",
+            "Generic logical_not backend was not explicitly selected");
+
+    const Tensor mixed(std::vector<std::uint8_t>{1, 0, 1, 0},
+                       QuantizationMode::BOOL);
+    const std::vector<std::uint8_t> mixed_before(mixed.data_bool(),
+                                                  mixed.data_bool() + 4);
+    Tensor mixed_result = mixed.logical_not();
+    check_logical_not_result(mixed_result, {4}, {0, 1, 0, 1},
+                             "Mixed BOOL logical_not");
+    require(mixed_result.data_bool() != mixed.data_bool(),
+            "logical_not output aliases its input");
+    mixed_result.data_bool()[0] = 1;
+    require(std::vector<std::uint8_t>(mixed.data_bool(),
+                                      mixed.data_bool() + 4) == mixed_before,
+            "Mutating logical_not output changed its input");
+
+    check_logical_not_result(
+        Tensor(std::vector<std::uint8_t>{0, 0, 0}, QuantizationMode::BOOL)
+            .logical_not(),
+        {3}, {1, 1, 1}, "All-false logical_not");
+    check_logical_not_result(
+        Tensor(std::vector<std::uint8_t>{1, 1, 1}, QuantizationMode::BOOL)
+            .logical_not(),
+        {3}, {0, 0, 0}, "All-true logical_not");
+    check_logical_not_result(
+        Tensor::from_flat(std::vector<std::uint8_t>{0}, {}, QuantizationMode::BOOL)
+            .logical_not(),
+        {}, {1}, "Scalar-false logical_not");
+    check_logical_not_result(
+        Tensor::from_flat(std::vector<std::uint8_t>{1}, {}, QuantizationMode::BOOL)
+            .logical_not(),
+        {}, {0}, "Scalar-true logical_not");
+
+    const Tensor empty = Tensor::from_flat(
+        std::vector<std::uint8_t>{}, {0, 3}, QuantizationMode::BOOL);
+    check_logical_not_result(empty.logical_not(), {0, 3}, {},
+                             "Empty logical_not");
+
+    const Tensor parent = Tensor::from_flat(
+        std::vector<std::uint8_t>{0, 1, 1, 0, 0, 0, 1, 1}, {4, 2},
+        QuantizationMode::BOOL);
+    const Tensor view = parent.slice_first_axis(1, 3);
+    require(view.storage_offset() == 2,
+            "logical_not test view did not have a nonzero storage offset");
+    const std::vector<std::uint8_t> parent_before(
+        parent.data_bool(), parent.data_bool() + parent.numel());
+    const Tensor view_result = view.logical_not();
+    check_logical_not_result(view_result, {2, 2}, {0, 1, 1, 1},
+                             "Offset-view logical_not");
+    require(view_result.data_bool() != view.data_bool(),
+            "Offset-view logical_not output aliases its input");
+    require(std::vector<std::uint8_t>(
+                parent.data_bool(), parent.data_bool() + parent.numel()) ==
+                parent_before,
+            "Offset-view logical_not mutated its parent");
+
+    const Tensor repeated = mixed.logical_not();
+    check_logical_not_result(repeated, {4}, {0, 1, 0, 1},
+                             "Repeated logical_not");
+    require(repeated.data_bool() != mixed_result.data_bool(),
+            "Repeated logical_not calls reused output storage");
+    require(std::vector<std::uint8_t>(mixed.data_bool(),
+                                      mixed.data_bool() + mixed.numel()) ==
+                mixed_before,
+            "Repeated logical_not mutated its input");
+
+    const Tensor numeric(std::vector<float>{0.0f, 1.0f});
+    require_throws<std::runtime_error>(
+        [&] { (void)numeric.logical_not(); },
+        "logical_not accepted a non-BOOL tensor");
+}
+
+#if defined(LABNEURA_TEST_NEON)
+void check_neon_logical_not() {
+    using labneura::QuantizationMode;
+    using labneura::Tensor;
+
+    labneura::test::ScopedEnvironmentVariable backend_override(
+        "LABNEURA_BACKEND", "NEON");
+    require(labneura::detect_backend() == "NEON",
+            "NEON logical_not backend was not explicitly selected");
+    const auto selected_backend =
+        labneura::create_best_backend(1, QuantizationMode::BOOL);
+    require(dynamic_cast<labneura::NEONBackend*>(selected_backend.get()) !=
+                nullptr,
+            "Explicit NEON selection did not create a NEON backend");
+
+    for (std::size_t size = 0; size <= 33; ++size) {
+        std::vector<std::uint8_t> values(size);
+        std::vector<std::uint8_t> expected(size);
+        for (std::size_t i = 0; i < size; ++i) {
+            values[i] = static_cast<std::uint8_t>(i % 2);
+            expected[i] = static_cast<std::uint8_t>(values[i] == 0);
+        }
+        const Tensor input(values, QuantizationMode::BOOL);
+        const std::vector<std::uint8_t> before(input.data_bool(),
+                                               input.data_bool() + size);
+        const Tensor result = input.logical_not();
+        check_logical_not_result(result, {size}, expected,
+                                 "NEON logical_not size " +
+                                     std::to_string(size));
+        require(result.data_bool() != input.data_bool(),
+                "NEON logical_not output aliases its input");
+        require(std::vector<std::uint8_t>(input.data_bool(),
+                                          input.data_bool() + size) == before,
+                "NEON logical_not mutated its input");
+    }
+
+    check_logical_not_result(
+        Tensor(std::vector<std::uint8_t>(32, 0), QuantizationMode::BOOL)
+            .logical_not(),
+        {32}, std::vector<std::uint8_t>(32, 1),
+        "NEON all-false logical_not");
+    check_logical_not_result(
+        Tensor(std::vector<std::uint8_t>(32, 1), QuantizationMode::BOOL)
+            .logical_not(),
+        {32}, std::vector<std::uint8_t>(32, 0),
+        "NEON all-true logical_not");
+
+    for (const std::uint8_t value : {std::uint8_t{0}, std::uint8_t{1}}) {
+        const Tensor scalar = Tensor::from_flat(
+            std::vector<std::uint8_t>{value}, {}, QuantizationMode::BOOL);
+        check_logical_not_result(
+            scalar.logical_not(), {},
+            {static_cast<std::uint8_t>(value == 0)},
+            "NEON scalar logical_not");
+    }
+
+    const Tensor empty = Tensor::from_flat(
+        std::vector<std::uint8_t>{}, {0, 3}, QuantizationMode::BOOL);
+    check_logical_not_result(empty.logical_not(), {0, 3}, {},
+                             "NEON empty logical_not");
+
+    std::vector<std::uint8_t> parent_values(34);
+    for (std::size_t i = 0; i < parent_values.size(); ++i) {
+        parent_values[i] = static_cast<std::uint8_t>(i % 2);
+    }
+    const Tensor parent =
+        Tensor::from_flat(parent_values, {2, 17}, QuantizationMode::BOOL);
+    const Tensor view = parent.slice_first_axis(1, 2);
+    require(view.storage_offset() == 17,
+            "NEON logical_not test view has no storage offset");
+    const Tensor view_result = view.logical_not();
+    std::vector<std::uint8_t> view_expected(17);
+    for (std::size_t i = 0; i < view_expected.size(); ++i) {
+        view_expected[i] =
+            static_cast<std::uint8_t>(parent_values[17 + i] == 0);
+    }
+    check_logical_not_result(view_result, {1, 17}, view_expected,
+                             "NEON unaligned offset-view logical_not");
+    require(view_result.data_bool() != view.data_bool(),
+            "NEON offset-view logical_not output aliases its input");
+
+    const Tensor repeated = view.logical_not();
+    require(repeated.data_bool() != view_result.data_bool() &&
+                std::vector<std::uint8_t>(repeated.data_bool(),
+                                          repeated.data_bool() + repeated.numel()) ==
+                    view_expected,
+            "Repeated NEON logical_not calls reused storage or changed values");
+    require(std::vector<std::uint8_t>(parent.data_bool(),
+                                      parent.data_bool() + parent.numel()) ==
+                parent_values,
+            "NEON logical_not mutated its offset-view parent");
+}
+#endif
+
+#if defined(LABNEURA_TEST_AVX2)
+void check_avx2_logical_not() {
+    using labneura::QuantizationMode;
+    using labneura::Tensor;
+
+    labneura::test::ScopedEnvironmentVariable backend_override(
+        "LABNEURA_BACKEND", "AVX2");
+    require(labneura::detect_backend() == "AVX2",
+            "AVX2 logical_not backend was not explicitly selected");
+    const auto selected_backend =
+        labneura::create_best_backend(1, QuantizationMode::BOOL);
+    require(dynamic_cast<labneura::AVX2Backend*>(selected_backend.get()) !=
+                nullptr,
+            "Explicit AVX2 selection did not create an AVX2 backend");
+
+    for (std::size_t size = 0; size <= 66; ++size) {
+        std::vector<std::uint8_t> values(size);
+        std::vector<std::uint8_t> expected(size);
+        for (std::size_t i = 0; i < size; ++i) {
+            values[i] = static_cast<std::uint8_t>(i % 2);
+            expected[i] = static_cast<std::uint8_t>(values[i] == 0);
+        }
+        const Tensor input(values, QuantizationMode::BOOL);
+        const std::vector<std::uint8_t> before(input.data_bool(),
+                                               input.data_bool() + size);
+        const Tensor result = input.logical_not();
+        check_logical_not_result(result, {size}, expected,
+                                 "AVX2 logical_not size " +
+                                     std::to_string(size));
+        require(result.data_bool() != input.data_bool(),
+                "AVX2 logical_not output aliases its input");
+        require(std::vector<std::uint8_t>(input.data_bool(),
+                                          input.data_bool() + size) == before,
+                "AVX2 logical_not mutated its input");
+    }
+
+    check_logical_not_result(
+        Tensor(std::vector<std::uint8_t>(64, 0), QuantizationMode::BOOL)
+            .logical_not(),
+        {64}, std::vector<std::uint8_t>(64, 1),
+        "AVX2 all-false logical_not");
+    check_logical_not_result(
+        Tensor(std::vector<std::uint8_t>(64, 1), QuantizationMode::BOOL)
+            .logical_not(),
+        {64}, std::vector<std::uint8_t>(64, 0),
+        "AVX2 all-true logical_not");
+
+    for (const std::uint8_t value : {std::uint8_t{0}, std::uint8_t{1}}) {
+        const Tensor scalar = Tensor::from_flat(
+            std::vector<std::uint8_t>{value}, {}, QuantizationMode::BOOL);
+        check_logical_not_result(
+            scalar.logical_not(), {},
+            {static_cast<std::uint8_t>(value == 0)},
+            "AVX2 scalar logical_not");
+    }
+
+    const Tensor empty = Tensor::from_flat(
+        std::vector<std::uint8_t>{}, {0, 3}, QuantizationMode::BOOL);
+    check_logical_not_result(empty.logical_not(), {0, 3}, {},
+                             "AVX2 empty logical_not");
+
+    std::vector<std::uint8_t> parent_values(66);
+    for (std::size_t i = 0; i < parent_values.size(); ++i) {
+        parent_values[i] = static_cast<std::uint8_t>(i % 2);
+    }
+    const Tensor parent =
+        Tensor::from_flat(parent_values, {2, 33}, QuantizationMode::BOOL);
+    const Tensor view = parent.slice_first_axis(1, 2);
+    require(view.storage_offset() == 33,
+            "AVX2 logical_not test view has no storage offset");
+    const Tensor view_result = view.logical_not();
+    std::vector<std::uint8_t> view_expected(33);
+    for (std::size_t i = 0; i < view_expected.size(); ++i) {
+        view_expected[i] =
+            static_cast<std::uint8_t>(parent_values[33 + i] == 0);
+    }
+    check_logical_not_result(view_result, {1, 33}, view_expected,
+                             "AVX2 unaligned offset-view logical_not");
+    require(view_result.data_bool() != view.data_bool(),
+            "AVX2 offset-view logical_not output aliases its input");
+
+    const Tensor repeated = view.logical_not();
+    require(repeated.data_bool() != view_result.data_bool() &&
+                std::vector<std::uint8_t>(repeated.data_bool(),
+                                          repeated.data_bool() + repeated.numel()) ==
+                    view_expected,
+            "Repeated AVX2 logical_not calls reused storage or changed values");
+    require(std::vector<std::uint8_t>(parent.data_bool(),
+                                      parent.data_bool() + parent.numel()) ==
+                parent_values,
+            "AVX2 logical_not mutated its offset-view parent");
+}
+#endif
+
 void check_bool_backend(const std::string& backend_name) {
     using labneura::QuantizationMode;
     using labneura::Tensor;
@@ -174,6 +461,7 @@ int main(int argc, char** argv) {
     try {
         if (backend == "GENERIC") {
             check_bool_backend(backend);
+            check_generic_logical_not();
         } else if (backend == "NEON") {
 #if !defined(LABNEURA_TEST_NEON)
             throw SkipTest("NEON backend was not compiled for this target");
@@ -182,6 +470,7 @@ int main(int argc, char** argv) {
                 throw SkipTest("CPU does not support NEON");
             }
             check_bool_backend(backend);
+            check_neon_logical_not();
 #endif
         } else if (backend == "AVX2") {
 #if !defined(LABNEURA_TEST_AVX2)
@@ -191,6 +480,7 @@ int main(int argc, char** argv) {
                 throw SkipTest("CPU/OS does not support AVX2 state");
             }
             check_bool_backend(backend);
+            check_avx2_logical_not();
 #endif
         } else {
             throw std::invalid_argument("Unknown backend: " + backend);

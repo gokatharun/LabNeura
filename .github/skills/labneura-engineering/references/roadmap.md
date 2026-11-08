@@ -105,8 +105,11 @@ Record dtype, operation, shape, allocating/in-place, layout, cache regime, backe
 | M3.3.2 | BOOL dtype foundation | Canonical one-byte storage, construction/access/copy/lifetime across Generic, NEON, and AVX2 |
 | M3.3.3 | Generic tensor comparisons | EQ/NE/LT/LE/GT/GE with BOOL output, shared broadcasting, explicit non-Generic rejection |
 | M3.3.4 | NEON tensor comparisons | Native NEON EQ/NE/LT/LE/GT/GE for FP32/FP16/INT16/INT8, explicit Generic parity |
-| M3.3.5 | AVX2 tensor comparisons | AVX2 kernels and parity tests implemented; x86 hardware/runtime validation pending |
-| M3 (later) | Logical operations | BOOL logical AND/OR/NOT and `where()` after comparison backends are complete |
+| M3.3.5 | AVX2 tensor comparisons | Complete: AVX2 kernels and parity tests passed x86_64 runtime validation |
+| M3.4.1 | Generic BOOL logical NOT | Complete: elementwise `logical_not` for BOOL tensors |
+| M3.4.2 | NEON BOOL logical NOT | Complete: native NEON vector kernel; explicit backend tests and ARM64 runtime validation passed |
+| M3.4.3 | AVX2 BOOL logical NOT | Kernel, dispatch, and explicit tests added; x86_64 AVX2 runtime validation pending |
+| M3 (later) | Logical operations | BOOL logical AND/OR and `where()` remain future work |
 | M4 | Reductions | Axis/keepdims/dtype/edge tests |
 | M5 | Dot and matmul | 2D and batched semantics, dedicated kernels |
 | M6 | ML math | Numerical stability and reference tests |
@@ -116,6 +119,13 @@ Record dtype, operation, shape, allocating/in-place, layout, cache regime, backe
 | M10 | Autograd/training utilities if desired | Separate design and milestones |
 
 Backend optimization is continuous during M1–M7: Generic first, then optimized CPU backends with immediate tests.
+
+M3.3.5 was validated in GitHub Actions run `42390563490` on implementation
+commit `895b7633e1cd6f48b1459397cd664ee1d4dd2c08`: AVX2 native and Python
+comparison tests passed; the full native suite had zero failures, and the
+full AVX2-selected Python suite reported 1156 passed, 215 skipped, and 3
+warnings. AVX2 arithmetic and FP16/F16C vector/scalar regression tests passed.
+This is functional validation; no performance improvement is claimed.
 
 M2.3 first-axis slice/select implementation and Generic/NEON local tests are
 present in the current worktree. AVX2 runtime validation remains pending on an
