@@ -1,6 +1,6 @@
 # Python API benchmarks (LabNeura vs NumPy/PyTorch)
 
-Commit: `665991bdf5f790297f29dc1423674d6278947d68` - [workflow run](https://github.com/gokatharun/LabNeura/actions/runs/42449211301)
+Commit: `1089815717ce37815210ec425ec295678c2d96ef` - [workflow run](https://github.com/gokatharun/LabNeura/actions/runs/42455884336)
 
 Each architecture is measured on its own runner; do not compare across rows.
 
