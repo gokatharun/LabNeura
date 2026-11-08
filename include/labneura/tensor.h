@@ -161,6 +161,8 @@ public:
 
     // Elementwise logical NOT for BOOL tensors; returns independent storage.
     Tensor logical_not() const;
+    // Elementwise logical AND for BOOL tensors; supports broadcasting.
+    Tensor logical_and(const Tensor& other) const;
     
     // In-place addition: this += other
     void add_inplace(const Tensor& other);

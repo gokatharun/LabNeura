@@ -44,6 +44,10 @@ namespace labneura {
                 ComparisonType comparison, std::size_t lhs_numel,
                 std::size_t rhs_numel) const;
             void logical_not_into(NEONBackend& output) const;
+            void logical_and_broadcast(
+                const NEONBackend& other, NEONBackend& output,
+                const detail::BroadcastPlan& plan, std::size_t lhs_numel,
+                std::size_t rhs_numel) const;
 
             std::size_t size_;
             std::size_t aligned_size_;

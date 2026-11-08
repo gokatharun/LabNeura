@@ -108,8 +108,9 @@ Record dtype, operation, shape, allocating/in-place, layout, cache regime, backe
 | M3.3.5 | AVX2 tensor comparisons | Complete: AVX2 kernels and parity tests passed x86_64 runtime validation |
 | M3.4.1 | Generic BOOL logical NOT | Complete: elementwise `logical_not` for BOOL tensors |
 | M3.4.2 | NEON BOOL logical NOT | Complete: native NEON vector kernel; explicit backend tests and ARM64 runtime validation passed |
-| M3.4.3 | AVX2 BOOL logical NOT | Kernel, dispatch, and explicit tests added; x86_64 AVX2 runtime validation pending |
-| M3 (later) | Logical operations | BOOL logical AND/OR and `where()` remain future work |
+| M3.4.3 | AVX2 BOOL logical NOT | Complete: AVX2 kernel and explicit tests passed x86_64 runtime validation in CI run `42449211301` |
+| M3.4.4 | BOOL logical AND | Generic, NEON, and AVX2 kernels, broadcasting, dispatch, and explicit tests; AVX2 x86_64 runtime validation pending |
+| M3 (later) | Logical operations | BOOL logical OR and `where()` remain future work |
 | M4 | Reductions | Axis/keepdims/dtype/edge tests |
 | M5 | Dot and matmul | 2D and batched semantics, dedicated kernels |
 | M6 | ML math | Numerical stability and reference tests |

@@ -322,6 +322,8 @@ PYBIND11_MODULE(labneura, m) {
              "Compare whether this tensor is greater than or equal to another")
         .def("logical_not", &labneura::Tensor::logical_not,
              "Return the elementwise logical NOT of a BOOL tensor")
+        .def("logical_and", &labneura::Tensor::logical_and,
+             "Return the elementwise logical AND of two BOOL tensors")
         
         // Data access
         .def("data_fp32", [](labneura::Tensor& self) {

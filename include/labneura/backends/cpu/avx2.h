@@ -47,6 +47,10 @@ private:
         const detail::BroadcastPlan& plan, ComparisonType comparison,
         std::size_t lhs_numel, std::size_t rhs_numel) const;
     void logical_not_into(AVX2Backend& output) const;
+    void logical_and_broadcast(
+        const AVX2Backend& other, AVX2Backend& output,
+        const detail::BroadcastPlan& plan, std::size_t lhs_numel,
+        std::size_t rhs_numel) const;
 
     std::size_t size_;
     std::size_t aligned_size_;

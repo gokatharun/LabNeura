@@ -164,6 +164,57 @@ def test_logical_not_rejects_non_bool_input(monkeypatch):
         numeric.logical_not()
 
 
+def test_generic_logical_and_broadcast_scalars_empty_and_views(monkeypatch):
+    _force_generic(monkeypatch)
+    lhs = labneura.Tensor.from_flat([False, False, True, True], [2, 2], BOOL)
+    rhs = labneura.Tensor.from_flat([False, True, False, True], [2, 2], BOOL)
+    result = lhs.logical_and(rhs)
+    assert result is not lhs
+    assert result.quantization_mode() == BOOL
+    assert result.shape == (2, 2)
+    assert result.data_bool() == [False, False, False, True]
+    assert lhs.data_bool() == [False, False, True, True]
+
+    row = labneura.Tensor.from_flat([False, True], [2, 1], BOOL)
+    column = labneura.Tensor.from_flat([True, False, True], [1, 3], BOOL)
+    broadcast = row.logical_and(column)
+    assert broadcast.shape == (2, 3)
+    assert broadcast.data_bool() == [False, False, False, True, False, True]
+
+    scalar = labneura.Tensor.from_flat([True], [], BOOL)
+    assert scalar.logical_and(rhs).shape == (2, 2)
+    assert scalar.logical_and(rhs).data_bool() == rhs.data_bool()
+    false_scalar = labneura.Tensor.from_flat([False], [], BOOL)
+    true_scalar = labneura.Tensor.from_flat([True], [], BOOL)
+    scalar_result = false_scalar.logical_and(true_scalar)
+    assert scalar_result.shape == ()
+    assert scalar_result.data_bool() == [False]
+
+    empty = labneura.Tensor.from_flat([], [0, 3], BOOL)
+    broadcast_empty = labneura.Tensor.from_flat([True, False, True], [1, 3], BOOL)
+    empty_result = empty.logical_and(broadcast_empty)
+    assert empty_result.shape == (0, 3)
+    assert empty_result.numel() == 0
+    assert empty_result.data_bool() == []
+
+    parent_values = [index % 2 == 0 for index in range(66)]
+    parent = labneura.Tensor.from_flat(parent_values, [2, 33], BOOL)
+    view = parent.slice_first_axis(1, 2)
+    assert view.storage_offset == 33
+    view_result = view.logical_and(
+        labneura.Tensor([True] * 33, dtype=BOOL)
+    )
+    assert view_result.shape == (1, 33)
+    assert view_result.data_bool() == parent_values[33:]
+    assert parent.data_bool() == parent_values
+    assert labneura.detect_backend() == "GENERIC"
+
+    with pytest.raises(RuntimeError, match="requires BOOL input tensors"):
+        lhs.logical_and(labneura.Tensor([1.0]))
+    with pytest.raises(RuntimeError, match="Tensor shape mismatch"):
+        lhs.logical_and(labneura.Tensor([True, False, True], dtype=BOOL))
+
+
 def test_avx2_logical_not_values_vector_tails_views_and_storage(monkeypatch):
     monkeypatch.setenv("LABNEURA_BACKEND", "AVX2")
     try:
@@ -218,6 +269,58 @@ def test_avx2_logical_not_values_vector_tails_views_and_storage(monkeypatch):
     assert second.data_bool() == first.data_bool()
     assert second is not first
     assert source.data_bool() == source_before
+
+def test_avx2_logical_and_broadcast_vector_tails_and_views(monkeypatch):
+    monkeypatch.setenv("LABNEURA_BACKEND", "AVX2")
+    try:
+        selected = labneura.detect_backend()
+    except (RuntimeError, ValueError) as error:
+        pytest.skip(f"AVX2 backend unavailable: {error}")
+    if selected != "AVX2":
+        pytest.skip("AVX2 backend unavailable on this host")
+
+    for size in range(66):
+        lhs_values = [(index // 2) % 2 == 1 for index in range(size)]
+        rhs_values = [index % 2 == 1 for index in range(size)]
+        lhs = labneura.Tensor(lhs_values, dtype=BOOL)
+        rhs = labneura.Tensor(rhs_values, dtype=BOOL)
+        result = lhs.logical_and(rhs)
+        expected = [left and right for left, right in zip(lhs_values, rhs_values)]
+        assert labneura.detect_backend() == "AVX2"
+        assert result.quantization_mode() == BOOL
+        assert result.shape == (size,)
+        assert result.data_bool() == expected
+        assert all(type(value) is bool for value in result.data_bool())
+        assert lhs.data_bool() == lhs_values
+        assert rhs.data_bool() == rhs_values
+
+    row = labneura.Tensor.from_flat([False, True], [2, 1], BOOL)
+    column = labneura.Tensor.from_flat(
+        [True, False, True, True, True, False, False, True, True, False,
+         True, True, False, True, True, False, True],
+        [1, 17],
+        BOOL,
+    )
+    broadcast = row.logical_and(column)
+    assert broadcast.shape == (2, 17)
+    assert broadcast.data_bool() == [False] * 17 + column.data_bool()[0:17]
+
+    scalar = labneura.Tensor.from_flat([True], [], BOOL)
+    scalar_result = scalar.logical_and(column)
+    assert scalar_result.shape == (1, 17)
+    assert scalar_result.data_bool() == column.data_bool()
+    false_scalar = labneura.Tensor.from_flat([False], [], BOOL)
+    assert false_scalar.logical_and(scalar).shape == ()
+    assert false_scalar.logical_and(scalar).data_bool() == [False]
+
+    parent_values = [index % 2 == 0 for index in range(66)]
+    parent = labneura.Tensor.from_flat(parent_values, [2, 33], BOOL)
+    view = parent.slice_first_axis(1, 2)
+    view_result = view.logical_and(labneura.Tensor([True] * 33, dtype=BOOL))
+    assert view.storage_offset == 33
+    assert view_result.shape == (1, 33)
+    assert view_result.data_bool() == parent_values[33:]
+    assert parent.data_bool() == parent_values
 
 
 def test_neon_logical_not_values_vector_tails_views_and_storage(monkeypatch):
@@ -274,3 +377,60 @@ def test_neon_logical_not_values_vector_tails_views_and_storage(monkeypatch):
     assert second.data_bool() == first.data_bool()
     assert second is not first
     assert source.data_bool() == source_before
+
+
+def test_neon_logical_and_broadcast_vector_tails_and_views(monkeypatch):
+    monkeypatch.setenv("LABNEURA_BACKEND", "NEON")
+    try:
+        selected = labneura.detect_backend()
+    except (RuntimeError, ValueError) as error:
+        pytest.skip(f"NEON backend unavailable: {error}")
+    if selected != "NEON":
+        pytest.skip("NEON backend unavailable on this host")
+
+    for size in range(34):
+        lhs_values = [(index // 2) % 2 == 1 for index in range(size)]
+        rhs_values = [index % 2 == 1 for index in range(size)]
+        lhs = labneura.Tensor(lhs_values, dtype=BOOL)
+        rhs = labneura.Tensor(rhs_values, dtype=BOOL)
+        result = lhs.logical_and(rhs)
+        expected = [left and right for left, right in zip(lhs_values, rhs_values)]
+        assert labneura.detect_backend() == "NEON"
+        assert result.quantization_mode() == BOOL
+        assert result.shape == (size,)
+        assert result.data_bool() == expected
+        assert all(type(value) is bool for value in result.data_bool())
+        assert lhs.data_bool() == lhs_values
+        assert rhs.data_bool() == rhs_values
+
+    row = labneura.Tensor.from_flat([False, True], [2, 1], BOOL)
+    column = labneura.Tensor.from_flat(
+        [True, False, True, True, True, False, False, True, True, False,
+         True, True, False, True, True, False, True],
+        [1, 17],
+        BOOL,
+    )
+    broadcast = row.logical_and(column)
+    assert broadcast.shape == (2, 17)
+    assert broadcast.data_bool() == [False] * 17 + column.data_bool()
+    scalar = labneura.Tensor.from_flat([True], [], BOOL)
+    assert scalar.logical_and(scalar).shape == ()
+    assert scalar.logical_and(scalar).data_bool() == [True]
+    false_scalar = labneura.Tensor.from_flat([False], [], BOOL)
+    assert false_scalar.logical_and(scalar).data_bool() == [False]
+
+    empty = labneura.Tensor.from_flat([], [0, 3], BOOL)
+    empty_result = empty.logical_and(
+        labneura.Tensor.from_flat([True, False, True], [1, 3], BOOL)
+    )
+    assert empty_result.shape == (0, 3)
+    assert empty_result.data_bool() == []
+
+    parent_values = [index % 2 == 0 for index in range(34)]
+    parent = labneura.Tensor.from_flat(parent_values, [2, 17], BOOL)
+    view = parent.slice_first_axis(1, 2)
+    view_result = view.logical_and(labneura.Tensor([True] * 17, dtype=BOOL))
+    assert view.storage_offset == 17
+    assert view_result.shape == (1, 17)
+    assert view_result.data_bool() == parent_values[17:]
+    assert parent.data_bool() == parent_values
