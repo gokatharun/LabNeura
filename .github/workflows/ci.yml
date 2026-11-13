@@ -37,6 +37,38 @@ jobs:
           export CXX=g++-13
           make clean install test
 
+  eda-equivalence-yosys:
+    name: EDA combinational equivalence (Yosys)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Yosys
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y yosys
+          command -v yosys
+          yosys -V
+
+      - name: Install Python test dependencies
+        run: make deps
+
+      - name: Build and install current checkout
+        run: make install
+
+      - name: Run EDA equivalence tests
+        run: |
+          command -v yosys
+          yosys -V
+          python -m pytest -o addopts= -q tests/test_eda_equivalence.py
+
   build-test:
     name: Build & Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
