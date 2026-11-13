@@ -83,6 +83,14 @@ def _build_blif(design, tmp_path):
                  if port.direction == eda.PortDirection.INPUT) == design.inputs
     assert tuple(port.name for port in parsed.ports
                  if port.direction == eda.PortDirection.OUTPUT) == design.outputs
+    assert tuple(port.width for port in parsed.ports
+                 if port.direction == eda.PortDirection.INPUT) == (
+                     1,
+                 ) * len(design.inputs)
+    assert tuple(port.width for port in parsed.ports
+                 if port.direction == eda.PortDirection.OUTPUT) == (
+                     1,
+                 ) * len(design.outputs)
 
     generic = eda.generic_map(parsed)
     mapped = eda.fpga_map(generic, lut_size=4)
@@ -107,30 +115,83 @@ def _parse_blif(blif):
     inputs = []
     outputs = []
     functions = []
+    drivers = set()
+    seen_inputs = False
+    seen_outputs = False
+    ended = False
     position = 0
 
     while position < len(lines):
         fields = lines[position].split()
         directive = fields[0]
+        if ended:
+            raise AssertionError(f"content after .end: {lines[position]}")
         if directive == ".model":
+            if model is not None or len(fields) != 2:
+                raise AssertionError(f"malformed or duplicate .model: {lines[position]}")
             model = fields[1]
         elif directive == ".inputs":
+            if seen_inputs or len(fields[1:]) != len(set(fields[1:])):
+                raise AssertionError(f"malformed or duplicate .inputs: {lines[position]}")
+            seen_inputs = True
             inputs = fields[1:]
         elif directive == ".outputs":
+            if seen_outputs or len(fields[1:]) != len(set(fields[1:])):
+                raise AssertionError(f"malformed or duplicate .outputs: {lines[position]}")
+            seen_outputs = True
             outputs = fields[1:]
         elif directive == ".names":
             if len(fields) < 2:
                 raise AssertionError(f"malformed BLIF directive: {lines[position]}")
             function_inputs = fields[1:-1]
             output = fields[-1]
+            if len(function_inputs) != len(set(function_inputs)):
+                raise AssertionError(f"duplicate .names input: {lines[position]}")
+            if output in drivers or output in inputs:
+                raise AssertionError(f"duplicate BLIF driver for {output}")
+            drivers.add(output)
             rows = []
             position += 1
             while position < len(lines) and not lines[position].startswith("."):
-                rows.append(lines[position].split())
+                row = lines[position].split()
+                if function_inputs:
+                    if (len(row) != 2 or len(row[0]) != len(function_inputs) or
+                            any(bit not in "01-" for bit in row[0]) or
+                            row[1] != "1"):
+                        raise AssertionError(
+                            f"malformed .names row for {output}: {lines[position]}"
+                        )
+                elif row != ["1"]:
+                    raise AssertionError(
+                        f"malformed constant .names row for {output}: {lines[position]}"
+                    )
+                rows.append(row)
                 position += 1
             functions.append((function_inputs, output, rows))
             continue
+        elif directive == ".end":
+            if len(fields) != 1:
+                raise AssertionError(f"malformed .end: {lines[position]}")
+            ended = True
+        else:
+            raise AssertionError(f"unsupported BLIF directive: {lines[position]}")
         position += 1
+
+    if model is None or not seen_inputs or not seen_outputs or not ended:
+        raise AssertionError("BLIF is missing .model, .inputs, .outputs, or .end")
+    if len(inputs) != len(set(inputs)) or len(outputs) != len(set(outputs)):
+        raise AssertionError("BLIF contains duplicate interface nets")
+    if drivers.intersection(inputs):
+        raise AssertionError("BLIF input nets cannot also have .names drivers")
+    if any(output not in drivers and output not in inputs for output in outputs):
+        raise AssertionError("BLIF contains an undriven output")
+    known_nets = set(inputs) | drivers
+    unresolved = {
+        name for function_inputs, _, _ in functions for name in function_inputs
+        if name not in known_nets
+    }
+    if unresolved:
+        raise AssertionError(f"BLIF contains unresolved input nets: {sorted(unresolved)}")
 
     return model, inputs, outputs, functions
 
@@ -191,6 +252,37 @@ def test_blif_truth_tables_match_exhaustive_reference(tmp_path, design):
             f"actual={dict(zip(design.outputs, actual))}"
         )
 
+
+@pytest.mark.parametrize("blif", [
+    ".model m\n.inputs a\n.outputs y\n.subckt cell A=a Y=y\n.end\n",
+    ".model m\n.inputs a b\n.outputs y\n.names a b y\n1 1\n.end\n",
+    ".model m\n.inputs a\n.outputs y\n.names a y\n1 1\n.names a y\n0 1\n.end\n",
+])
+def test_blif_parser_rejects_unsupported_or_malformed_subset(tmp_path, blif):
+    with pytest.raises(AssertionError):
+        _parse_blif(blif)
+
+
+def test_blif_truth_table_evaluator_handles_constants_and_multiple_outputs():
+    blif = (
+        ".model constants\n"
+        ".inputs a\n"
+        ".outputs one zero\n"
+        ".names one\n"
+        "1\n"
+        ".names zero\n"
+        ".end\n"
+    )
+    model, inputs, outputs, functions = _parse_blif(blif)
+
+    assert model == "constants"
+    assert inputs == ["a"]
+    assert outputs == ["one", "zero"]
+    for input_value in (0, 1):
+        values = _evaluate_blif(functions, {"a": input_value})
+        assert tuple(values[name] for name in outputs) == (1, 0)
+
+
 @pytest.fixture(scope="module")
 def yosys():
     executable = shutil.which("yosys")
@@ -220,6 +312,7 @@ def _run_equivalence(yosys, version, rtl_path, blif_path, gold, candidate,
         "\n".join((
             f"read_verilog -formal {_yosys_quote(rtl_path)}",
             f"read_blif {_yosys_quote(blif_path)}",
+            "proc",
             f"equiv_make {gold} {candidate} equiv",
             "prep -top equiv",
             "equiv_simple",
