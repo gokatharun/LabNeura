@@ -18,7 +18,6 @@ from pathlib import Path
 from packaging.requirements import Requirement
 
 
-VERSION = "0.4.3"
 COMPONENTS = ("labneura-core", "labneura-tensor", "labneura-eda")
 NATIVE_COMPONENTS = ("labneura-tensor", "labneura-eda")
 METADISTRIBUTIONS = ("labneura", "labneura-all")
@@ -62,6 +61,19 @@ def check_wheel_tags(name, wheel_tags, artifact_name):
     ):
         raise AssertionError(
             f"{artifact_name}: pure-Python wheel has platform tags {wheel_tags}"
+        )
+
+
+def check_wheel_readme(metadata, artifact_name):
+    content_type = metadata.get("Description-Content-Type", "")
+    description = metadata.get_payload()
+    if (
+        not content_type.lower().startswith("text/markdown")
+        or not isinstance(description, str)
+        or not description.strip()
+    ):
+        raise AssertionError(
+            f"{artifact_name}: missing non-empty Markdown long description"
         )
 
 
@@ -115,7 +127,7 @@ def wheel_index(wheelhouse: Path):
     return wheels
 
 
-def check_wheel_artifacts(wheelhouse: Path, expected_version=VERSION):
+def check_wheel_artifacts(wheelhouse: Path, expected_version):
     wheels = wheel_index(wheelhouse)
     owners = {}
     native_paths = []
@@ -133,6 +145,7 @@ def check_wheel_artifacts(wheelhouse: Path, expected_version=VERSION):
                     f"{path.name}: unexpected version {metadata['Version']} "
                     f"(expected {expected_version})"
                 )
+            check_wheel_readme(metadata, path.name)
             actual_dependencies = tuple(metadata.get_all("Requires-Dist", []))
             if normalized_dependencies(actual_dependencies) != normalized_dependencies(
                 EXPECTED_DEPENDENCIES[name]
@@ -541,7 +554,7 @@ def verify_matrix(wheels, wheelhouse, workdir):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("wheelhouse", type=Path)
-    parser.add_argument("--version", default=VERSION)
+    parser.add_argument("--version", required=True)
     parser.add_argument("--workdir", type=Path, required=True)
     args = parser.parse_args()
     wheelhouse = args.wheelhouse.resolve()

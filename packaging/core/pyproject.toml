@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "labneura-core"
 dynamic = ["version"]
 description = "Pure-Python package infrastructure for LabNeura components"
+readme = "README.md"
 requires-python = ">=3.8"
 license = { text = "MIT" }
 authors = [{ name = "LabNeura Authors" }]

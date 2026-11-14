@@ -88,6 +88,7 @@ jobs:
         run: >-
           python scripts/verify_wheel_matrix.py
           "$RUNNER_TEMP/labneura-wheelhouse"
+          --version "$(python scripts/update_version.py --get-version)"
           --workdir "$RUNNER_TEMP/labneura-wheel-matrix"
 
   gcc-source-build:

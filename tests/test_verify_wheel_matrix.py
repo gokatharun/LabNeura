@@ -1,7 +1,10 @@
+from email import message_from_string
+
 import pytest
 
 from scripts.verify_wheel_matrix import (
     check_wheel_tags,
+    check_wheel_readme,
     normalized_dependencies,
     otool_load_information,
 )
@@ -41,6 +44,29 @@ def test_native_component_rejects_pure_python_tag():
 
 def test_native_component_accepts_platform_tag():
     check_wheel_tags("labneura-tensor", ["cp311-cp311-macosx_14_0_arm64"], "tensor.whl")
+
+
+def test_wheel_requires_nonempty_markdown_description():
+    metadata = message_from_string(
+        "Name: labneura-core\n"
+        "Description-Content-Type: text/markdown; charset=UTF-8\n\n"
+        "# LabNeura Core\n"
+    )
+
+    check_wheel_readme(metadata, "core.whl")
+
+
+@pytest.mark.parametrize(
+    "headers",
+    (
+        "Name: labneura-core\n\n",
+        "Name: labneura-core\nDescription-Content-Type: text/plain\n\nDescription\n",
+        "Name: labneura-core\nDescription-Content-Type: text/markdown\n\n   \n",
+    ),
+)
+def test_wheel_rejects_missing_or_non_markdown_description(headers):
+    with pytest.raises(AssertionError, match="missing non-empty Markdown"):
+        check_wheel_readme(message_from_string(headers), "core.whl")
 
 
 def test_otool_output_header_is_not_mistaken_for_a_runtime_path():

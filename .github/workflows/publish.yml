@@ -189,8 +189,15 @@ jobs:
   publish:
     name: Publish distributions
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     needs: build
     steps:
+      - name: Checkout default branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
       - name: Download built packages
         uses: actions/download-artifact@v4
         with:
@@ -231,6 +238,7 @@ jobs:
         run: |
           python - <<'PY'
           from collections import defaultdict
+          import os
           from pathlib import Path
 
           from packaging.utils import canonicalize_name, parse_wheel_filename
@@ -256,6 +264,14 @@ jobs:
               )
           if len(versions) != 1:
               raise SystemExit(f"wheels do not share one release version: {sorted(versions)}")
+          version = next(iter(versions))
+          if os.environ.get("GITHUB_EVENT_NAME") == "release":
+              release_version = os.environ["GITHUB_REF_NAME"].removeprefix("v")
+              if version != release_version:
+                  raise SystemExit(
+                      f"wheel version {version} does not match release "
+                      f"tag version {release_version}"
+                  )
           for name in ("labneura-core", "labneura", "labneura-all"):
               if len(distributions[name]) != 1:
                   raise SystemExit(f"expected one pure wheel for {name}")
@@ -285,7 +301,9 @@ jobs:
                           raise SystemExit(
                               f"{name} lacks {python_tag} wheel for {family}"
                           )
-          print(f"Validated all five distributions at version {next(iter(versions))}")
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env_file:
+              env_file.write(f"LABNEURA_WHEEL_VERSION={version}\n")
+          print(f"Validated all five distributions at version {version}")
           print(f"Collected {sum(map(len, distributions.values()))} wheels")
           PY
           python -m pip install --upgrade twine
@@ -297,12 +315,51 @@ jobs:
             done
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Commit wheels to the repository
+        if: github.event_name == 'release'
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        shell: bash
+        run: |
+          destination="release-artifacts/$LABNEURA_WHEEL_VERSION/dist"
+          mkdir -p "$destination"
+          for wheel in dist/*.whl; do
+            target="$destination/$(basename "$wheel")"
+            if [[ -e "$target" ]]; then
+              if ! cmp -s "$wheel" "$target"; then
+                echo "Refusing to replace different archived wheel: $target" >&2
+                exit 1
+              fi
+            else
+              cp "$wheel" "$target"
+            fi
+          done
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$destination"
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: archive wheels for $LABNEURA_WHEEL_VERSION"
+            git push origin "HEAD:$DEFAULT_BRANCH"
+          fi
+
+      - name: Attach wheels to the GitHub Release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$GITHUB_REF_NAME" dist/*.whl --clobber
+
       - name: Publish to PyPI
         if: github.event_name == 'release'
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
-        run: python -m twine upload --non-interactive dist/*
+        run: |
+          if [[ -z "$TWINE_PASSWORD" ]]; then
+            echo "PYPI_API_TOKEN is not configured for this repository." >&2
+            exit 1
+          fi
+          python -m twine upload --non-interactive --skip-existing dist/*
 
       - name: Publish to TestPyPI (manual dispatch)
         if: github.event_name == 'workflow_dispatch'
