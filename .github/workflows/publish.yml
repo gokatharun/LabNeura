@@ -429,8 +429,6 @@ jobs:
   publish:
     name: Publish distributions
     runs-on: ubuntu-latest
-    env:
-      WHEEL_DIST: ${{ runner.temp }}/labneura-release-dist
     permissions:
       contents: write
     needs: verify-platform-wheels
@@ -453,6 +451,8 @@ jobs:
 
       - name: Flatten downloaded wheel artifacts
         shell: bash
+        env:
+          WHEEL_DIST: ${{ runner.temp }}/labneura-release-dist
         run: |
           python - <<'PY'
           import os
@@ -478,6 +478,8 @@ jobs:
 
       - name: Check distribution metadata
         shell: bash
+        env:
+          WHEEL_DIST: ${{ runner.temp }}/labneura-release-dist
         run: |
           python - <<'PY'
           from collections import defaultdict
@@ -571,6 +573,7 @@ jobs:
         if: github.event_name == 'release'
         env:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          WHEEL_DIST: ${{ runner.temp }}/labneura-release-dist
         shell: bash
         run: |
           destination="release-artifacts/$LABNEURA_WHEEL_VERSION/dist"
@@ -599,6 +602,7 @@ jobs:
         if: github.event_name == 'release'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WHEEL_DIST: ${{ runner.temp }}/labneura-release-dist
         run: gh release upload "$GITHUB_REF_NAME" "$WHEEL_DIST"/*.whl --clobber
 
       - name: Publish to PyPI
@@ -606,6 +610,7 @@ jobs:
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+          WHEEL_DIST: ${{ runner.temp }}/labneura-release-dist
         run: |
           if [[ -z "$TWINE_PASSWORD" ]]; then
             echo "PYPI_API_TOKEN is not configured for this repository." >&2
@@ -618,5 +623,6 @@ jobs:
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.TEST_PYPI_API_TOKEN }}
+          WHEEL_DIST: ${{ runner.temp }}/labneura-release-dist
         run: |
           python -m twine upload --repository testpypi --non-interactive "$WHEEL_DIST"/*
