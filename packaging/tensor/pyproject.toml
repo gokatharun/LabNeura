@@ -4,7 +4,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "labneura-tensor"
-version = "0.4.3"
+version = "0.4.4"
 description = "SIMD-accelerated Tensor component for LabNeura"
 requires-python = ">=3.8"
 license = { text = "MIT" }
