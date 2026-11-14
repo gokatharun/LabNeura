@@ -62,7 +62,8 @@ jobs:
               ("labneura-tensor", "labneura/_tensor"),
               ("labneura-eda", "labneura/_eda"),
           ):
-              wheels = list(wheelhouse.glob(f"{distribution}-*.whl"))
+              wheel_stem = distribution.replace("-", "_")
+              wheels = list(wheelhouse.glob(f"{wheel_stem}-*.whl"))
               if len(wheels) != 1:
                   raise SystemExit(f"expected one {distribution} wheel, found {wheels}")
               with zipfile.ZipFile(wheels[0]) as archive:
