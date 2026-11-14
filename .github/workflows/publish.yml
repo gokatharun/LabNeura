@@ -53,7 +53,7 @@ jobs:
             The release workflow builds and publishes using this tag as the package version.
 
   build:
-    name: Build split distributions (${{ matrix.platform }})
+    name: Build split distributions (${{ matrix.platform }}, ${{ matrix.python_group }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -63,18 +63,74 @@ jobs:
             platform: linux
             arch: x86_64
             linux_arch: x86_64
+            python_group: cp38-cp39
+            cibw_build: cp38-* cp39-*
+          - os: ubuntu-latest
+            platform: linux
+            arch: x86_64
+            linux_arch: x86_64
+            python_group: cp310-cp311
+            cibw_build: cp310-* cp311-*
+          - os: ubuntu-latest
+            platform: linux
+            arch: x86_64
+            linux_arch: x86_64
+            python_group: cp312-cp313
+            cibw_build: cp312-* cp313-*
           - os: ubuntu-24.04-arm
             platform: linux-arm64
             arch: arm64
             linux_arch: aarch64
+            python_group: cp38-cp39
+            cibw_build: cp38-* cp39-*
+          - os: ubuntu-24.04-arm
+            platform: linux-arm64
+            arch: arm64
+            linux_arch: aarch64
+            python_group: cp310-cp311
+            cibw_build: cp310-* cp311-*
+          - os: ubuntu-24.04-arm
+            platform: linux-arm64
+            arch: arm64
+            linux_arch: aarch64
+            python_group: cp312-cp313
+            cibw_build: cp312-* cp313-*
           - os: macos-15-intel
             platform: macos-intel
             arch: x86_64
             linux_arch: ""
+            python_group: cp38-cp39
+            cibw_build: cp38-* cp39-*
+          - os: macos-15-intel
+            platform: macos-intel
+            arch: x86_64
+            linux_arch: ""
+            python_group: cp310-cp311
+            cibw_build: cp310-* cp311-*
+          - os: macos-15-intel
+            platform: macos-intel
+            arch: x86_64
+            linux_arch: ""
+            python_group: cp312-cp313
+            cibw_build: cp312-* cp313-*
           - os: macos-latest
             platform: macos-arm64
             arch: arm64
             linux_arch: ""
+            python_group: cp38-cp39
+            cibw_build: cp38-* cp39-*
+          - os: macos-latest
+            platform: macos-arm64
+            arch: arm64
+            linux_arch: ""
+            python_group: cp310-cp311
+            cibw_build: cp310-* cp311-*
+          - os: macos-latest
+            platform: macos-arm64
+            arch: arm64
+            linux_arch: ""
+            python_group: cp312-cp313
+            cibw_build: cp312-* cp313-*
 
     steps:
       - name: Checkout repository
@@ -96,29 +152,11 @@ jobs:
       - name: Install wheel build tools
         run: |
           python -m pip install --upgrade pip
-          python -m pip install build cibuildwheel==2.22.0 scikit-build-core pybind11 wheel 'setuptools>=61' pytest
-
-      - name: Build pure Python wheels for verification
-        env:
-          VERIFY_WHEELHOUSE: ${{ runner.temp }}/labneura-verify-wheelhouse
-        run: |
-          mkdir -p "$VERIFY_WHEELHOUSE"
-          python -m build --wheel --no-isolation --outdir "$VERIFY_WHEELHOUSE" packaging/core
-          python -m build --wheel --no-isolation --outdir "$VERIFY_WHEELHOUSE" packaging/compat
-          python -m build --wheel --no-isolation --outdir "$VERIFY_WHEELHOUSE" packaging/all
-
-      - name: Prepare wheelhouse
-        if: matrix.platform == 'linux'
-        env:
-          VERIFY_WHEELHOUSE: ${{ runner.temp }}/labneura-verify-wheelhouse
-          WHEELHOUSE: ${{ runner.temp }}/wheelhouse
-        run: |
-          mkdir -p "$WHEELHOUSE"
-          cp "$VERIFY_WHEELHOUSE"/*.whl "$WHEELHOUSE/"
+          python -m pip install build cibuildwheel==2.22.0 scikit-build-core pybind11 wheel 'setuptools>=61' pytest packaging
 
       - name: Build Tensor wheels for supported CPython versions
         env:
-          CIBW_BUILD: cp38-* cp39-* cp310-* cp311-* cp312-* cp313-*
+          CIBW_BUILD: ${{ matrix.cibw_build }}
           CIBW_ARCHS_LINUX: ${{ matrix.linux_arch }}
           CIBW_ARCHS_MACOS: ${{ matrix.arch }}
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
@@ -132,7 +170,7 @@ jobs:
 
       - name: Build EDA wheels for supported CPython versions
         env:
-          CIBW_BUILD: cp38-* cp39-* cp310-* cp311-* cp312-* cp313-*
+          CIBW_BUILD: ${{ matrix.cibw_build }}
           CIBW_ARCHS_LINUX: ${{ matrix.linux_arch }}
           CIBW_ARCHS_MACOS: ${{ matrix.arch }}
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
@@ -144,22 +182,222 @@ jobs:
           mkdir -p "$WHEELHOUSE/eda"
           python -m cibuildwheel packaging/eda --output-dir "$WHEELHOUSE/eda"
 
-      - name: Verify wheels and isolated installation matrix
+      - name: Validate native wheel versions
         env:
-          VERIFY_WHEELHOUSE: ${{ runner.temp }}/labneura-verify-wheelhouse
           WHEELHOUSE: ${{ runner.temp }}/wheelhouse
+        run: |
+          python - "$WHEELHOUSE" "$(python scripts/update_version.py --get-version)" <<'PY'
+          import sys
+          from email import message_from_bytes
+          from pathlib import Path
+          from zipfile import ZipFile
+
+          wheelhouse = Path(sys.argv[1])
+          expected_version = sys.argv[2]
+          wheels = sorted(wheelhouse.rglob("*.whl"))
+          if not wheels:
+              raise SystemExit(f"no native wheels found in {wheelhouse}")
+
+          mismatches = []
+          for wheel in wheels:
+              with ZipFile(wheel) as archive:
+                  metadata_path = next(
+                      path for path in archive.namelist()
+                      if path.endswith(".dist-info/METADATA")
+                  )
+                  metadata = message_from_bytes(archive.read(metadata_path))
+              if metadata["Version"] != expected_version:
+                  mismatches.append(
+                      f"{wheel.name}: {metadata['Version']} "
+                      f"(expected {expected_version})"
+                  )
+          if mismatches:
+              raise SystemExit(
+                  "wheel version mismatch before artifact upload:\n"
+                  + "\n".join(mismatches)
+              )
+          print(f"Validated {len(wheels)} native wheels at {expected_version}")
+          PY
+
+      - name: Upload native wheel group
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.platform }}-${{ matrix.python_group }}
+          path: ${{ runner.temp }}/wheelhouse/
+          if-no-files-found: error
+
+  build-pure-distributions:
+    name: Build pure Python distributions
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Set package version from release tag
+        if: github.event_name == 'release'
+        run: python scripts/update_version.py --version "${GITHUB_REF_NAME#v}"
+
+      - name: Validate package version declarations
+        if: github.event_name == 'workflow_dispatch'
+        run: python scripts/update_version.py --check
+
+      - name: Install wheel build tools
+        run: python -m pip install --upgrade pip build 'setuptools>=61' wheel packaging
+
+      - name: Build pure Python wheels
+        env:
+          WHEELHOUSE: ${{ runner.temp }}/pure-wheelhouse
+        run: |
+          mkdir -p "$WHEELHOUSE"
+          python -m build --wheel --no-isolation --outdir "$WHEELHOUSE" packaging/core
+          python -m build --wheel --no-isolation --outdir "$WHEELHOUSE" packaging/compat
+          python -m build --wheel --no-isolation --outdir "$WHEELHOUSE" packaging/all
+
+      - name: Validate pure wheel versions
+        env:
+          WHEELHOUSE: ${{ runner.temp }}/pure-wheelhouse
+        run: |
+          python - "$WHEELHOUSE" "$(python scripts/update_version.py --get-version)" <<'PY'
+          import sys
+          from email import message_from_bytes
+          from pathlib import Path
+          from zipfile import ZipFile
+
+          wheelhouse = Path(sys.argv[1])
+          expected_version = sys.argv[2]
+          wheels = sorted(wheelhouse.glob("*.whl"))
+          if len(wheels) != 3:
+              raise SystemExit(f"expected 3 pure wheels, found {len(wheels)}")
+
+          mismatches = []
+          for wheel in wheels:
+              with ZipFile(wheel) as archive:
+                  metadata_path = next(
+                      path for path in archive.namelist()
+                      if path.endswith(".dist-info/METADATA")
+                  )
+                  metadata = message_from_bytes(archive.read(metadata_path))
+              if metadata["Version"] != expected_version:
+                  mismatches.append(
+                      f"{wheel.name}: {metadata['Version']} "
+                      f"(expected {expected_version})"
+                  )
+          if mismatches:
+              raise SystemExit(
+                  "wheel version mismatch before artifact upload:\n"
+                  + "\n".join(mismatches)
+              )
+          print(f"Validated 3 pure wheels at {expected_version}")
+          PY
+
+      - name: Upload pure Python wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: pure-distributions
+          path: ${{ runner.temp }}/pure-wheelhouse/
+          if-no-files-found: error
+
+  verify-platform-wheels:
+    name: Verify wheels (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    needs: [build, build-pure-distributions]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+          - os: ubuntu-24.04-arm
+            platform: linux-arm64
+          - os: macos-15-intel
+            platform: macos-intel
+          - os: macos-latest
+            platform: macos-arm64
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Set package version from release tag
+        if: github.event_name == 'release'
+        run: python scripts/update_version.py --version "${GITHUB_REF_NAME#v}"
+
+      - name: Validate package version declarations
+        if: github.event_name == 'workflow_dispatch'
+        run: python scripts/update_version.py --check
+
+      - name: Install wheel verification dependency
+        run: python -m pip install packaging
+
+      - name: Download platform wheels
+        uses: actions/download-artifact@v4
+        with:
+          pattern: native-${{ matrix.platform }}-*
+          path: ${{ runner.temp }}/wheelhouse
+          merge-multiple: true
+
+      - name: Download pure Python wheels
+        uses: actions/download-artifact@v4
+        with:
+          name: pure-distributions
+          path: ${{ runner.temp }}/verify-wheelhouse
+
+      - name: Verify complete platform wheel set
+        env:
+          WHEELHOUSE: ${{ runner.temp }}/wheelhouse
+          VERIFY_WHEELHOUSE: ${{ runner.temp }}/verify-wheelhouse
           MATRIX_WORKDIR: ${{ runner.temp }}/labneura-release-wheel-matrix
         run: |
-          python - "$VERIFY_WHEELHOUSE" "$WHEELHOUSE" <<'PY'
+          version=$(python scripts/update_version.py --get-version)
+          python - "$VERIFY_WHEELHOUSE" "$WHEELHOUSE" "$version" "${{ matrix.platform }}" <<'PY'
           import shutil
           import sys
+          from email import message_from_bytes
           from pathlib import Path
+          from zipfile import ZipFile
 
           from packaging.tags import sys_tags
           from packaging.utils import parse_wheel_filename
 
           verify_dir = Path(sys.argv[1])
           wheelhouse = Path(sys.argv[2])
+          expected_version = sys.argv[3]
+          platform = sys.argv[4]
+          wheels = sorted(wheelhouse.rglob("*.whl"))
+          pure_wheels = sorted(verify_dir.glob("*.whl"))
+          if not wheels or len(pure_wheels) != 3:
+              raise SystemExit(
+                  f"incomplete wheel inputs: {len(wheels)} native and "
+                  f"{len(pure_wheels)} pure wheels"
+              )
+          mismatches = []
+          for wheel in wheels + pure_wheels:
+              with ZipFile(wheel) as archive:
+                  metadata_path = next(
+                      path for path in archive.namelist()
+                      if path.endswith(".dist-info/METADATA")
+                  )
+                  metadata = message_from_bytes(archive.read(metadata_path))
+              if metadata["Version"] != expected_version:
+                  mismatches.append(
+                      f"{wheel.name}: {metadata['Version']} "
+                      f"(expected {expected_version})"
+                  )
+          if mismatches:
+              raise SystemExit(
+                  "wheel version mismatch before platform verification:\n"
+                  + "\n".join(mismatches)
+              )
+
           supported = set(sys_tags())
           for distribution in ("labneura_tensor", "labneura_eda"):
               project_dir = wheelhouse / distribution.removeprefix("labneura_")
@@ -174,8 +412,10 @@ jobs:
                       f"{distribution} wheel matches this runner"
                   )
               shutil.copy2(sorted(compatible)[0], verify_dir)
+          if platform == "linux":
+              for wheel in verify_dir.glob("*.whl"):
+                  shutil.copy2(wheel, wheelhouse)
           PY
-          version=$(python scripts/update_version.py --get-version)
           python scripts/verify_wheel_matrix.py "$VERIFY_WHEELHOUSE" \
             --version "$version" --workdir "$MATRIX_WORKDIR"
 
@@ -189,9 +429,11 @@ jobs:
   publish:
     name: Publish distributions
     runs-on: ubuntu-latest
+    env:
+      WHEEL_DIST: ${{ runner.temp }}/labneura-release-dist
     permissions:
       contents: write
-    needs: build
+    needs: verify-platform-wheels
     steps:
       - name: Checkout default branch
         uses: actions/checkout@v4
@@ -202,7 +444,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           pattern: packages-*
-          path: dist
+          path: ${{ runner.temp }}/labneura-release-dist
           merge-multiple: true
           if-no-artifact-found: ignore
 
@@ -213,9 +455,10 @@ jobs:
         shell: bash
         run: |
           python - <<'PY'
+          import os
           from pathlib import Path
 
-          dist = Path("dist")
+          dist = Path(os.environ["WHEEL_DIST"])
           wheels = sorted(dist.rglob("*.whl"))
           if not wheels:
               raise SystemExit("no wheel artifacts were downloaded")
@@ -243,19 +486,22 @@ jobs:
 
           from packaging.utils import canonicalize_name, parse_wheel_filename
 
+          wheel_dir = Path(os.environ["WHEEL_DIST"])
           expected = {
               "labneura-core", "labneura-tensor", "labneura-eda",
               "labneura", "labneura-all",
           }
           distributions = defaultdict(list)
           versions = set()
-          for wheel in Path("dist").glob("*.whl"):
+          wheel_versions = []
+          for wheel in wheel_dir.glob("*.whl"):
               name, version, _, tags = parse_wheel_filename(wheel.name)
               canonical = canonicalize_name(name)
               if canonical not in expected:
                   raise SystemExit(f"unexpected wheel distribution: {wheel.name}")
               distributions[canonical].append((wheel, version, tags))
               versions.add(str(version))
+              wheel_versions.append((wheel.name, str(version)))
 
           if set(distributions) != expected:
               raise SystemExit(
@@ -263,7 +509,13 @@ jobs:
                   f"found {sorted(distributions)}"
               )
           if len(versions) != 1:
-              raise SystemExit(f"wheels do not share one release version: {sorted(versions)}")
+              details = ", ".join(
+                  f"{filename}={version}" for filename, version in wheel_versions
+              )
+              raise SystemExit(
+                  f"wheels do not share one release version {sorted(versions)}: "
+                  f"{details}"
+              )
           version = next(iter(versions))
           if os.environ.get("GITHUB_EVENT_NAME") == "release":
               release_version = os.environ["GITHUB_REF_NAME"].removeprefix("v")
@@ -307,10 +559,10 @@ jobs:
           print(f"Collected {sum(map(len, distributions.values()))} wheels")
           PY
           python -m pip install --upgrade twine
-          python -m twine check dist/*.whl
+          python -m twine check "$WHEEL_DIST"/*.whl
           {
             echo "### Distributions queued for publishing"
-            for distribution in dist/*.whl; do
+            for distribution in "$WHEEL_DIST"/*.whl; do
               basename "$distribution"
             done
           } >> "$GITHUB_STEP_SUMMARY"
@@ -323,7 +575,7 @@ jobs:
         run: |
           destination="release-artifacts/$LABNEURA_WHEEL_VERSION/dist"
           mkdir -p "$destination"
-          for wheel in dist/*.whl; do
+          for wheel in "$WHEEL_DIST"/*.whl; do
             target="$destination/$(basename "$wheel")"
             if [[ -e "$target" ]]; then
               if ! cmp -s "$wheel" "$target"; then
@@ -347,7 +599,7 @@ jobs:
         if: github.event_name == 'release'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "$GITHUB_REF_NAME" dist/*.whl --clobber
+        run: gh release upload "$GITHUB_REF_NAME" "$WHEEL_DIST"/*.whl --clobber
 
       - name: Publish to PyPI
         if: github.event_name == 'release'
@@ -359,7 +611,7 @@ jobs:
             echo "PYPI_API_TOKEN is not configured for this repository." >&2
             exit 1
           fi
-          python -m twine upload --non-interactive --skip-existing dist/*
+          python -m twine upload --non-interactive --skip-existing "$WHEEL_DIST"/*
 
       - name: Publish to TestPyPI (manual dispatch)
         if: github.event_name == 'workflow_dispatch'
@@ -367,4 +619,4 @@ jobs:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.TEST_PYPI_API_TOKEN }}
         run: |
-          python -m twine upload --repository testpypi --non-interactive dist/*
+          python -m twine upload --repository testpypi --non-interactive "$WHEEL_DIST"/*
