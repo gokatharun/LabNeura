@@ -290,6 +290,7 @@ def pip_check(python: Path, cwd: Path, *, expected=0):
 COMMON_CHECKS = r'''
 import importlib
 import importlib.machinery
+import importlib.metadata
 import importlib.util
 import sys
 from pathlib import Path
@@ -299,7 +300,7 @@ import labneura
 site = Path(sysconfig.get_paths()["purelib"]).resolve()
 assert labneura.__file__ is not None
 Path(labneura.__file__).resolve().relative_to(site)
-assert labneura.__version__ == "0.4.3"
+assert labneura.__version__ == importlib.metadata.version("labneura-core")
 
 def in_site(module):
     assert module.__file__ is not None
