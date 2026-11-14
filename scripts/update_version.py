@@ -8,115 +8,71 @@ from pathlib import Path
 
 
 VERSION_PATTERN = re.compile(r"\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?")
-PYPROJECT_VERSION = re.compile(r'(?m)^version = "([^"]+)"$')
-CPP_VERSION = re.compile(r'(m\.attr\("__version__"\) = ")([^"]+)(";)')
-CORE_VERSION = re.compile(r'(?m)^__version__ = "([^"]+)"$')
+PYPROJECT_VERSION = re.compile(r'(?m)^version = "(?P<version>[^"]+)"$')
+CPP_VERSION = re.compile(
+    r'(m\.attr\("__version__"\) = ")(?P<version>[^"]+)(";)'
+)
+CORE_VERSION = re.compile(r'(?m)^__version__ = "(?P<version>[^"]+)"$')
+CMAKE_PACKAGE_VERSION = re.compile(
+    r'(?m)^\s+VERSION (?P<version>[^\s]+)$'
+)
+
+VERSION_DECLARATIONS = (
+    (Path("pyproject.toml"), PYPROJECT_VERSION),
+    (Path("CMakeLists.txt"), CMAKE_PACKAGE_VERSION),
+    (Path("python/labneura_py.cpp"), CPP_VERSION),
+    (Path("packaging/core/src/labneura/__init__.py"), CORE_VERSION),
+    (Path("packaging/tensor/pyproject.toml"), PYPROJECT_VERSION),
+    (Path("packaging/eda/pyproject.toml"), PYPROJECT_VERSION),
+    (Path("packaging/compat/pyproject.toml"), PYPROJECT_VERSION),
+    (Path("packaging/all/pyproject.toml"), PYPROJECT_VERSION),
+)
 
 
 def version_files(root):
-    return (
-        root / "pyproject.toml",
-        root / "python" / "labneura_py.cpp",
-        root / "packaging" / "core" / "src" / "labneura" / "__init__.py",
-        root / "packaging" / "compat" / "pyproject.toml",
-    )
+    return tuple((root / relative, pattern) for relative, pattern in VERSION_DECLARATIONS)
 
 
 def read_versions(root):
-    pyproject_path, cpp_path, core_path, compat_path = version_files(root)
-    pyproject = pyproject_path.read_text(encoding="utf-8")
-    cpp_source = cpp_path.read_text(encoding="utf-8")
-    core_source = core_path.read_text(encoding="utf-8")
-    compat_source = compat_path.read_text(encoding="utf-8")
-    pyproject_matches = list(PYPROJECT_VERSION.finditer(pyproject))
-    cpp_matches = list(CPP_VERSION.finditer(cpp_source))
-    core_matches = list(CORE_VERSION.finditer(core_source))
-    compat_matches = list(PYPROJECT_VERSION.finditer(compat_source))
-    if (
-        len(pyproject_matches) != 1
-        or len(cpp_matches) != 1
-        or len(core_matches) != 1
-        or len(compat_matches) != 1
-    ):
-        raise ValueError("could not uniquely locate all four version declarations")
-    return (
-        pyproject,
-        cpp_source,
-        core_source,
-        compat_source,
-        pyproject_matches[0],
-        cpp_matches[0],
-        core_matches[0],
-        compat_matches[0],
-        pyproject_matches[0].group(1),
-        cpp_matches[0].group(2),
-        core_matches[0].group(1),
-        compat_matches[0].group(1),
-    )
+    declarations = []
+    for path, pattern in version_files(root):
+        source = path.read_text(encoding="utf-8")
+        matches = list(pattern.finditer(source))
+        if len(matches) != 1:
+            raise ValueError(
+                f"could not uniquely locate version declaration in {path.relative_to(root)}"
+            )
+        match = matches[0]
+        declarations.append((path, source, match, match.group("version")))
+    return declarations
 
 
 def check_version(root):
-    (
-        _, _, _, _, _, _, _, _,
-        pyproject_version,
-        cpp_version,
-        core_version,
-        compat_version,
-    ) = read_versions(root)
-    if not (
-        pyproject_version == cpp_version == core_version == compat_version
-    ):
+    declarations = read_versions(root)
+    expected = declarations[0][3]
+    mismatches = [
+        f"{path.relative_to(root)} has {version}"
+        for path, _, _, version in declarations
+        if version != expected
+    ]
+    if mismatches:
         raise ValueError(
-            "version mismatch: pyproject.toml has "
-            f"{pyproject_version}, python/labneura_py.cpp has {cpp_version}, "
-            f"packaging/core/src/labneura/__init__.py has {core_version}, "
-            f"and packaging/compat/pyproject.toml has {compat_version}"
+            f"version mismatch: pyproject.toml has {expected}; "
+            + "; ".join(mismatches)
         )
-    return pyproject_version
+    return expected
 
 
 def update_version(root, version):
     if not VERSION_PATTERN.fullmatch(version):
         raise ValueError(f"invalid version: {version!r}; expected MAJOR.MINOR.PATCH")
-    (
-        pyproject,
-        cpp_source,
-        core_source,
-        compat_source,
-        pyproject_match,
-        cpp_match,
-        core_match,
-        compat_match,
-        _,
-        _,
-        _,
-        _,
-    ) = read_versions(root)
-    pyproject = (
-        pyproject[:pyproject_match.start(1)]
-        + version
-        + pyproject[pyproject_match.end(1):]
-    )
-    cpp_source = (
-        cpp_source[:cpp_match.start(2)]
-        + version
-        + cpp_source[cpp_match.end(2):]
-    )
-    core_source = (
-        core_source[:core_match.start(1)]
-        + version
-        + core_source[core_match.end(1):]
-    )
-    compat_source = (
-        compat_source[:compat_match.start(1)]
-        + version
-        + compat_source[compat_match.end(1):]
-    )
-    pyproject_path, cpp_path, core_path, compat_path = version_files(root)
-    pyproject_path.write_text(pyproject, encoding="utf-8")
-    cpp_path.write_text(cpp_source, encoding="utf-8")
-    core_path.write_text(core_source, encoding="utf-8")
-    compat_path.write_text(compat_source, encoding="utf-8")
+    for path, source, match, _ in read_versions(root):
+        updated = (
+            source[:match.start("version")]
+            + version
+            + source[match.end("version"):]
+        )
+        path.write_text(updated, encoding="utf-8")
 
 
 def bump_patch(root):
@@ -139,7 +95,7 @@ def main():
         "--bump-patch", action="store_true", help="increment the stable patch version"
     )
     version_action.add_argument(
-        "--check", action="store_true", help="check all four version declarations match"
+        "--check", action="store_true", help="check all package version declarations match"
     )
     version_action.add_argument(
         "--get-version", action="store_true", help="print the matching current version"

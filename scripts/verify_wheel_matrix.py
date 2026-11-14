@@ -18,7 +18,7 @@ from pathlib import Path
 from packaging.requirements import Requirement
 
 
-VERSION = "0.4.2"
+VERSION = "0.4.3"
 COMPONENTS = ("labneura-core", "labneura-tensor", "labneura-eda")
 NATIVE_COMPONENTS = ("labneura-tensor", "labneura-eda")
 METADISTRIBUTIONS = ("labneura", "labneura-all")
@@ -115,7 +115,7 @@ def wheel_index(wheelhouse: Path):
     return wheels
 
 
-def check_wheel_artifacts(wheelhouse: Path):
+def check_wheel_artifacts(wheelhouse: Path, expected_version=VERSION):
     wheels = wheel_index(wheelhouse)
     owners = {}
     native_paths = []
@@ -128,8 +128,11 @@ def check_wheel_artifacts(wheelhouse: Path):
                 if item.endswith(".dist-info/METADATA")
             )
             payload = [item for item in files if not item.startswith(metadata_root + "/")]
-            if metadata["Version"] != VERSION:
-                raise AssertionError(f"{path.name}: unexpected version {metadata['Version']}")
+            if metadata["Version"] != expected_version:
+                raise AssertionError(
+                    f"{path.name}: unexpected version {metadata['Version']} "
+                    f"(expected {expected_version})"
+                )
             actual_dependencies = tuple(metadata.get_all("Requires-Dist", []))
             if normalized_dependencies(actual_dependencies) != normalized_dependencies(
                 EXPECTED_DEPENDENCIES[name]
@@ -296,7 +299,7 @@ import labneura
 site = Path(sysconfig.get_paths()["purelib"]).resolve()
 assert labneura.__file__ is not None
 Path(labneura.__file__).resolve().relative_to(site)
-assert labneura.__version__ == "0.4.2"
+assert labneura.__version__ == "0.4.3"
 
 def in_site(module):
     assert module.__file__ is not None
@@ -537,13 +540,14 @@ def verify_matrix(wheels, wheelhouse, workdir):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("wheelhouse", type=Path)
+    parser.add_argument("--version", default=VERSION)
     parser.add_argument("--workdir", type=Path, required=True)
     args = parser.parse_args()
     wheelhouse = args.wheelhouse.resolve()
     workdir = args.workdir.resolve()
     if workdir.exists():
         raise SystemExit(f"refusing to overwrite existing matrix directory: {workdir}")
-    wheels = check_wheel_artifacts(wheelhouse)
+    wheels = check_wheel_artifacts(wheelhouse, args.version)
     verify_matrix(wheels, wheelhouse, workdir)
     print("All LabNeura wheel artifact and installation matrix checks passed.")
 

@@ -198,12 +198,16 @@ build-dist: sync-src
 	$(TWINE) check dist/*
 
 # --------------------------------------
-# Update version in pyproject.toml and labneura_py.cpp
+# Update all package, native module, and CMake package versions
 # --------------------------------------
+VERSION_FILES = pyproject.toml CMakeLists.txt python/labneura_py.cpp \
+	packaging/core/src/labneura/__init__.py \
+	packaging/tensor/pyproject.toml packaging/eda/pyproject.toml \
+	packaging/compat/pyproject.toml packaging/all/pyproject.toml
 .PHONY: update-version
 update-version:
-	@if ! git diff --quiet -- pyproject.toml python/labneura_py.cpp || \
-	    ! git diff --cached --quiet -- pyproject.toml python/labneura_py.cpp; then \
+	@if ! git diff --quiet -- $(VERSION_FILES) || \
+	    ! git diff --cached --quiet -- $(VERSION_FILES); then \
 		echo "Version files have existing edits; commit or stash them before publishing."; \
 		exit 1; \
 	fi
@@ -221,13 +225,13 @@ git-commit-version:
 		echo "Cannot push a version bump from a detached HEAD."; \
 		exit 1; \
 	fi; \
-	if git diff --quiet -- pyproject.toml python/labneura_py.cpp && \
-	   git diff --cached --quiet -- pyproject.toml python/labneura_py.cpp; then \
+	if git diff --quiet -- $(VERSION_FILES) && \
+	   git diff --cached --quiet -- $(VERSION_FILES); then \
 		echo "No version changes to commit."; \
 		exit 1; \
 	fi; \
-	git add pyproject.toml python/labneura_py.cpp; \
-	git commit -m "chore: bump version to $$NEW_VERSION" -- pyproject.toml python/labneura_py.cpp; \
+	git add $(VERSION_FILES); \
+	git commit -m "chore: bump version to $$NEW_VERSION" -- $(VERSION_FILES); \
 	git push origin "$$CURRENT_BRANCH"
 
 # --------------------------------------

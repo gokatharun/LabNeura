@@ -16,16 +16,31 @@ def version_root(
     cpp_version="1.2.3",
     core_version=None,
     compat_version=None,
+    tensor_version=None,
+    eda_version=None,
+    all_version=None,
 ):
     (tmp_path / "python").mkdir()
     core_package = tmp_path / "packaging" / "core" / "src" / "labneura"
     core_package.mkdir(parents=True)
     compat_package = tmp_path / "packaging" / "compat"
     compat_package.mkdir(parents=True)
+    tensor_package = tmp_path / "packaging" / "tensor"
+    tensor_package.mkdir(parents=True)
+    eda_package = tmp_path / "packaging" / "eda"
+    eda_package.mkdir(parents=True)
+    all_package = tmp_path / "packaging" / "all"
+    all_package.mkdir(parents=True)
     if core_version is None:
         core_version = pyproject_version
     if compat_version is None:
         compat_version = pyproject_version
+    if tensor_version is None:
+        tensor_version = pyproject_version
+    if eda_version is None:
+        eda_version = pyproject_version
+    if all_version is None:
+        all_version = pyproject_version
     (tmp_path / "pyproject.toml").write_text(
         f'[project]\nname = "labneura"\nversion = "{pyproject_version}"\n',
         encoding="utf-8",
@@ -34,12 +49,28 @@ def version_root(
         f'm.attr("__version__") = "{cpp_version}";\n',
         encoding="utf-8",
     )
+    (tmp_path / "CMakeLists.txt").write_text(
+        f"    VERSION {pyproject_version}\n",
+        encoding="utf-8",
+    )
     (core_package / "__init__.py").write_text(
         f'__version__ = "{core_version}"\n',
         encoding="utf-8",
     )
     (compat_package / "pyproject.toml").write_text(
         f'[project]\nname = "labneura"\nversion = "{compat_version}"\n',
+        encoding="utf-8",
+    )
+    (tensor_package / "pyproject.toml").write_text(
+        f'[project]\nname = "labneura-tensor"\nversion = "{tensor_version}"\n',
+        encoding="utf-8",
+    )
+    (eda_package / "pyproject.toml").write_text(
+        f'[project]\nname = "labneura-eda"\nversion = "{eda_version}"\n',
+        encoding="utf-8",
+    )
+    (all_package / "pyproject.toml").write_text(
+        f'[project]\nname = "labneura-all"\nversion = "{all_version}"\n',
         encoding="utf-8",
     )
     return tmp_path
@@ -62,6 +93,7 @@ def test_version_script_patch_bump_keeps_declarations_in_sync(tmp_path):
     assert result.returncode == 0
     assert result.stdout.strip() == "1.2.4"
     assert 'version = "1.2.4"' in (root / "pyproject.toml").read_text()
+    assert "VERSION 1.2.4" in (root / "CMakeLists.txt").read_text()
     assert '"1.2.4"' in (root / "python" / "labneura_py.cpp").read_text()
     assert '__version__ = "1.2.4"' in (
         root / "packaging" / "core" / "src" / "labneura" / "__init__.py"
@@ -69,6 +101,10 @@ def test_version_script_patch_bump_keeps_declarations_in_sync(tmp_path):
     assert 'version = "1.2.4"' in (
         root / "packaging" / "compat" / "pyproject.toml"
     ).read_text()
+    for distribution in ("tensor", "eda", "all"):
+        assert 'version = "1.2.4"' in (
+            root / "packaging" / distribution / "pyproject.toml"
+        ).read_text()
     assert run_version_script(root, "--check").stdout.strip() == "1.2.4"
 
 
@@ -79,12 +115,17 @@ def test_version_script_sets_release_tag_version(tmp_path):
 
     assert result.returncode == 0
     assert result.stdout.strip() == "2.0.0"
+    assert "VERSION 2.0.0" in (root / "CMakeLists.txt").read_text()
     assert '__version__ = "2.0.0"' in (
         root / "packaging" / "core" / "src" / "labneura" / "__init__.py"
     ).read_text()
     assert 'version = "2.0.0"' in (
         root / "packaging" / "compat" / "pyproject.toml"
     ).read_text()
+    for distribution in ("tensor", "eda", "all"):
+        assert 'version = "2.0.0"' in (
+            root / "packaging" / distribution / "pyproject.toml"
+        ).read_text()
     assert run_version_script(root, "--get-version").stdout.strip() == "2.0.0"
 
 
@@ -121,6 +162,21 @@ def test_version_script_rejects_mismatched_compat_declaration_for_patch_bump(
     assert "version mismatch" in result.stderr
     assert 'version = "1.2.2"' in (
         root / "packaging" / "compat" / "pyproject.toml"
+    ).read_text()
+
+
+@pytest.mark.parametrize("distribution", ["tensor", "eda", "all"])
+def test_version_script_rejects_mismatched_distribution_declaration(
+    tmp_path, distribution
+):
+    root = version_root(tmp_path, **{f"{distribution}_version": "1.2.2"})
+
+    result = run_version_script(root, "--bump-patch")
+
+    assert result.returncode != 0
+    assert "version mismatch" in result.stderr
+    assert 'version = "1.2.2"' in (
+        root / "packaging" / distribution / "pyproject.toml"
     ).read_text()
 
 

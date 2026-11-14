@@ -139,7 +139,7 @@ def test_component_combinations_and_optional_imports(tmp_path):
         root = make_package(tmp_path / name, tensor=tensor, eda=eda)
         checks = [
             "import labneura",
-            "assert labneura.__version__ == '0.4.2'",
+            "assert labneura.__version__ == '0.4.3'",
         ]
         if tensor is None:
             checks.append("assert not hasattr(labneura, 'Tensor')")

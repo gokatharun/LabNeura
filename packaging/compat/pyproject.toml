@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "labneura"
-version = "0.4.2"
+version = "0.4.3"
 description = "Compatibility distribution for the LabNeura component packages"
 requires-python = ">=3.8"
 license = { text = "MIT" }

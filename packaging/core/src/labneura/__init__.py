@@ -15,7 +15,7 @@ from importlib.util import find_spec
 # This is the core package's version source of truth.  Component distributions
 # should use the coordinated release version, but must not derive their
 # availability from this optional-import module.
-__version__ = "0.4.2"
+__version__ = "0.4.3"
 
 
 def _load_optional_module(module_name):
