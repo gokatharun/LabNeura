@@ -1,6 +1,10 @@
 import pytest
 
-from scripts.verify_wheel_matrix import check_wheel_tags, normalized_dependencies
+from scripts.verify_wheel_matrix import (
+    check_wheel_tags,
+    normalized_dependencies,
+    otool_load_information,
+)
 
 
 def test_dependency_bound_order_is_ignored():
@@ -37,3 +41,25 @@ def test_native_component_rejects_pure_python_tag():
 
 def test_native_component_accepts_platform_tag():
     check_wheel_tags("labneura-tensor", ["cp311-cp311-macosx_14_0_arm64"], "tensor.whl")
+
+
+def test_otool_output_header_is_not_mistaken_for_a_runtime_path():
+    output = (
+        "/Users/runner/work/_temp/native.so:\n"
+        "Load command 0\n\tcmd LC_RPATH\n\tpath @loader_path\n"
+    )
+
+    body = otool_load_information(output)
+
+    assert "/Users/runner/work" not in body
+    assert "path @loader_path" in body
+
+
+def test_otool_load_path_remains_visible_for_leak_detection():
+    output = (
+        "/tmp/native.so:\n"
+        "Load command 0\n\tcmd LC_RPATH\n"
+        "\tpath /Users/runner/work/LabNeura (offset 12)\n"
+    )
+
+    assert "/Users/runner/work/LabNeura" in otool_load_information(output)

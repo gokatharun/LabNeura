@@ -65,6 +65,14 @@ def check_wheel_tags(name, wheel_tags, artifact_name):
         )
 
 
+def otool_load_information(output):
+    """Drop otool's file-name heading while retaining dependency/load paths."""
+    heading, separator, body = output.partition("\n")
+    if separator and heading.rstrip().endswith(":"):
+        return body
+    return output
+
+
 def run(command, *, cwd=None, env=None, expected=0):
     result = subprocess.run(
         [str(part) for part in command],
@@ -188,11 +196,15 @@ def inspect_native_dependencies(name, wheel, archive_path, wheelhouse):
         binary.write_bytes(archive.read(archive_path))
 
     if sys.platform == "darwin":
-        dependencies = run(["otool", "-L", binary]).stdout
-        load_commands = run(["otool", "-l", binary]).stdout
+        dependencies = otool_load_information(run(["otool", "-L", binary]).stdout)
+        load_commands = otool_load_information(run(["otool", "-l", binary]).stdout)
         combined = dependencies + load_commands
-        if any(token in combined for token in ("/Users/runner/work", str(Path.cwd()))):
-            raise AssertionError(f"{name} contains a build-machine runtime path")
+        build_paths = ("/Users/runner/work", str(Path.cwd()))
+        leaked_paths = [path for path in build_paths if path in combined]
+        if leaked_paths:
+            raise AssertionError(
+                f"{name} contains build-machine runtime paths {leaked_paths}:\n{combined}"
+            )
         rpaths = [line.strip() for line in load_commands.splitlines() if "path " in line]
         if any("/tmp/" in line for line in rpaths):
             raise AssertionError(f"{name} contains a temporary RPATH: {rpaths}")
@@ -274,6 +286,7 @@ def pip_check(python: Path, cwd: Path, *, expected=0):
 
 COMMON_CHECKS = r'''
 import importlib
+import importlib.machinery
 import importlib.util
 import sys
 from pathlib import Path
