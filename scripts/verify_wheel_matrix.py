@@ -20,6 +20,7 @@ from packaging.requirements import Requirement
 
 VERSION = "0.4.2"
 COMPONENTS = ("labneura-core", "labneura-tensor", "labneura-eda")
+NATIVE_COMPONENTS = ("labneura-tensor", "labneura-eda")
 METADISTRIBUTIONS = ("labneura", "labneura-all")
 EXPECTED_DEPENDENCIES = {
     "labneura-core": (),
@@ -45,6 +46,23 @@ def normalized_name(name: str) -> str:
 def normalized_dependencies(dependencies):
     """Canonicalize requirement syntax and ignore metadata ordering."""
     return tuple(sorted(str(Requirement(dependency)) for dependency in dependencies))
+
+
+def check_wheel_tags(name, wheel_tags, artifact_name):
+    if not wheel_tags:
+        raise AssertionError(f"{artifact_name}: missing wheel platform tags")
+    if name in NATIVE_COMPONENTS and any(
+        tag.endswith("-none-any") for tag in wheel_tags
+    ):
+        raise AssertionError(
+            f"{artifact_name}: native wheel has pure-Python tag {wheel_tags}"
+        )
+    if name not in NATIVE_COMPONENTS and not all(
+        tag.endswith("-none-any") for tag in wheel_tags
+    ):
+        raise AssertionError(
+            f"{artifact_name}: pure-Python wheel has platform tags {wheel_tags}"
+        )
 
 
 def run(command, *, cwd=None, env=None, expected=0):
@@ -154,12 +172,7 @@ def check_wheel_artifacts(wheelhouse: Path):
                 owners[item] = name
 
         wheel_tags = wheel_metadata.get_all("Tag", [])
-        if not wheel_tags:
-            raise AssertionError(f"{path.name}: missing wheel platform tags")
-        if name in COMPONENTS and any(tag.endswith("-none-any") for tag in wheel_tags):
-            raise AssertionError(f"{path.name}: native wheel has pure-Python tag {wheel_tags}")
-        if name not in COMPONENTS and not all(tag.endswith("-none-any") for tag in wheel_tags):
-            raise AssertionError(f"{path.name}: metadata-only wheel has platform tags {wheel_tags}")
+        check_wheel_tags(name, wheel_tags, path.name)
         print(f"ARTIFACT PASS {path.name}: payload={payload}; tags={wheel_tags}")
 
     for name, wheel, archive_path in native_paths:
