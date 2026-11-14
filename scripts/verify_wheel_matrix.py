@@ -15,6 +15,8 @@ import venv
 import zipfile
 from pathlib import Path
 
+from packaging.requirements import Requirement
+
 
 VERSION = "0.4.2"
 COMPONENTS = ("labneura-core", "labneura-tensor", "labneura-eda")
@@ -38,6 +40,11 @@ EXPECTED_DEPENDENCIES = {
 
 def normalized_name(name: str) -> str:
     return name.lower().replace("_", "-").replace(".", "-")
+
+
+def normalized_dependencies(dependencies):
+    """Canonicalize requirement syntax and ignore metadata ordering."""
+    return tuple(sorted(str(Requirement(dependency)) for dependency in dependencies))
 
 
 def run(command, *, cwd=None, env=None, expected=0):
@@ -98,7 +105,9 @@ def check_wheel_artifacts(wheelhouse: Path):
             if metadata["Version"] != VERSION:
                 raise AssertionError(f"{path.name}: unexpected version {metadata['Version']}")
             actual_dependencies = tuple(metadata.get_all("Requires-Dist", []))
-            if actual_dependencies != EXPECTED_DEPENDENCIES[name]:
+            if normalized_dependencies(actual_dependencies) != normalized_dependencies(
+                EXPECTED_DEPENDENCIES[name]
+            ):
                 raise AssertionError(
                     f"{path.name}: dependencies {actual_dependencies!r} do not match "
                     f"{EXPECTED_DEPENDENCIES[name]!r}"
