@@ -1,0 +1,11 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+
+if(@LABNEURA_PACKAGE_NEEDS_SLANG@)
+  find_dependency(slang CONFIG REQUIRED)
+endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/LabNeuraTargets.cmake")
+
+check_required_components(LabNeura)

@@ -11,6 +11,84 @@ permissions:
   contents: write
 
 jobs:
+  python-wheel-matrix:
+    name: Python wheels and isolated install matrix (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-latest]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install local wheel build and test tools
+        run: python -m pip install build scikit-build-core pybind11 wheel 'setuptools>=61' pytest
+
+      - name: Build all five distributions into an isolated wheelhouse
+        env:
+          CMAKE_BUILD_PARALLEL_LEVEL: '2'
+          LABNEURA_WHEELHOUSE: ${{ runner.temp }}/labneura-wheelhouse
+        run: |
+          mkdir -p "$LABNEURA_WHEELHOUSE"
+          python -m build --wheel --no-isolation -o "$LABNEURA_WHEELHOUSE" packaging/core
+          python -m build --wheel --no-isolation -o "$LABNEURA_WHEELHOUSE" packaging/tensor
+          python -m build --wheel --no-isolation -o "$LABNEURA_WHEELHOUSE" packaging/eda
+          python -m build --wheel --no-isolation -o "$LABNEURA_WHEELHOUSE" packaging/compat
+          python -m build --wheel --no-isolation -o "$LABNEURA_WHEELHOUSE" packaging/all
+
+      - name: Run package initializer and built native extension regressions
+        env:
+          LABNEURA_WHEELHOUSE: ${{ runner.temp }}/labneura-wheelhouse
+          LABNEURA_TEST_ARTIFACTS: ${{ runner.temp }}/labneura-native-artifacts
+        run: |
+          mkdir -p "$LABNEURA_TEST_ARTIFACTS"
+          python - <<'PY'
+          import os
+          import zipfile
+          from pathlib import Path
+
+          wheelhouse = Path(os.environ["LABNEURA_WHEELHOUSE"])
+          output = Path(os.environ["LABNEURA_TEST_ARTIFACTS"])
+          for distribution, prefix in (
+              ("labneura-tensor", "labneura/_tensor"),
+              ("labneura-eda", "labneura/_eda"),
+          ):
+              wheels = list(wheelhouse.glob(f"{distribution}-*.whl"))
+              if len(wheels) != 1:
+                  raise SystemExit(f"expected one {distribution} wheel, found {wheels}")
+              with zipfile.ZipFile(wheels[0]) as archive:
+                  entries = [name for name in archive.namelist() if name.startswith(prefix)]
+                  if len(entries) != 1:
+                      raise SystemExit(f"expected one {prefix} extension, found {entries}")
+                  target = output / Path(entries[0]).name
+                  target.write_bytes(archive.read(entries[0]))
+                  print(f"{distribution} native wheel binary: {target}")
+          PY
+          TENSOR_EXTENSION=$(find "$LABNEURA_TEST_ARTIFACTS" -name '*_tensor*' -print -quit)
+          EDA_EXTENSION=$(find "$LABNEURA_TEST_ARTIFACTS" -name '*_eda*' -print -quit)
+          LABNEURA_TENSOR_EXTENSION="$TENSOR_EXTENSION" \
+            python -m pytest -p no:cacheprovider -o addopts= tests/python_packaging/test_tensor_extension.py
+          LABNEURA_EDA_EXTENSION="$EDA_EXTENSION" \
+            python -m pytest -p no:cacheprovider -o addopts= tests/python_packaging/test_eda_extension.py
+          python -m pytest -p no:cacheprovider -o addopts= \
+            tests/python_packaging/test_core_package.py tests/test_version.py
+          python scripts/update_version.py --check
+
+      - name: Verify wheel ownership, runtime links, and isolated install matrices
+        run: >-
+          python scripts/verify_wheel_matrix.py
+          "$RUNNER_TEMP/labneura-wheelhouse"
+          --workdir "$RUNNER_TEMP/labneura-wheel-matrix"
+
   gcc-source-build:
     name: Source build (GCC 13)
     runs-on: ubuntu-latest

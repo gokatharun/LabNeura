@@ -41,6 +41,7 @@ enum class QuantizationMode {
     INT32,     // 32-bit signed integer quantization
     INT16,     // 16-bit signed integer quantization
     INT8,      // 8-bit signed integer quantization
+    BOOL,      // 8-bit canonical boolean storage
 };
 
 enum OperationType {
@@ -50,8 +51,18 @@ enum OperationType {
     DIV
 };
 
+enum class ComparisonType {
+    EQ,
+    NE,
+    LT,
+    LE,
+    GT,
+    GE
+};
+
 // Forward declaration for backend implementation
 class TensorBackend;
+class TensorStorage;
 
 // Main Tensor class: handles mixed int/float input with architecture-aware storage
 class Tensor {
@@ -61,10 +72,35 @@ public:
     Tensor();
     explicit Tensor(const std::vector<float>& data, QuantizationMode mode = QuantizationMode::FP32);
     explicit Tensor(const std::vector<int>& data, QuantizationMode mode = QuantizationMode::FP32);
+    explicit Tensor(const std::vector<std::uint8_t>& data,
+                    QuantizationMode mode = QuantizationMode::BOOL);
     // 2-D tensor from equal-length rows (stored flat, row-major)
     explicit Tensor(const std::vector<std::vector<float>>& rows, QuantizationMode mode = QuantizationMode::FP32);
     explicit Tensor(float scalar, QuantizationMode mode = QuantizationMode::FP32);
     explicit Tensor(int scalar, QuantizationMode mode = QuantizationMode::FP32);
+
+    // Construct a contiguous tensor from flat row-major data and an explicit shape.
+    // An empty shape represents a scalar and therefore requires exactly one value.
+    static Tensor from_flat(const std::vector<float>& data,
+                            const std::vector<std::size_t>& shape,
+                            QuantizationMode mode = QuantizationMode::FP32);
+    static Tensor from_flat(const std::vector<int>& data,
+                            const std::vector<std::size_t>& shape,
+                            QuantizationMode mode = QuantizationMode::FP32);
+    static Tensor from_flat(const std::vector<std::uint8_t>& data,
+                            const std::vector<std::size_t>& shape,
+                            QuantizationMode mode = QuantizationMode::BOOL);
+
+    // Return an independently owned contiguous copy with the requested shape.
+    Tensor reshape(const std::vector<std::size_t>& shape) const;
+    // Return a contiguous reshape that explicitly shares storage with this tensor.
+    Tensor reshape_view(const std::vector<std::size_t>& shape) const;
+    // Return a first-axis range view sharing storage with this tensor.
+    Tensor slice_first_axis(std::size_t start, std::size_t stop) const;
+    // Return a view selecting one element along the first axis.
+    Tensor select_first_axis(std::size_t index) const;
+    // Return an independently owned one-dimensional copy in row-major order.
+    Tensor flatten() const;
 
     // Destructor
     ~Tensor();
@@ -77,9 +113,13 @@ public:
 
     // Shape and size queries
     std::size_t size() const;
-    std::size_t numel() const { return size(); }
+    std::size_t numel() const { return backend_ ? checked_numel(shape_) : 0; }
     QuantizationMode quantization_mode() const { return quantization_mode_; }
     const std::vector<std::size_t>& shape() const { return shape_; }
+    // Strides and storage offset are measured in elements.
+    const std::vector<std::size_t>& strides() const { return strides_; }
+    std::size_t storage_offset() const { return storage_offset_; }
+    bool is_contiguous() const;
     std::size_t ndim() const { return shape_.size(); }
     std::size_t rows() const { return shape_.size() == 2 ? shape_[0] : 1; }
     std::size_t cols() const { return shape_.size() == 2 ? shape_[1] : size(); }
@@ -93,16 +133,38 @@ public:
     const int16_t* data_fp16() const;
     int16_t* data_int16();
     const int16_t* data_int16() const;
+    // BOOL storage is canonicalized on mutable access; callers must write only
+    // 0 or 1. Const access rejects storage made noncanonical through a pointer.
+    std::uint8_t* data_bool();
+    const std::uint8_t* data_bool() const;
 
     // Operations
     // Addition: result = this + other
     Tensor add(const Tensor& other) const;
+    // Write this + other into an existing same-shape, same-backend FP32 tensor.
+    // Exact aliasing of out with either input is supported and overwrites it.
+    void add_into(const Tensor& other, Tensor& out) const;
     // Multiplication: result = this * other
     Tensor mul(const Tensor& other) const;
     // Subtraction: result = this - other
     Tensor sub(const Tensor& other) const;
     // Division: result = this / other
     Tensor div(const Tensor& other) const;
+
+    // Elementwise comparisons return a newly allocated BOOL Tensor.
+    Tensor eq(const Tensor& other) const;
+    Tensor ne(const Tensor& other) const;
+    Tensor lt(const Tensor& other) const;
+    Tensor le(const Tensor& other) const;
+    Tensor gt(const Tensor& other) const;
+    Tensor ge(const Tensor& other) const;
+
+    // Elementwise logical NOT for BOOL tensors; returns independent storage.
+    Tensor logical_not() const;
+    // Elementwise logical AND for BOOL tensors; supports broadcasting.
+    Tensor logical_and(const Tensor& other) const;
+    // Elementwise logical OR for BOOL tensors; supports broadcasting.
+    Tensor logical_or(const Tensor& other) const;
     
     // In-place addition: this += other
     void add_inplace(const Tensor& other);
@@ -114,14 +176,36 @@ public:
     void div_inplace(const Tensor& other);
 
 private:
+    enum class LogicalBinaryOperation {
+        And,
+        Or
+    };
+
     QuantizationMode quantization_mode_;
     std::unique_ptr<TensorBackend> backend_;
+    std::shared_ptr<TensorStorage> storage_;
     std::vector<std::size_t> shape_;
+    std::vector<std::size_t> strides_;
+    std::size_t storage_offset_{0};
 
     void check_same_shape(const Tensor& other) const;
 
+    // Allocating binary operation. Computes directly into a new output when the
+    // backend supports it, otherwise clones this tensor and runs the in-place kernel.
+    Tensor(QuantizationMode mode, std::unique_ptr<TensorBackend> backend, std::vector<std::size_t> shape);
+    Tensor binary_op(const Tensor& other, OperationType op) const;
+    Tensor comparison_op(const Tensor& other, ComparisonType op) const;
+    Tensor logical_binary_op(const Tensor& other,
+                             LogicalBinaryOperation operation) const;
+    void binary_inplace(const Tensor& other, OperationType op);
+
     // Helper to initialize backend based on hardware
     void init_backend(std::size_t size);
+    static std::size_t checked_numel(const std::vector<std::size_t>& shape);
+    static std::vector<std::size_t> checked_contiguous_strides(
+        const std::vector<std::size_t>& shape);
+    static void validate_allocation_size(std::size_t size,
+                                         QuantizationMode mode);
 };
 
 } // namespace labneura

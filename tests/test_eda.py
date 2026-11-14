@@ -1275,10 +1275,6 @@ def test_parse_liberty_exposes_cells_pins_and_timing_tables(tmp_path):
         pytest.approx([0.11, 0.12]),
         pytest.approx([0.21, 0.22]),
     ]
-    tensor = arc.cell_rise.to_tensor()
-    assert tensor.shape == (2, 2)
-    assert tensor.size() == 4
-    assert list(tensor.data_fp32()) == pytest.approx([0.11, 0.12, 0.21, 0.22])
     assert arc.cell_fall.values == [
         pytest.approx([0.31, 0.32]),
         pytest.approx([0.41, 0.42]),

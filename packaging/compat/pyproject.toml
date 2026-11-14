@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61", "wheel>=0.37"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "labneura"
+version = "0.4.2"
+description = "Compatibility distribution for the LabNeura component packages"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [{ name = "LabNeura Authors" }]
+dependencies = [
+  "labneura-core>=0.4.2,<0.5",
+  "labneura-tensor>=0.4.2,<0.5",
+  "labneura-eda>=0.4.2,<0.5",
+]
+
+[tool.setuptools]
+packages = []
+py-modules = []
+include-package-data = false

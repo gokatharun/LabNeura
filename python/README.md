@@ -16,11 +16,121 @@ High-performance C++ tensor library with Python bindings, featuring **hardware-a
 - **Compile-time Optimization**: CMake detects hardware and enables appropriate compiler flags
 
 ### Tensor Operations
-- **Mixed-Precision Support**: FP64, FP32, FP16, INT32, INT16, INT8 (all fully supported)
+- **Tensor Data Types**: FP32 and INT8 are supported by all backends; FP16 and INT16 are supported by AVX2 and NEON backends only. FP64 and INT32 enum values are reserved but unsupported; constructing either mode throws `std::invalid_argument`.
 - **In-place Operations**: `add_inplace()`, `mul_inplace()`, `sub_inplace()`, `div_inplace()` for memory efficiency
 - **Immutable Operations**: `add()`, `mul()`, `sub()`, `div()` return new tensors without modifying originals
+- **Reusable FP32 ADD output**: `add_into(a, b, out)` writes into a caller-owned output tensor without allocating a result on each call
 - **Quantization**: Built-in INT8/INT16 quantization with up to 4x memory reduction
 - **Advanced Math**: Floor division, element-wise operations with SIMD acceleration
+
+`labneura.add_into(a, b, out)` currently supports FP32 ADD on Generic, NEON, and
+AVX2. All tensors must have identical shapes and use the same backend. The call
+overwrites `out`; it may be the same tensor object as `a` or `b`, in which case
+that input is overwritten. Partial storage overlap is unsupported. Unsupported
+backend implementations raise an error instead of allocating a fallback result.
+
+### Contiguous nD Tensors
+
+`Tensor.from_flat(data, shape, mode="auto")` constructs arbitrary-rank
+contiguous tensors from flat row-major data. `"auto"` currently selects FP32;
+an explicit `QuantizationMode` can be supplied for other supported dtypes:
+
+```python
+matrix = labneura.Tensor.from_flat(
+    data=[1, 2, 3, 4, 5, 6],
+    shape=[2, 3],
+)
+cube = labneura.Tensor.from_flat(
+    data=[1, 2, 3, 4, 5, 6, 7, 8],
+    shape=[2, 2, 2],
+)
+assert matrix.shape == (2, 3)
+assert matrix.numel() == 6
+```
+
+The shape is metadata on the Tensor; backend storage and arithmetic remain flat
+and contiguous. `numel` equals the product of the dimensions. An empty shape
+represents a scalar and requires one data element; any shape containing a zero
+dimension has zero elements. Data length must exactly equal `numel`, and
+element-count and allocation-byte overflows are rejected. Existing vector and
+nested 2D constructors remain available. `slice_first_axis(start, stop)` and
+`select_first_axis(index)` return contiguous views that share the source
+allocation. Their storage offsets are measured in elements; mutations through
+C++ in-place operations are visible through aliases, while ordinary Tensor
+copies remain independent. Selecting from a 1D tensor returns a scalar.
+Python `data_*` accessors return copied lists, not mutable aliases.
+Exact in-place aliases are supported; partially overlapping in-place ranges
+are rejected. `add_into` likewise rejects a partially overlapping output view.
+
+```python
+volume = labneura.Tensor.from_flat(list(map(float, range(24))), [4, 2, 3])
+rows = volume.slice_first_axis(1, 3)  # shape (2, 2, 3), offset 6
+plane = volume.select_first_axis(2)   # shape (2, 3), offset 12
+```
+
+Only forward ranges along the first axis are supported. Negative/reverse
+slicing, arbitrary-axis or non-contiguous indexing, and transpose are not
+supported. LabNeura includes an internal nD broadcast shape/stride planner.
+FP32, INT8, and INT16 ADD/SUB/MUL/DIV broadcasting is currently supported for
+the Generic backend, including allocating results and in-place operations that
+do not expand the destination. INT8 and INT16 ADD/SUB/MUL saturate; integer
+division truncates toward zero, returns zero for a zero divisor, and saturates
+the signed minimum divided by `-1` to the signed maximum. Equal-shape
+arithmetic continues to use the selected backend; unequal-shape broadcasting
+on NEON/AVX2 and FP16 broadcasting are not yet supported. The arithmetic
+contract and semantic test matrix are in
+[arithmetic-semantics.md](.github/skills/labneura-engineering/references/arithmetic-semantics.md);
+the documented full dtype/backend matrix remains future work.
+
+### Execution Thread Configuration
+
+LabNeura exposes a process-wide execution thread setting, initially one thread.
+The reusable `parallel_for` execution layer uses this setting, but Tensor
+arithmetic remains single-threaded and does not call `parallel_for`.
+
+The C++ API is declared in `labneura/runtime.h`:
+
+```cpp
+#include <labneura/runtime.h>
+
+const std::size_t available = labneura::available_cpu_count();
+labneura::set_execution_thread_count(2);
+const std::size_t configured = labneura::execution_thread_count();
+labneura::set_execution_thread_count_auto();  // use all detected available CPUs
+```
+
+The Python extension provides the corresponding
+`available_cpu_count()`, `execution_thread_count()`,
+`set_execution_thread_count(count)`, and
+`set_execution_thread_count_auto()` functions. Explicit counts must be between
+one and the detected available CPU count; an invalid count raises
+`std::invalid_argument` in C++ (`ValueError` in Python) and does not change the
+current setting. Availability detection uses macOS `sysctl` or Linux process
+CPU affinity and cgroup CPU quotas where available, with
+`std::thread::hardware_concurrency()` as a fallback. The setting is safe for
+concurrent reads and changes. `parallel_for(begin, end, grain_size, function)`
+partitions a range into disjoint chunks. Its worker pool is lazy and persistent;
+it resizes before the next parallel execution after the thread count changes.
+Workers may remain idle after selecting one thread and are shut down on resize
+or process exit. One-thread
+and small-range calls are synchronous, exceptions propagate to the caller, and
+nested calls run synchronously to avoid deadlocks. Concurrent calls are safe but
+serialized; callbacks within one call may execute concurrently and in any
+order. A call uses the execution thread count sampled at entry. For example:
+
+```cpp
+labneura::parallel_for(0, values.size(), 4096,
+                       [&](std::size_t begin, std::size_t end) {
+    for (std::size_t i = begin; i < end; ++i) {
+        output[i] = values[i] * scale;
+    }
+});
+```
+
+For FP32 ADD, Generic and NEON backends use `parallel_for` for tensors of at
+least 1,000,000 elements when the configured thread count is greater than one.
+The default remains one thread. Other operations, dtypes, and AVX2 arithmetic
+remain serial.
 
 ### Python Integration
 - **Easy Installation**: `pip install labneura`
@@ -90,6 +200,12 @@ print(t1.data_fp32())  # [1.5, 2.5, 3.5, 4.5]
 
 # Non-destructive addition (returns new tensor)
 t3 = t1.add(t2)
+
+# Reusable FP32 output (overwrites out; may exactly alias either input)
+a = labneura.Tensor([1.0, 2.0], labneura.QuantizationMode.FP32)
+b = labneura.Tensor([0.5, 0.5], labneura.QuantizationMode.FP32)
+out = labneura.Tensor([0.0, 0.0], labneura.QuantizationMode.FP32)
+labneura.add_into(a, b, out)
 
 # Other operations
 t1.mul_inplace(t2)  # Element-wise multiplication
@@ -463,8 +579,12 @@ CPU feature detection uses:
 - **GitHub**: https://github.com/gokatharun/LabNeura
 
 ### CI/CD Pipeline
-GitHub Actions workflows are currently disabled. Builds, tests, and package
-publishing must be run manually; automation may be reintroduced later.
+GitHub Actions runs build and test jobs for pushes to `main` and `develop`, pull
+requests targeting those branches, and manual dispatches. Native C++ tests run
+on x86-64 and ARM64 Linux; push and manual runs on `main` also benchmark Generic
+against AVX2 or NEON and publish the generated report under
+`benchmarking/results/latest.md`. Report commits are generated by the workflow
+and do not start another CI run.
 
 ## 📝 License
 

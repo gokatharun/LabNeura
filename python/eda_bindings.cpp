@@ -6,13 +6,9 @@
 #include <filesystem>
 #include <pybind11/stl.h>
 
-void bind_eda(pybind11::module_& labneura_module) {
+void bind_eda_api(pybind11::module_& module) {
     namespace py = pybind11;
     namespace eda = labneura::eda;
-
-    labneura_module.attr("__path__") = py::list();
-    py::module_ module = labneura_module.def_submodule(
-        "eda", "Structural Verilog parsing and netlist interchange.");
 
     py::enum_<eda::PortDirection>(module, "PortDirection")
         .value("INPUT", eda::PortDirection::Input)
@@ -199,9 +195,7 @@ void bind_eda(pybind11::module_& labneura_module) {
         .def("get_template_name", &eda::LookupTable::get_template_name)
         .def("get_index_1", &eda::LookupTable::get_index_1)
         .def("get_index_2", &eda::LookupTable::get_index_2)
-        .def("get_values", &eda::LookupTable::get_values)
-        .def("to_tensor", &eda::LookupTable::to_tensor,
-             "Values as a flat row-major FP32 Tensor");
+        .def("get_values", &eda::LookupTable::get_values);
 
     py::class_<eda::TimingArc>(module, "TimingArc", "A Liberty timing arc.")
         .def_property_readonly("related_pin", &eda::TimingArc::get_related_pin)
@@ -340,4 +334,22 @@ void bind_eda(pybind11::module_& labneura_module) {
     module.def("write_verilog", &eda::write_verilog, py::arg("module"),
                py::arg("path"),
                "Write a structural parsed or generic-mapped netlist as Verilog.");
+}
+
+void bind_eda(pybind11::module_& labneura_module) {
+    namespace py = pybind11;
+
+    labneura_module.attr("__path__") = py::list();
+#if defined(LABNEURA_USE_STANDALONE_EDA_MODULE)
+    py::module_ eda_module = py::module_::import("_eda");
+    labneura_module.attr("eda") = eda_module;
+
+    py::module_ sys = py::module_::import("sys");
+    py::dict modules = sys.attr("modules");
+    modules[py::str("labneura.eda")] = eda_module;
+#else
+    py::module_ eda_module = labneura_module.def_submodule(
+        "eda", "Structural Verilog parsing and netlist interchange.");
+    bind_eda_api(eda_module);
+#endif
 }

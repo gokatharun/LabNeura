@@ -1,7 +1,8 @@
 #include "labneura/backends/common/backend_factory.h"
+#include "backend_selection.h"
 #include "labneura/backends/common/cpu_features.h"
+#include "labneura/backends/common/dtype_validation.h"
 #include "labneura/backends/cpu/generic.h"
-#include <iostream>
 #include <cstdlib>
 #if defined(LABNEURA_ENABLE_AVX2)
 #include "labneura/backends/cpu/avx2.h"
@@ -13,63 +14,51 @@
 
 namespace labneura {
 
-// Return the preferred backend label based on runtime CPU features
-std::string detect_backend() {
-#if (defined(__x86_64__) || defined(_M_X64)) && defined(LABNEURA_ENABLE_AVX2)
-    if (cpu_supports_avx2()) {
-        return "AVX2";
-    }
-    return "GENERIC";
-#elif (defined(__aarch64__) || defined(__ARM_NEON)) && defined(LABNEURA_ENABLE_NEON)
-    if (cpu_supports_neon()) {
-        return "NEON";
-    }
-    return "GENERIC";
+namespace {
+
+detail::BackendKind selected_backend() {
+    const CPUFeatures features = detect_cpu_features();
+    const bool neon_supported = cpu_supports_neon();
+#if defined(LABNEURA_ENABLE_AVX2)
+    constexpr bool avx2_compiled = true;
 #else
-    return "GENERIC";
+    constexpr bool avx2_compiled = false;
 #endif
+#if defined(LABNEURA_ENABLE_NEON)
+    constexpr bool neon_compiled = true;
+#else
+    constexpr bool neon_compiled = false;
+#endif
+    return detail::select_backend(std::getenv("LABNEURA_BACKEND"),
+                                  avx2_compiled, features.avx2,
+                                  neon_compiled, neon_supported);
+}
+
+}  // namespace
+
+std::string detect_backend() {
+    return detail::backend_name(selected_backend());
 }
 
 std::unique_ptr<TensorBackend>
 create_best_backend(std::size_t size, QuantizationMode mode) {
-
-    // Optional override for testing via environment variable
-    // LABNEURA_BACKEND can be set to "GENERIC", "NEON", or "AVX2"
-    if (const char* override = std::getenv("LABNEURA_BACKEND")) {
-        std::string value = override;
-        if (value == "GENERIC") {
+    validate_tensor_dtype_supported(mode);
+    switch (selected_backend()) {
+        case detail::BackendKind::GENERIC:
             return std::make_unique<GenericBackend>(size, mode);
-        }
+        case detail::BackendKind::NEON:
 #if defined(LABNEURA_ENABLE_NEON)
-        if (value == "NEON") {
             return std::make_unique<NEONBackend>(size, mode);
-        }
+#else
+            break;
 #endif
+        case detail::BackendKind::AVX2:
 #if defined(LABNEURA_ENABLE_AVX2)
-        if (value == "AVX2") {
             return std::make_unique<AVX2Backend>(size, mode);
-        }
-#endif
-        // Fall through to auto-detection if value is unrecognized
-    }
-
-
-#if defined(__x86_64__) || defined(_M_X64)
-    if (cpu_supports_avx2()) {
-#if defined(LABNEURA_ENABLE_AVX2)
-        return std::make_unique<AVX2Backend>(size, mode);
+#else
+            break;
 #endif
     }
-#endif
-
-#if defined(__aarch64__) || defined(__ARM_NEON)
-    if (cpu_supports_neon()) {
-#if defined(LABNEURA_ENABLE_NEON)
-        return std::make_unique<NEONBackend>(size, mode);
-#endif
-    }
-#endif
-
     return std::make_unique<GenericBackend>(size, mode);
 }
 
