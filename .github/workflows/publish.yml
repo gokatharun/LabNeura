@@ -366,7 +366,7 @@ jobs:
           from zipfile import ZipFile
 
           from packaging.tags import sys_tags
-          from packaging.utils import parse_wheel_filename
+          from packaging.utils import canonicalize_name, parse_wheel_filename
 
           verify_dir = Path(sys.argv[1])
           wheelhouse = Path(sys.argv[2])
@@ -414,7 +414,11 @@ jobs:
               shutil.copy2(sorted(compatible)[0], verify_dir)
           if platform == "linux":
               for wheel in verify_dir.glob("*.whl"):
-                  shutil.copy2(wheel, wheelhouse)
+                  name, _, _, _ = parse_wheel_filename(wheel.name)
+                  if canonicalize_name(name) in {
+                      "labneura", "labneura-all", "labneura-core"
+                  }:
+                      shutil.copy2(wheel, wheelhouse)
           PY
           python scripts/verify_wheel_matrix.py "$VERIFY_WHEELHOUSE" \
             --version "$version" --workdir "$MATRIX_WORKDIR"
