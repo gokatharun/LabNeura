@@ -102,8 +102,10 @@ void check_direct_backend_constructors(labneura::QuantizationMode mode,
                 std::string(
                     "AVX2 backend construction requires CPU/OS AVX2 support");
         }
-        require(rejected,
+        if (!rejected) {
+            throw std::runtime_error(
                 "Direct AVX2 construction accepted an unsupported CPU/OS");
+        }
     }
 #endif
 #if defined(LABNEURA_TEST_NEON)
