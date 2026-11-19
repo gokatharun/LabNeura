@@ -238,3 +238,92 @@ ML: stable softmax, axis behavior, activation boundaries, loss shape/reduction, 
 
 ## Definition of done
 A feature is complete only when its semantics are documented, implementation exists, tests pass, each claimed backend has explicit tests, Python tests pass if exposed, performance is measured where relevant, unsupported cases are documented, and a completion report is supplied.
+
+### Native Verilog lvalue and assignment subset (M7.13)
+- [x] Identifier, packed bit, constant part, indexed `+:`/`-:`, and nested
+  concatenated lvalues; ascending and descending declared ranges.
+- [x] Runtime bit/indexed-base evaluation; unknown and unsupported indices;
+  legal out-of-range read/write behavior; select width and arithmetic bounds.
+- [x] Assignment resizing/truncation, signed and unsigned extension,
+  two-state/four-state conversion, X/Z behavior, concatenation splitting,
+  preservation of untouched bits, and transactional rollback.
+- [x] Boundary tests for source and target widths 1 through 65 plus 128 bits.
+- [x] Function/task local assignment integration, selected and concatenated
+  task output actuals, selected inout copy-in/out, and explicit `ref` rejection.
+- [x] Slang comparison against constant-function packed part-select assignment;
+  task output effects are expected-value tests only.
+- [ ] Unpacked arrays, multidimensional packed selects, global callable side
+  effects, `ref` aliasing, nonblocking scheduling, and general simulation.
+
+### Native Verilog procedural control flow (M7.14)
+- [x] Structured analysis: loop nesting, return presence, unsupported nodes,
+  and source-located break/continue placement validation.
+- [x] If/else four-state procedural truth behavior; exact case, casez, casex,
+  multiple expressions, first match, and default.
+- [x] For, while, do-while, repeat, and bounded forever loops; initialization,
+  condition, body, update order, nested loops, break, continue, and return.
+- [x] Shared statement-step accounting, including empty forever loops and
+  nested callable execution; explicit budget-exhaustion outcomes.
+- [x] Slang constant-function differential coverage where public APIs provide
+  a valid value oracle; task behavior checked with expected values.
+- [ ] Nonblocking scheduling, wait, process simulation, global side effects,
+  and complete SystemVerilog execution.
+
+### Native process analysis and synthesis eligibility (M7.15)
+- [x] Source-ordered discovery for continuous assignments, generic `always`,
+  `always_comb`, `always_ff`, `always_latch`, and `initial` processes.
+- [x] Semantic-identity read/write dependencies, selected ranges, dynamic
+  selection uncertainty, function dependency summaries, and separate implicit
+  sensitivity sets.
+- [x] Path-sensitive packed-bit assignment coverage for branches, cases,
+  concatenations, and statically justified loop execution; conservative
+  unknown coverage and latch/storage indication.
+- [x] Single-edge clock recognition, structurally matched synchronous and
+  asynchronous reset candidates, blocking/NBA categories, and ambiguous
+  multiple-edge detection.
+- [x] Cross-process procedural writer diagnostics, explicit
+  `Eligible`/`Unsupported`/`Indeterminate` results, expected-result tests, and
+  Slang process-inventory comparison.
+- [ ] Elaborated hierarchy-wide driver merging, RTL lowering, cell generation,
+  process execution, and nonblocking assignment scheduling.
+
+### Independent native AST-to-RTL lowering (M7.16)
+- [x] Explicit opt-in API consumes the same native syntax/elaboration/type/
+  eligibility identity and returns an existing Module only on full success.
+- [x] Flat ports/signals, declared packed range ordering, continuous
+  assignments, known constants, supported Boolean/arithmetic expressions,
+  constant selects, concatenations, and diagnostics for unsupported hardware.
+- [x] Ordered blocking combinational assignment lowering, if/case muxing,
+  static lvalues, and incomplete-assignment rejection.
+- [x] Canonical one-clock NBA process lowering with DFF, negative-edge clock
+  inversion, hold/enable muxing, synchronous reset muxing, and supported
+  constant asynchronous DFFR/DFFS reset forms.
+- [x] Structural tests, failure atomicity, hierarchy/undriven diagnostics,
+  native-vs-Slang AND truth-table differential, optional Yosys AND
+  equivalence proof, and sequential structure tests.
+- [ ] General arithmetic including multiply/divide, X/Z hardware semantics,
+  dynamic selects, local procedural storage, latches, hierarchy, inout,
+  arbitrary resets, technology mapping, and general/sequential equivalence.
+
+### Native RTL verification and differential validation (M7.17)
+- [x] Two-state functional semantics and independently authored truth tables
+  for AND2, OR2, XOR2, INV, MUX2, BUF, TIEHI, and TIELO.
+- [x] Deterministic fanout/topological evaluation, declared port-bit order,
+  constant propagation, cutpoints, and malformed/multiple/undriven/cyclic
+  netlist diagnostics.
+- [x] Bounded sequential functional evaluator with explicit initial state,
+  positive/negative edge transitions, simultaneous old-state updates, hold,
+  enable, synchronous reset, async active-high/low reset/set, frame-zero reset,
+  unsupported-cell and resource-limit diagnostics.
+- [x] Seven native combinational fixtures exhaustively checked against
+  independent expected functions over 4,856 total vectors. Slang differential
+  agrees on 160 vectors across two fixtures; five report explicit Unavailable
+  because generic mapping produces unsupported cells or operations.
+- [x] Deterministic seed 0x4d3731375eed: 24 depth-three trees and four
+  procedural branch expressions checked over 512 vectors; negative,
+  failure-atomicity, and deterministic-output tests.
+- [x] Three Yosys combinational proofs and deliberate inequivalence detection
+  for a wrong AND2 model.
+- [ ] Sequential formal equivalence, unbounded sequential proof, general
+  SystemVerilog event scheduling, four-state netlist evaluation, and generic
+  cells outside the eight-cell two-state evaluator subset.

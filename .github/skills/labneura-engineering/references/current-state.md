@@ -1,6 +1,6 @@
 # LabNeura Current Project State
 
-Last verified: 2026-11-08. Treat this as a continuity reference, not a
+Last verified: 2026-11-19. Treat this as a continuity reference, not a
 substitute for inspecting the current source, tests, worktree, and benchmark
 artifacts.
 
@@ -10,6 +10,693 @@ LabNeura is a C++ numerical-computing and Tensor library with Python bindings.
 Its long-term direction is broad nD Tensor functionality, high-performance CPU
 execution, and eventual GPU execution. CPU functionality and performance remain
 the immediate priorities; GPU implementation is not active work.
+
+### EDA scalar Verilog/SystemVerilog lexer (M5)
+
+The public experimental C++ API is in `include/labneura/eda/verilog_lexer.h`;
+its implementation is `src/labneura/eda/verilog_lexer.cpp`. Tokens and
+diagnostics carry a source ID, byte offset/length, and one-based byte
+line/column. Token spellings are views into immutable source buffers. The
+scalar lexer handles versioned Verilog/SystemVerilog keywords, identifiers,
+numeric forms, strings, comments, compiler directives, longest-match
+operators/punctuation, EOF, and malformed-input diagnostics. It has no Tensor
+or acceleration-core dependency and does not preprocess, parse, or elaborate.
+
+The `LABNEURA_VERILOG_LEXER` selector defaults to `slang` and accepts `scalar`;
+unknown values throw. The existing `parse_verilog` and Slang parser flow do not
+consult this selector and remain unchanged. The selector is available to
+experimental lexer clients; it does not switch the production parser.
+
+The native lexer test uses Slang's supported public `slang::parsing::Lexer`
+API for spelling, source-offset, line/column, and keyword-classification
+differential checks on `tests/data/verilog/lexer_corpus.sv`. Slang groups some
+based literals differently, so the differential check combines contiguous
+Slang tokens where needed. A separate test checks every keyword in Slang's
+public language-version tables against scalar classification for all supported
+versions. Native lexer tests also exercise every category, malformed inputs,
+longest-match operators, every prefix boundary of a sample,
+repeated/independent buffers, and a 2 MiB input.
+Existing Slang parsing behavior remains the production default.
+
+Apple Silicon validation: the lexer CTest and existing EDA Python tests passed;
+full native CTest had 22 passes, 8 expected AVX2 skips, and 0 failures.
+Benchmarking two existing source files (69,727 bytes, 13,256 tokens) reported
+6.534 ms median, 1.404 ms IQR, 16.214 ms p95, 10.67 MB/s, and 2.03 M tokens/s
+with Apple Clang 21.0.0, Apple M1, arm64, and 8 reported hardware threads. The
+retained token/error vector capacity estimate was 819,200 bytes. This is a local
+scalar baseline, not a SIMD or cross-frontend performance claim.
+
+### Verilog byte classification and NEON (M6.1/M6.2)
+
+The EDA-internal classifier is in `src/labneura/eda/verilog_byte_classifier.*`.
+It returns fixed 32-byte blocks with two compact per-byte flag arrays and
+block-level any/all summaries. The scalar ASCII classifier is always compiled;
+ARM64 builds enable the NEON implementation only after a compiler intrinsic
+check. NEON classifies full blocks using two unaligned-safe `vld1q_u8` loads and
+uses the scalar reference for shorter tails. The classifier remains EDA-owned
+and does not link Tensor or Acceleration Core.
+
+`VerilogLexerOptions::backend` and the independent
+`LABNEURA_VERILOG_LEXER_BACKEND=auto|scalar|neon` setting select the byte
+classifier. Auto selects NEON when compiled, otherwise scalar. An unsupported
+explicit NEON request and invalid environment values throw; frontend selection
+through `LABNEURA_VERILOG_LEXER` and Slang-backed `parse_verilog` remain
+unchanged. NEON block scanning is integrated into whitespace, identifier,
+escaped-identifier, line/block-comment, and string candidate searches.
+
+Validation on Apple M1/arm64: the native lexer test exercises all 256 byte
+values, every partial-block size, unaligned addresses, embedded NUL/high-bit
+bytes, large inputs, scalar/NEON full-lexer token and diagnostic parity, and
+the existing Slang corpus/keyword differential. Full native CTest passed 22
+tests with 8 expected AVX2 skips; the EDA Python regression selection passed.
+
+Three benchmark invocations, each with two warmups and nine samples, used the
+same two designs as M5 (69,727 bytes, 13,256 tokens; Release, Apple Clang
+21.0.0). Median-of-invocation medians: classifier-only scalar 0.294 ms
+(237.4 MB/s), NEON 0.061 ms (1,150.1 MB/s), about 4.85x; end-to-end scalar
+5.757 ms (12.11 MB/s, 2.30 M tokens/s), NEON 5.074 ms (13.74 MB/s, 2.61 M
+tokens/s), about 1.13x. These are local baseline measurements, not universal
+performance claims. The benchmark remains documented in
+`benchmarks/eda/README.md`.
+
+### Verilog AVX2 byte classification (M6.3)
+
+The x86 AVX2 classifier is isolated in
+`src/labneura/eda/verilog_byte_classifier_avx2.cpp`; CMake compiles that one
+translation unit with `-mavx2` (or `/arch:AVX2`) only after a compiler/target
+check. The generic EDA sources retain baseline compiler flags. The classifier
+uses 32-byte vectors, compact movemasks, and scalar lane-mask packing into the
+existing fixed block representation. Unaligned loads are expressed through
+`memcpy`, which optimizes to a vector load in the AVX2 translation unit without
+forming an out-of-bounds or alignment-sensitive pointer.
+
+Runtime support is checked independently of compile support. `auto` selects
+AVX2 only when both the AVX2 translation unit is built and OS/CPU runtime
+capabilities report AVX2; otherwise it falls back to NEON or scalar. Explicit
+unsupported requests throw. The existing scalar and NEON paths remain
+available, and NEON handles the new 32-byte classifier block as two 16-byte
+vectors.
+
+AVX2-specific byte and full-lexer parity tests are a separate CTest entry with
+skip return code 77 when the executing machine cannot run AVX2. On the Apple
+M1 host that test is explicitly skipped; AVX2 is not compiled for the native
+target, so no AVX2 runtime correctness or performance claim is made. The
+benchmark identifies unavailable backends and retains the M6.1/M6.2 corpus.
+
+The AVX2 translation unit and baseline dispatcher were cross-compiled with
+Apple Clang for `x86_64-apple-macosx14.0`; CMake's x86_64 configuration also
+confirmed that only the AVX2 translation unit receives `-mavx2`. This is
+compile validation only, not AVX2 execution validation. On the native M1,
+three benchmark invocations (same sources, two warmups and nine samples each)
+had median-of-invocation medians of 0.272 ms scalar versus 0.055 ms NEON for
+classification-only (256.7 versus 1,270.7 MB/s), and 6.621 ms scalar versus
+5.251 ms NEON end-to-end (10.53 versus 13.28 MB/s; 2.00 versus 2.52 M
+tokens/s). AVX2 was reported unavailable; no performance comparison is made
+for it.
+
+### Verilog classifier-to-lexer block reuse (M6.4)
+
+`ClassificationScanner` now belongs to each native lexer invocation and
+caches one source-aligned 32-byte classification block. Whitespace, identifier,
+escaped-identifier, directive, comment, and string candidate searches reuse
+that block until advancing to another block. The scalar/NEON/AVX2 block output
+representation and lexical state transitions remain unchanged; cached searches
+use existing aggregate flags to skip blocks and preserve byte-exact checks in
+the candidate lanes. Backend availability is validated once when the scanner
+is created rather than on every block.
+
+The lexer test adds repeated range-search checks across every offset and short
+range of an unaligned mixed-byte buffer for scalar and any available optimized
+backend. Full-lexer parity also covers long comments, strings, escaped
+identifiers, whitespace, and a CRLF positioned on a block boundary. Existing
+all-byte, corpus, and Slang differential checks remain enabled.
+
+On Apple M1/arm64 (Release, Apple Clang 21.0.0, two warmups and nine samples
+per measured case), the aggregate corpus (69,727 bytes, 13,256 tokens) was
+measured in three invocations before and after the cache change. The
+median-of-invocation medians were:
+
+| Case | Scalar before | Scalar after | NEON before | NEON after |
+| --- | ---: | ---: | ---: | ---: |
+| Classification-only | 0.280 ms | 0.283 ms | 0.0538 ms | 0.0571 ms |
+| End-to-end lexer | 6.294 ms | 5.462 ms | 5.104 ms | 5.009 ms |
+
+End-to-end throughput changed from 11.08 to 12.77 MB/s for scalar and from
+13.66 to 13.92 MB/s for NEON. Classification-only throughput was essentially
+unchanged for scalar and about 6% slower for NEON, so this change is not
+claimed as a classification throughput win. Per-file end-to-end medians also
+improved: scalar Ibex 1.803 to 1.347 ms and 8080 5.001 to 3.870 ms; NEON Ibex
+1.364 to 1.234 ms and 8080 4.013 to 3.755 ms. The benchmark now reports each
+input separately as well as the aggregate. AVX2 was unavailable at runtime on
+the M1, so it remains unmeasured.
+
+Validation on this host: full native CTest passed 22 tests, explicitly
+skipped 9 AVX2-only tests, and had 0 failures. The selected EDA Python and EDA
+packaging regressions passed 216 tests; 3 extension tests were skipped because
+no built `_eda` extension was supplied. The existing Slang-backed production
+frontend and `parse_verilog()` path are unchanged.
+
+### Native Verilog/SystemVerilog preprocessor (M7.1)
+
+The independent C++ API is in `include/labneura/eda/verilog_preprocessor.h`,
+implemented by `src/labneura/eda/verilog_preprocessor.cpp` and built as part of
+the EDA target, including EDA-only builds. Each call owns its macro state and
+returns preprocessed text, source-map segments, structured diagnostics,
+directive metadata, final macros, and retained source buffers. `origin_at()`
+maps output offsets to original source locations and records macro invocation
+and definition frames for expanded text.
+
+The engine supports object/function macros, token-aware parameter substitution,
+nested expansion and arguments, `undef`, redefinition warnings, recursive and
+depth-limit diagnostics, all five conditional directives, and cached relative
+or search-path includes with nested-include identities, cycle detection, and
+missing-file errors. Inactive text is suppressed without evaluating its
+macros/includes, while line endings remain mapped. Timescale and default
+nettype values are recorded; begin/end-keywords, line/resetall, cell, and drive
+directives are retained as deferred metadata rather than applied. Token paste,
+macro stringification, and LF/CRLF macro-definition line continuations are
+implemented in M7.1.1. Pasted fragments are re-lexed and malformed
+concatenations are diagnosed; stringification substitutes parameters, expands
+nested macro arguments, and escapes quotes and backslashes. Undefined macro
+references are errors and remain in output. The engine is independent of Slang
+types, though tests use Slang's public preprocessor for active-token
+differential checks. The existing Slang-backed production parser and
+`parse_verilog()` are unchanged.
+
+Focused native tests cover macro definitions and arguments (including empty
+arguments, nested parentheses, and nested expansion), recursion, diagnostics,
+conditionals, inactive side effects, nested/repeated/missing/cyclic includes,
+CRLF/LF and no-final-newline input, large inputs, source-map coverage and
+origins, directive metadata, and Slang active-token parity. Release validation
+on Apple M1/arm64 with Apple Clang 21.0.0:
+
+- Fresh full native build succeeded. Full CTest: 32 tests, 23 passed, 9
+  explicitly skipped AVX2-only tests, 0 failures. The lexer and preprocessor
+  tests both passed.
+- EDA-only configuration/build and preprocessor CTest passed without Tensor,
+  Acceleration Core, or the compatibility archive.
+- EDA Python regression selection: 109 passed.
+- AVX2 runtime testing was not applicable on the M1.
+- Preprocessor benchmark (2 warmups, 9 measured samples): representative
+  69,727-byte corpus, 0.883 ms median / 0.029 ms IQR / 79.01 MB/s; synthetic
+  607,849-byte macro workload, 15.096 ms / 3.145 ms / 40.27 MB/s; repeated
+  include workload counting each processed header (95,000 bytes), 29.037 ms /
+  6.031 ms / 3.27 MB/s. These are local measurements, not comparisons against
+  Slang or a previous native-preprocessor baseline.
+
+M7.1.1 validation on a fresh Apple M1/arm64 Release build with Apple Clang
+21.0.0:
+
+- Identifier, numeric-literal, chained, and object-like token pasting pass
+  focused tests. The result is re-lexed as exactly one token; malformed pastes
+  produce structured diagnostics while retaining expansion-origin mappings.
+- Macro stringification tests cover parameter substitution, nested macro
+  expansion, escaped quotes/backslashes, ordinary-string isolation, and
+  expansion source mapping. Quote/nested-expansion active-token cases match
+  Slang's public preprocessor; backslash escaping is checked against the
+  required string spelling because Slang retained the raw `\path` backslash
+  in this test case.
+- LF and CRLF definition continuations pass native and Slang token-stream
+  comparisons. Definition locations continue to point to the original
+  physical definition line.
+- Full native CTest: 32 tests, 23 passed, 9 AVX2-specific skips, 0 failures.
+  The fresh EDA-only CTest selection: 2 passed, 1 AVX2 skip. EDA Python
+  regressions: 109 passed. AVX2 runtime remains unavailable on this host.
+- `git diff --check` passes. No benchmark was needed for this correctness-only
+  change.
+
+### Native Verilog/SystemVerilog syntax parser foundation (M7.2)
+
+The independent C++ API is in `include/labneura/eda/verilog_syntax.h`,
+implemented by `src/labneura/eda/verilog_syntax.cpp`. Its primary entry point
+accepts a `VerilogPreprocessorResult`; string and file convenience overloads
+run native preprocessing, lexing, and parsing. The parser uses only the native
+lexer/preprocessor APIs and Slang-independent types. Existing production
+`parse_verilog()` remains backed by Slang and was not changed.
+
+The owned AST currently models compilation units, modules, interfaces,
+packages, parameter declarations and overrides, ports, simple net/variable
+declarations, packed/unpacked ranges, continuous assignments, module
+instantiations, named/positional connections, and expression nodes for
+identifiers, literals, unary/binary/conditional expressions, calls, selects,
+member access, and concatenations. Syntax locations map lexer token offsets
+through preprocessor source maps to original files and macro expansion frames.
+Diagnostics are structured and source-mapped; recovery synchronizes on
+semicolons and design-unit end/begin boundaries.
+
+M7.2 supports the declaration subset documented below; M7.2.1 adds owned
+statement nodes for `begin`/`end` blocks (with labels), nested `if`/`else`,
+`case`/`casez`/`casex`, blocking/nonblocking assignments, event controls, delay
+controls, `wait`, and `always`, `always_comb`, `always_ff`, `always_latch`, and
+`initial` blocks. Event controls represent wildcard, level, posedge, and
+negedge terms with comma or `or` separators. Assignment targets include
+identifiers, member/select expressions, and concatenations. `initial` is
+represented syntactically; no simulation or synthesis semantics are implied.
+Unsupported procedural loops, fork/join, assertions, tasks/functions, and
+other unimplemented statements receive structured diagnostics and are retained
+as unsupported statement nodes where encountered. Generate constructs,
+typedefs and user-defined types, structs/unions/enums, modports, attributes,
+and complete SystemVerilog expression/type grammar remain unsupported.
+Package and interface bodies still accept only the earlier declaration
+subset. Slang's public `SyntaxTree::fromText` accepts both representative
+fixtures; this is a syntax-acceptance differential, not a full AST equivalence
+claim.
+
+Fresh Apple M1/arm64 Release validation with Apple Clang 21.0.0:
+
+- Full native build and CTest: 33 tests, 24 passed, 9 AVX2-specific skips,
+  0 failures. Lexer, preprocessor, and syntax parser tests passed.
+- Fresh EDA-only configuration/build and test selection: 4 tests, 3 passed,
+  1 AVX2 skip, 0 failures.
+- EDA Python regression selection: 109 passed.
+- Parser tests cover module/interface/package declarations, ANSI/non-ANSI
+  ports, inherited parameter types, packed/unpacked dimensions, assignments,
+  expression precedence, named and positional overrides/connections,
+  preprocessor macros/includes, source locations, Slang syntax acceptance,
+  and error recovery.
+- `git diff --check` passes. AVX2 lexer tests skipped because runtime support
+  is unavailable on this Apple Silicon host.
+
+### Native behavioral RTL parser increment (M7.2.1)
+
+The public parser API remains unchanged. `VerilogModuleDeclaration` now owns
+procedural blocks; each block owns an optional event control and a recursive
+statement tree. The statement AST retains per-node source locations, optional
+block labels, expression nodes for conditions/delays/assignments, event edge
+terms, and case-item expressions including `default`. Parsing supports
+blocking `=`, nonblocking `<=`, identifier/member/bit-select/part-select and
+concatenation assignment targets, nested `if`/`else`, all three case variants,
+`begin`/`end`, wildcard and edge event controls, comma/`or` event lists,
+procedural `#` delays, event-control statements, `wait`, and the four `always*`
+forms plus `initial`.
+
+At M7.2.1, loop forms (`for`, `while`, `repeat`, `forever`), fork/join,
+assertions, and tasks/functions produced an `UnsupportedProceduralStatement`
+diagnostic and an unsupported AST node. M7.6 adds owned AST and parsing for
+`for`, `while`, `repeat`, and `forever`; fork/join, assertions, tasks/functions,
+and other unimplemented statements remain explicitly unsupported. Recovery
+recognizes statement terminators and design-unit starts; malformed procedural
+blocks do not consume the next module. The parser does not execute or
+synthesize `initial` blocks and does not implement full SystemVerilog
+statement/declaration semantics.
+
+The new `tests/data/verilog/behavioral_rtl.sv` fixture covers combinational,
+clocked, latch, and initial procedures; reset edges; nested conditionals;
+case/casez/casex; labeled blocks; selects and concatenation lvalues; multiple
+event separators; delays, wildcard events, wait, macro expansion locations,
+and Slang syntax acceptance. Malformed condition, assignment, block, and event
+control cases check diagnostics and recovery.
+
+Fresh Apple M1/arm64 Release validation with Apple Clang 21.0.0:
+
+- Full native build and CTest: 33 tests, 24 passed, 9 AVX2-specific skips,
+  0 failures.
+- Fresh EDA-only build and CTest: 4 tests, 3 passed, 1 AVX2 skip, 0 failures.
+- EDA Python regression selection: 109 passed.
+- Both the original M7.2 parser fixture and the behavioral RTL fixture were
+  accepted by Slang's public syntax parser; no AST equivalence is claimed.
+- `git diff --check` passes. AVX2 lexer testing skipped because the Apple
+  Silicon host does not support AVX2.
+
+### Native Verilog semantic-analysis foundation (M7.3)
+
+The independent semantic API is declared in
+`include/labneura/eda/verilog_semantic.h` and implemented in
+`src/labneura/eda/verilog_semantic.cpp`. `analyze_verilog_semantics()` accepts
+the native compilation-unit syntax AST and returns an owned scope/symbol
+model, resolved/unresolved reference records, and structured source-mapped
+diagnostics. The compilation-unit scope owns module, interface, and package
+scopes; each design-unit scope collects parameters/localparams, ports,
+nets/variables, procedural-block entries, and module instance names before
+reference resolution. `lookup_verilog_symbol()` supports nearest-scope and
+parent-scope lookup. A reference records the resolving scope and points into
+the owned semantic symbol table; module instance symbols link to their module
+declaration symbol.
+
+The analyzer resolves identifiers in represented declaration dimensions and
+initializers, continuous assignments, supported procedural expressions,
+conditions, event controls, case expressions/items, and instance connections
+and override values. Package member accesses are resolved for declarations
+within this compilation unit. `$` system names and supported type/builtin
+forms are not diagnosed as unresolved. M7.9 adds bounded function/task
+declaration and call support; details and limitations are recorded below.
+Unsupported statement nodes are skipped to avoid cascaded semantic errors.
+
+Diagnostics cover duplicate design/local declarations (with the original
+declaration location), duplicate instance names, unresolved visible-scope
+identifiers, unknown module types, and unknown named parameter/port
+connections when module declarations are available. Positional override
+counts are checked. Ordinary module-local lookup does not search sibling
+design-unit scopes; qualified package references use the package's own scope.
+Imports, general type checking, elaboration, and full language visibility
+remain outside this foundation. Production `parse_verilog()` remains
+Slang-backed and unchanged.
+
+Semantic tests cover independent module/package scopes, parameter/localparam
+and port/net/variable collection, continuous and procedural references,
+package-qualified members, valid module/instance/connection resolution,
+invalid named overrides/ports, duplicates, unresolved and cross-module
+identifiers, diagnostic locations, macro-expansion origins, built-in calls,
+and skipping unsupported statement bodies.
+
+Fresh Apple M1/arm64 Release validation with Apple Clang 21.0.0:
+
+- Full native build and CTest: 34 tests, 25 passed, 9 AVX2-specific skips,
+  0 failures.
+- Fresh EDA-only build and CTest: 5 tests, 4 passed, 1 AVX2 skip, 0 failures.
+- EDA Python regression selection: 109 passed.
+- `git diff --check` passes. AVX2 lexer test skipped because the Apple
+  Silicon host does not support AVX2.
+
+### Native constant evaluation and parameter elaboration (M7.4)
+
+The independent constant evaluator API is declared in
+`include/labneura/eda/verilog_constant.h`; hierarchy elaboration is declared
+in `include/labneura/eda/verilog_elaboration.h`. They consume the owned native
+syntax AST and semantic model. `evaluate_verilog_constant()` returns an
+owned bit-vector value with explicit width, signedness, four-state bits,
+unbased-unsized fill state, and syntax source location, plus structured
+diagnostics. Bits are stored least-significant first; the evaluator applies a
+65,536-bit default cap. Supported expressions include integer/based literals,
+identifiers, unary/binary arithmetic and bitwise/logical/comparison/shift
+operators, conditional expressions, concatenations, replications, constant
+selects, `$clog2`, `$signed`, and `$unsigned`. Divide-by-zero, invalid widths
+and shifts, unresolved identifiers, unsupported expressions, and invalid
+system-function arguments are diagnosed.
+
+The evaluator handles the implemented sizing subset: unsized decimal integer
+literals use at least 32 signed bits, unsized based literals use at least 32
+bits, sized literals retain their declared width, and binary arithmetic uses
+the wider operand width and is signed only when both operands are signed.
+Arithmetic results wrap to that width. X/Z bits are retained for literals and
+supported bitwise/logical operations; this is not a complete implementation
+of all IEEE 1800 context-determined sizing, four-state arithmetic, casts, or
+expression rules.
+
+`elaborate_verilog_design()` returns the semantic model, evaluated module
+parameter/localparam environments, top-module candidates, an owned parent/
+child module-instance tree, and combined diagnostics. Parameter dependencies
+are resolved recursively, including forward references; cycles are reported.
+Named and positional overrides are evaluated in the caller's parameter
+environment and produce fresh per-instance values. Declared integral widths
+and packed parameter ranges are applied. Package parameters can be referenced
+with package qualification. Explicit top selection is supported; otherwise
+the API chooses a single uninstantiated module candidate and reports
+ambiguity instead of choosing arbitrarily. Missing module definitions and
+recursive module-instantiation paths are diagnosed. Production
+`parse_verilog()` remains Slang-backed and unchanged.
+
+At the M7.4 milestone, generate constructs were not yet elaborated; their
+current support is documented in M7.5 below. `defparam`, full
+type-parameter/type resolution, function-based constant evaluation beyond
+the listed system functions, full port/type compatibility, interface
+hierarchy, and complete SystemVerilog sizing and four-state semantics remain
+unsupported. Slang value/width differential comparison was not performed;
+Slang remains a syntax reference in the earlier parser tests, not evidence of
+evaluator equivalence.
+
+Focused tests cover sized/unsized and signed/unsigned values, operator
+precedence results, X-aware logic, concat/replication, invalid shifts and
+division, `$clog2`, source locations, parameter dependencies/localparams,
+cycles, packed parameter truncation, package references, per-instance named
+and positional overrides, invalid overrides, nested/missing/recursive
+hierarchy, top inference, ambiguity, and macro-origin locations.
+
+Fresh Apple M1/arm64 Release validation with Apple Clang 21.0.0:
+
+- Fresh full native build succeeded. Full CTest: 35 tests, 26 passed, 9
+  AVX2-specific skips, 0 failures.
+- Fresh EDA-only build succeeded. CTest: 6 tests, 5 passed, 1 AVX2-specific
+  skip, 0 failures.
+- EDA Python regression suites (`test_eda.py`, `test_eda_graph.py`,
+  `test_eda_equivalence.py`, and `test_eda_fpga.py`): 216 passed.
+- `git diff --check` passes. No Slang constant-value/width differential was
+  run; no equivalence claim is made.
+
+### Native generate construct elaboration (M7.5)
+
+The native syntax AST (`include/labneura/eda/verilog_syntax.h`) owns generate
+regions and recursive `if`/`else if`/`else`, `case`/`casez`/`casex`, and
+`for` constructs. Conditions, case labels, loop initialization/condition/step,
+and generated scopes reuse the existing expression and declaration nodes.
+The parser recognizes both explicit `generate ... endgenerate` regions and
+direct module-item generate constructs, along with nested generate items.
+Generate-for bodies are required to be named `begin` blocks; loop update
+forms include assignment, `+=`, `-=`, `++`, and `--`.
+
+The semantic analyzer creates scopes for generated blocks and loop genvars,
+collects their parameters, declarations, and instance names, and resolves
+references through enclosing generated/module scopes without leaking
+compilation-unit sibling design units into local lookup. The elaborator uses
+the existing constant evaluator and each module instance's own parameter
+environment to select conditional/case branches and expand loops. It creates
+an independent owned hierarchy for every module instance and loop iteration,
+including generated declarations, localparams, assignments, child instances,
+and parent links. Paths include generate-block names and loop indices, e.g.
+`top.lanes[1].lane`; explicit generate regions do not add a path component.
+`casez` and `casex` wildcard matching is supported for the represented
+four-state bit patterns. Genvars use signed 32-bit values and the default
+iteration limit is 1024, configurable with
+`VerilogElaborationOptions::maximum_generate_iterations`.
+
+Nonconstant or unknown conditions, invalid initialization/steps, nonprogress,
+genvar overflow, duplicate selected generated names, and iteration-cap
+exhaustion produce structured diagnostics. Macro-generated constructs retain
+source-map invocation locations and expansion frames. Automatic top-module
+inference includes module types instantiated in generate scopes. Production
+`parse_verilog()` remains Slang-backed and unchanged; the native APIs remain
+independently callable and do not depend on Tensor.
+
+The grammar is deliberately bounded. Generate subroutines, `defparam`, type
+parameters, complete SystemVerilog expression and scope semantics, and
+complete IEEE case/generate sizing behavior remain unsupported. The Slang
+differential checks acceptance of one simple three-iteration generate loop
+and compares the elaborated generated-module-instance count; it does not
+compare full ASTs or hierarchy names.
+
+Focused native generate tests cover true/false and else-if branches, case
+selection/default and casez/casex wildcards, zero and multiple iterations,
+nested constructs, per-instance parameter conditions, generated declarations
+and instances, hierarchy paths, enclosing-scope semantic lookup, unresolved
+conditions, invalid progress, iteration limits, duplicate names, macro
+locations, and the Slang instance-count differential.
+
+Fresh Apple M1/arm64 Release validation with Apple Clang 21.0.0:
+
+- Fresh full native build succeeded. Full CTest: 35 tests, 26 passed,
+  9 AVX2-specific tests skipped, 0 failures.
+- Fresh EDA-only configure/build succeeded with Tensor, Acceleration Core,
+  and compatibility archive disabled. CTest: 6 tests, 5 passed, 1
+  AVX2-specific lexer test skipped, 0 failures.
+- EDA Python regression suites (`test_eda.py`, `test_eda_graph.py`,
+  `test_eda_equivalence.py`, and `test_eda_fpga.py`): 216 passed.
+- `git diff --check` passes. AVX2 runtime testing was unavailable on this
+  Apple Silicon host.
+
+### Native procedural statement AST and parser (M7.6)
+
+The existing procedural AST was extended with a `Loop` statement kind and
+typed `for`, `while`, `repeat`, and `forever` loop forms. `for` statements own
+optional initializer and step assignment statements, an optional condition,
+and a nested body; the parser supports simple assignments, compound arithmetic
+and bitwise updates, and postfix `++`/`--`. A single declared loop variable
+(for example `int i = 0`) is retained with its type and source location, and
+semantic analysis creates a local procedural scope for it. Standard
+module-declared loop variables resolve through the surrounding module scope.
+Loop initializer lists and more complex declaration forms are not supported.
+
+Event-control and delay-control statements now have distinct AST kinds rather
+than sharing a generic timing-control kind. Existing support for all five
+procedural block forms (`initial`, `always`, `always_comb`, `always_ff`, and
+`always_latch`), labeled `begin`/`end`, blocking/nonblocking assignments,
+`if`/`else`, case variants/default, event lists/wildcards, delays, and `wait`
+is retained. Procedural `assign`, `deassign`, `force`, and `release` are
+diagnosed and retained as unsupported statement nodes. Semantic traversal
+resolves loop conditions, initializer/update expressions, event expressions,
+case items and nested bodies, and diagnoses invalid assignment targets.
+
+This is not simulation or synthesis support: loops are not executed, delays
+and event scheduling have no runtime semantics, and `initial` remains a
+syntax-only construct. Intra-assignment timing, comma-separated loop
+declaration lists, `do` loops, fork/join, assertions, callable syntax outside
+the M7.9 subset, and full SystemVerilog statement/type semantics remain
+unsupported. The Slang
+differential accepts the representative loop fixture; AST equivalence is not
+claimed. Production `parse_verilog()` remains Slang-backed and unchanged.
+
+Tests cover all procedural block kinds, blocking/nonblocking assignments,
+nested blocks/labels and conditionals, all case variants/default, for/while/
+repeat/forever, declared loop variables, event and delay controls, macros,
+source locations, unsupported procedural-continuous forms, malformed-loop
+recovery, semantic loop-variable resolution, unresolved references, invalid
+assignment targets, and Slang syntax acceptance.
+
+Fresh Apple M1/arm64 Release validation with Apple Clang 21.0.0:
+
+- Fresh full native build and CTest: 35 tests, 26 passed, 9 AVX2-specific
+  skips, 0 failures.
+- Fresh EDA-only build and CTest: 6 tests, 5 passed, 1 AVX2-specific lexer
+  skip, 0 failures.
+- EDA Python regression suites (`test_eda.py`, `test_eda_graph.py`,
+  `test_eda_equivalence.py`, and `test_eda_fpga.py`): 216 passed.
+- Slang accepted the procedural loop syntax fixture; no AST equivalence is
+  claimed. AVX2 runtime testing was unavailable on this Apple Silicon host.
+- `git diff --check` passes.
+
+### Native expression type analysis (M7.7)
+
+The independent type API is in `include/labneura/eda/verilog_type.h` and
+`src/labneura/eda/verilog_type.cpp`. It returns owned integral, real, string,
+and unknown type records with optional width, signedness, two-/four-state
+behavior, packed-dimension widths, and unbased-unsized status. Type information
+is separate from constant values. `analyze_verilog_expression_types()` walks
+module, interface, package, declaration, continuous-assignment, procedural,
+and generate expressions using the native semantic model. Expression type
+results are keyed by AST node; symbol type keys point into the caller-owned
+semantic result, which must outlive their use. Standalone expression and
+declared-type inference functions are also available.
+
+The supported sizing subset is explicit: unsized decimal integer widths reuse
+the native constant evaluator's at-least-32-bit signed sizing; sized based
+literals use their explicit width, and unsized based literals follow the
+evaluator's minimum-32-bit, digit-based width. Built-in `bit`, `logic`/net,
+integer atom, `integer`, and `time` declarations derive width, signedness, and
+state model from the declared form and constant packed dimensions. Binary
+arithmetic/bitwise expressions use the maximum operand width and are signed
+only when both operands are signed; shifts use the left operand type.
+Comparisons, logical/reduction operators, bit-selects, and constant
+part-selects use one-bit or range-derived unsigned results; conditional
+expressions use the wider branch; concatenations sum widths and replications
+multiply the constant count by operand width. User-defined types and widths
+that cannot be resolved remain unknown.
+
+Known assignment width and signedness conversions produce source-located
+warnings, not hard errors. Parameter and localparam types are collected,
+including forward-inferred untyped parameter expressions. Elaborated module
+instances retain `parameter_types` separately from their parameter values;
+declared parameter types also drive the existing supported truncation and
+extension in elaboration. The native type result agrees with Slang on a tested
+binary arithmetic expression for width, signedness, and state model. This is
+not complete IEEE context-determined sizing or full type checking; dynamic
+arrays, type parameters, broad assignment-context propagation, full mixed-type
+promotion, and exhaustive invalid-type diagnostics are unsupported.
+
+Fresh Apple M1/arm64 Release validation with Apple Clang 21.0.0:
+
+- Fresh full native build and CTest: 36 tests, 27 passed, 9 AVX2-specific
+  skips, 0 failures.
+- Fresh EDA-only build and CTest: 7 tests, 6 passed, 1 AVX2-specific lexer
+  skip, 0 failures.
+- EDA Python regression suites (`test_eda.py`, `test_eda_graph.py`,
+  `test_eda_equivalence.py`, and `test_eda_fpga.py`): 216 passed.
+- Focused Slang comparison matched native binary-expression width,
+  signedness, and four-state status.
+- `git diff --check` passes. AVX2 runtime testing was unavailable on this
+  Apple Silicon host.
+
+### Native SystemVerilog data type expansion (M7.8)
+
+The native syntax AST owns typedef aliases, enum declarations/enumerators,
+struct/union member declarations, packed/unpacked dimensions, and declaration
+locations. Type definitions resolve recursively within module/interface,
+package, and generate scopes. Forward typedef references
+within a scope are supported; package-qualified types are available without
+leaking module-local names between sibling scopes. Alias metadata and original
+type identity remain available on resolved type records.
+
+Enums preserve enum identity plus their underlying integral width,
+signedness, and four-state status. Explicit and implicit values use the native
+constant evaluator; package-qualified enumerator values are available to
+constant evaluation and elaboration. Struct member types are retained; packed
+structs compute aggregate width and member offsets, while unpacked structs do
+not claim a packed width. Packed unions use shared offset zero and require
+equal known integral member widths. Unpacked unions preserve member types
+without inventing a layout. Unknown member types and invalid member selection
+are diagnosed.
+
+Fixed unpacked arrays are represented as nested array types with separate
+dimension/count metadata and element types. Multidimensional indexing returns
+the next array or element type. Packed dimensions are independent of unpacked
+element counts. Typedef-based parameter types, including enum and integral
+typedefs, propagate into each elaborated instance's parameter type/value
+environment.
+
+This is not full SystemVerilog type compliance. Dynamic/associative/queue
+arrays, type parameters, imports, complete aggregate assignment compatibility,
+unpacked-array part-selects, full enum range/overflow checking, and complete
+context-determined sizing are unsupported. Unknown custom types remain
+unknown and produce diagnostics instead of being coerced to integers.
+Differential tests compare a supported enum's width, signedness, and
+four-state status with Slang; this is not a general equivalence claim.
+
+Fresh Apple M1/arm64 Release validation with Apple Clang 21.0.0:
+
+- Fresh full native configure/build succeeded. CTest: 36 tests, 27 passed,
+  9 AVX2-specific tests skipped, 0 failures.
+- Fresh EDA-only configure/build succeeded with Tensor, Acceleration Core,
+  and compatibility disabled. CTest: 7 tests, 6 passed, 1 AVX2-specific
+  lexer test skipped, 0 failures.
+- EDA Python regression suites (`test_eda.py`, `test_eda_graph.py`,
+  `test_eda_equivalence.py`, and `test_eda_fpga.py`): 216 passed.
+- Focused native tests compare enum width, signedness, and four-state status
+  with Slang; no broader equivalence claim is made.
+- `git diff --check` passes. AVX2 runtime testing was unavailable on this
+  Apple Silicon host.
+
+### Native callable and legacy-port support (M7.10)
+
+The owned AST and parser support ANSI and legacy/non-ANSI module ports,
+including declaration-list ports followed by body declarations. Bounded
+function and task declarations remain supported in modules, interfaces, and
+packages. Declarations retain function/task kind, `automatic`/`static`
+lifetime, return type spelling and packed dimensions, ordered typed/directed
+formals, local declarations, nested statement bodies, and source-map
+locations. Calls preserve positional or `.formal(actual)` named argument
+syntax, and explicit return statements are represented in the statement AST.
+An omitted function return type defaults to one-bit `logic`; task calls are
+distinct procedural statements while function calls remain expressions.
+
+Semantic analysis creates Function/Task symbols and callable child scopes.
+Ordered formal symbols preserve direction, type, dimensions, and locations.
+Callable bodies resolve against formal and local declarations. Known calls
+are checked for function-versus-task context. Binding supports either all
+positional or all named actuals, diagnoses mixed/duplicate/unknown/missing
+arguments, checks output/inout/ref lvalues, and reports known integral
+width/signedness conversions as warnings. Ref compatibility requires matching
+known types. Package-qualified callable references resolve when the package
+is present.
+
+The function evaluator and task executor synchronously execute a bounded
+subset using the existing four-state constant values and per-invocation
+environments. Functions support locals, blocking assignments, return values
+or function-name assignment, and nested supported function calls without
+mutating the caller environment. Tasks support locals, nested task calls,
+supported sequential statements, and successful output/inout/ref writeback to
+simple identifier actuals. Recursive re-entry and configurable shared
+statement/call-depth limits are diagnosed. Nonblocking assignments,
+event/delay controls, `wait`, unsupported expressions/statements, and
+non-identifier task output writeback are diagnosed rather than simulated.
+This is not simulation scheduling or complete SystemVerilog compliance.
+
+Slang differential coverage is syntax acceptance only, not semantic or
+execution equivalence. Production `parse_verilog()` remains Slang-backed and
+unchanged; the native APIs remain independently callable and Tensor-independent.
+
+Fresh Apple M1/arm64 Release validation with Apple Clang 21.0.0:
+
+- Fresh full native configure/build succeeded. CTest ran 41 tests: 32 passed,
+  9 AVX2-specific tests skipped, 0 failures.
+- Fresh EDA-only configure/build succeeded with Tensor, Acceleration Core,
+  and compatibility disabled. CTest ran 12 tests: 11 passed, 1 AVX2-specific
+  lexer test skipped, 0 failures.
+- EDA Python regression suites (`test_eda.py`, `test_eda_graph.py`,
+  `test_eda_equivalence.py`, and `test_eda_fpga.py`): 216 passed.
+- Focused callable tests cover legacy ports and Slang syntax acceptance,
+  named/positional binding and compatibility, function evaluation, task
+  execution including casez/casex wildcard behavior, source locations,
+  recursion, and execution limits.
+- `git diff --check` passes. AVX2 runtime testing was unavailable on this
+  Apple Silicon host.
 
 ## Verified completed work
 
@@ -555,6 +1242,102 @@ M3.1 broadcast shape/stride planner validation on Apple Silicon:
   change before CI validation is complete. Arithmetic broadcasting and actual
   non-contiguous Tensor views remain unimplemented.
 
+### Callable semantics hardening and differential validation (M7.11)
+
+M7.11 hardens the native callable behavior through semantic and execution
+tests. Binding coverage now checks positional and named ordering, missing and
+excess actuals, parameterized formal widths, input width/signedness warnings,
+`ref` two-state/four-state compatibility, and source-located diagnostics.
+Function evaluation coverage checks fresh local frames across invocations,
+local initialization, blocking execution, nested calls, signed extension and
+width truncation on return, parameterized formal/return types, conversion from
+four-state actuals to two-state formals, unsupported expressions, recursion,
+and execution limits. Task execution coverage checks reversed named actual
+ordering and writeback, repeated task-local initialization, transactional
+output writeback failure for select actuals, nested calls, and case/casez/casex
+execution.
+
+Slang differential tests compare actual constant-function values, result bit
+patterns, return width/signedness/four-state status, nested named-call binding,
+parameterized callable types, repeat-invocation local isolation, and rejection
+of a missing required actual. The test filters Slang warnings separately from
+errors. Slang's public constant evaluator does not execute tasks as a
+procedural simulation oracle, so task side effects/output values are not
+claimed as Slang differentials. Slang syntax acceptance alone is not treated
+as semantic parity.
+
+Unsupported behavior remains explicit: task output/inout/ref writeback is
+limited to simple identifier actuals; non-identifier targets are diagnosed.
+Global side effects, recursive callable re-entry, persistent `static` local
+state, nonblocking assignments, timing/event controls, `wait`, and
+four-state procedural branch merging are not simulated. Conditions and case
+selectors in execution require known integral values. Unsupported expressions
+or statements fail with diagnostics. This is a bounded deterministic
+interpreter, not full SystemVerilog simulation.
+
+Fresh Apple Silicon M1/arm64 Release validation on 2026-11-16:
+
+- Full native build succeeded. CTest ran 42 tests: 33 passed, 9 AVX2-only
+  tests skipped, 0 failures. NEON tests executed.
+- Fresh EDA-only Release build succeeded with Tensor, Acceleration Core, and
+  compatibility disabled. CTest ran 13 tests: 12 passed, 1 AVX2 lexer test
+  skipped, 0 failures.
+- Python EDA regression suites (`test_eda.py`, `test_eda_graph.py`,
+  `test_eda_equivalence.py`, and `test_eda_fpga.py`): 216 passed.
+- `git diff --check` passed. Production `parse_verilog()` remains backed by
+  Slang; the native EDA frontend remains independently callable and Tensor-
+  independent. No existing user worktree changes were discarded.
+
+### Native callable timing controls (M7.12)
+
+The native syntax AST reuses the existing distinct delay/event statement
+representations and event term edge/expression fields. The parser now also
+accepts bare `@signal` controls, in addition to `@(signal)`, edge terms,
+comma/`or` event lists, and wildcard syntax. Semantic analysis resolves bare
+event signal references through the same existing term traversal.
+
+Task execution interprets `#expr` and `#(expr)` as nonnegative known integral
+logical ticks up to 64 bits. Delays preserve statement order, evaluate against
+the current task frame (including formals and supported nested function
+calls), and advance a checked `uint64_t` virtual clock without sleeping. `#0`
+continues immediately in source order and does not model a delta region. The
+task result reports elapsed ticks. During positive delays, a caller-supplied
+ordered external transition trace can update visible task-frame signals at
+absolute logical ticks.
+
+Task event controls consume transitions in trace order. Level events trigger
+on an actual value change; `posedge`/`negedge` use four-state transition
+classes, including X/Z transitions. Event-list terms are OR-combined. Nested
+and repeated waits share the trace cursor and virtual time. Exhausting the
+trace returns `NoMatchingEvent`; it is a failed, transactional execution, not
+a completed task or a resumable suspension. Outputs are written back only on
+successful completion.
+
+Explicit diagnostics reject unsupported delay expressions, negative/unknown/
+too-wide delay values, tick overflow, out-of-order or malformed transition
+entries, wildcard event controls, and edge events that do not evaluate to one
+bit. `wait`, nonblocking assignments, timing in functions, and event controls
+in top-level `initial`/`always*` procedural blocks remain unsupported by the
+callable interpreter. It does not implement a scheduler, delta cycles,
+timescale conversion, event regions, or resumable task frames. Slang tests
+confirm timing syntax acceptance only; Slang's available APIs here do not
+provide procedural simulation results for a behavioral differential.
+
+Fresh Apple Silicon M1/arm64 Release validation on 2026-11-19:
+
+- Fresh full native Release build succeeded. CTest ran 44 tests: 35 passed,
+  9 AVX2-only tests skipped, 0 failures. NEON tests executed.
+- Fresh EDA-only Release build succeeded with Tensor, Acceleration Core, and
+  compatibility disabled. CTest ran 15 tests: 14 passed, 1 AVX2 lexer test
+  skipped, 0 failures.
+- Prescribed Python EDA regression suites (`test_eda.py`, `test_eda_graph.py`,
+  `test_eda_equivalence.py`, and `test_eda_fpga.py`): 216 passed.
+- Slang accepted the bare `@signal` syntax fixture. No procedural event or
+  delay execution differential is claimed because this environment's Slang
+  API does not provide a behavioral simulation result oracle.
+- `git diff --check` and checks for the new untracked delay/event test files
+  passed. Production `parse_verilog()` remains Slang-backed and unchanged.
+
 The subsequent M2.1 reshape/flatten milestone was also validated on Apple
 Silicon:
 
@@ -565,3 +1348,256 @@ Silicon:
   skips.
 - Generic and NEON reshape/flatten native tests ran. AVX2 runtime behavior
   remains unverified locally because this host is Apple M1.
+
+### Native lvalue resolution and assignment semantics (M7.13)
+
+The independent native Verilog frontend exposes a shared lvalue resolver and
+assignment engine using the existing `VerilogSemanticSymbol`,
+`VerilogIntegralType`, and `VerilogConstantValue` representations. Resolved
+targets carry symbol/storage identity, declared type/range, destination width,
+signedness and state kind, plus LSB-first physical bit mappings. The syntax AST
+now distinguishes bit, constant part, indexed upward, and indexed downward
+selects; the parser records `+:` and `-:` explicitly.
+
+The resolver supports simple integral identifiers, packed bit-selects,
+constant part-selects, indexed `+:`/`-:` selects with runtime bases, and nested
+concatenations. It maps ascending and descending declared ranges to physical
+storage bits. Runtime bit/base expressions are evaluated in the active
+callable frame. Known out-of-range selections preserve their lvalue width,
+ignore corresponding writes, and read as `X`. Unknown indices, nonconstant
+part-select bounds/indexed widths, invalid widths, unsupported target kinds,
+unpacked arrays, multidimensional packed arrays, and arithmetic overflow
+produce explicit diagnostics.
+
+The assignment engine handles full-width and masked writes, RHS truncation and
+signed extension, unbased unsized values, two-state `X`/`Z` to zero conversion,
+four-state preservation, and concatenation bit splitting. It stages all
+destination values and commits only on success. Ambiguous overlapping writes
+inside one concatenation fail transactionally with
+`OverlappingAssignmentDestinations`.
+
+Function and task blocking assignments use the shared resolver/engine for
+callable-local variables and function return storage. Task output and inout
+actuals accept selected or concatenated lvalues; inout reads and output target
+resolution happen at task-call entry, and caller writeback is committed only
+after successful execution. `ref` execution is explicitly rejected because
+aliasing is not modeled. Nonblocking assignments, global procedural side
+effects, unpacked array lvalues, multidimensional packed selects, and full
+simulation scheduling remain unsupported. Indexed part-select reads in general
+expressions are diagnosed as unsupported by the constant evaluator; indexed
+part-select lvalue targets remain supported.
+
+Slang differential coverage executes a constant function that writes a packed
+part-select and compares its value with Slang's constant evaluation. Callable
+selected/concatenated task output tests use explicit expected values; no task
+simulation equivalence is claimed because the available Slang API does not
+provide that oracle. Production `parse_verilog()` remains Slang-backed.
+
+Fresh Apple Silicon M1/arm64 Release validation on 2026-11-19:
+
+- Full native Release build succeeded. CTest ran 47 tests: 38 passed,
+  9 AVX2-only tests skipped, 0 failures.
+- Fresh EDA-only Release build succeeded with Tensor, Acceleration Core, and
+  compatibility disabled. CTest ran 18 tests: 17 passed, 1 AVX2 lexer test
+  skipped, 0 failures.
+- Prescribed Python EDA regression suites (`test_eda.py`, `test_eda_graph.py`,
+  `test_eda_equivalence.py`, and `test_eda_fpga.py`): 216 passed.
+- The assignment differential CTest passed alongside the native expected-value
+  tests. No procedural task or simulator equivalence is claimed.
+- `git diff --check` and new-file whitespace checks passed. Existing dirty and
+  untracked worktree changes were preserved; no commit or push was made.
+
+### Native RTL verification and differential validation (M7.17)
+
+Test support now provides a deterministic, two-state evaluator for AND2, OR2,
+XOR2, INV, MUX2, BUF, TIEHI, and TIELO. It maps bits least-significant first
+from declared right bounds and reports malformed connectivity, multiple
+drivers, undriven nets, cycles, resource exhaustion, and unsupported cells.
+Optional sequential cutpoints are explicit. A separate bounded evaluator
+models DFF/DFFR/DFFS transitions from explicit initial state and atomic input
+frames; all registers triggered by a transition use the same pre-update state.
+It covers both clock polarities, hold/enable, synchronous and supported
+asynchronous active-high/low reset/set, including reset asserted in frame zero.
+It is not a SystemVerilog scheduler.
+
+Seven combinational fixtures exhaustively compare native netlist outputs with
+independent expected functions over 4,856 two-state vectors. Slang generic-map
+differential checks agree over 160 vectors in two fixtures; five fixtures
+report Slang comparison as Unavailable with explicit unsupported cell or
+mapping diagnostics while completing native exhaustive checks. This is not a
+syntax-acceptance equivalence claim. Randomized checks use fixed seed
+0x4d3731375eed for 24 depth-three expression trees and four procedural
+branches, exhaustively checked over 512 vectors. Six sequential test scenarios
+submit 36 bounded stimulus frames, including negative validation cases.
+Yosys proves three combinational gold-versus-native designs and detects one
+deliberately wrong AND2 model. No sequential formal equivalence is claimed.
+
+The tests exposed two production lowering defects and added regressions. Type
+inference now recognizes e/E as hexadecimal digits in sized based literals
+rather than real exponents. Assignment context widths propagate through
+supported arithmetic, bitwise, shift, unary, and conditional expressions for
+continuous, combinational procedural, and sequential assignments. Continuous
+assignment analysis also allows precise expression diagnostics for dynamic
+selects rather than stopping at generic process eligibility uncertainty.
+
+Fresh Release validation on 2026-11-19:
+
+- Fresh full native build succeeded. CTest: 68 total, 59 passed, 9 expected
+  AVX2 skips, 0 failures.
+- Fresh EDA-only Release build succeeded with Tensor, Acceleration Core, and
+  compatibility disabled. CTest: 39 total, 38 passed, 1 expected AVX2 lexer
+  skip, 0 failures.
+- Prescribed Python EDA regression suites: 216 passed.
+- All five Slang differential CTests passed. The two new supported generic-map
+  fixtures agreed for all 160 vectors; five additional new fixtures report
+  Slang mapping unavailable, with native expected checks exhaustive for all
+  4,856 vectors.
+- Optional Yosys formal run: 3 combinational proofs passed; deliberate
+  inequivalent candidate detected. Yosys was available, so the formal CTest
+  was not skipped.
+- The native lowering dependency-boundary audit, strict compilation through
+  fresh Release builds, and whitespace checks passed. Existing modified and
+  untracked worktree changes were preserved; no commit or push was made.
+
+### Independent native AST-to-RTL lowering (M7.16)
+
+The explicit `lower_verilog_native()` API consumes a native compilation unit,
+matching elaboration and type results, and M7.15 synthesis eligibility. It
+builds the existing `Module`, `Port`, `Net`, and `Instance` model directly and
+returns a module only after full validation. The entry point does not invoke
+Slang. Production `parse_verilog()` remains Slang-backed.
+
+Supported lowering is deliberately bounded to one flat elaborated module,
+integral signals with at most one resolved packed range, supported known
+constants and operators, constant selections and concatenations, continuous
+assignments, complete blocking combinational processes with supported if/case
+control, and canonical single-clock nonblocking sequential processes. Cells
+include AND2, OR2, XOR2, INV, MUX2, BUF, TIEHI/TIELO, DFF, DFFR, and DFFS.
+Sequential forms include positive and negative edges, conditional hold and
+enable muxing, synchronous reset data muxing, and recognized constant-value
+asynchronous resets. Unsupported expressions, four-state constants,
+dynamic-selects, unsupported local storage, incomplete combinational logic,
+latches, unresolved/multiple drivers, unsupported resets, inout ports, and
+hierarchy fail with diagnostics and no partial module.
+
+Fresh Release validation on 2026-11-19:
+
+- Full native build succeeded. CTest: 63 total, 54 passed, 9 expected AVX2
+  skips, 0 failures.
+- EDA-only build succeeded with Tensor, Acceleration Core, and compatibility
+  disabled. CTest: 34 total, 33 passed, 1 expected AVX2 skip, 0 failures.
+- Prescribed Python EDA regression suites: 216 passed.
+- Four existing Slang differential CTests and the new native-vs-Slang
+  differential CTest passed. The new fixture compares all four AND input
+  vectors and passes an optional Yosys `equiv_make`/`equiv_simple` proof.
+- Sequential checks are structural; no sequential equivalence claim is made.
+- Strict Clang syntax checks, tracked and new-file whitespace checks, and the
+  native lowering dependency-boundary audit passed.
+- Existing modified and untracked worktree changes were preserved. No commit
+  or push was made.
+
+### Native procedural control flow and execution completeness (M7.14)
+
+The native statement AST now represents do-while, break, and continue
+explicitly. A reusable structural pass reports maximum loop nesting, return
+presence, unsupported statement classes, and source-located diagnostics for
+break/continue outside loops. Function and task entry points run this
+validation before executing callable bodies.
+
+Execution uses one shared typed outcome: normal completion, break, continue,
+return (with optional value), unsupported execution, budget exhaustion,
+diagnostic failure, or no matching event. Shared branch and loop helpers serve
+both function and task executors, replacing duplicated conditional, case,
+and loop selection logic. Supported loops are for, while, do-while, repeat,
+and forever; break exits its nearest loop, continue begins its next iteration
+and still runs a for update, and return/failure propagates through nested
+blocks, branches, and loops. The shared statement budget is charged for each
+loop iteration, including empty forever iterations, and remains shared across
+nested callable invocations.
+
+Procedural if selects true only when the condition contains a definite 1;
+X/Z-only conditions select else. Case compares four-state values exactly,
+casez treats Z as wildcard, and casex treats X/Z as wildcards on either side.
+Case items are checked in source order, with default used only when no item
+matches. Timing controls retain M7.12 logical ticks and transition-trace
+behavior.
+
+Unsupported behavior remains explicit: wait, nonblocking scheduling, global
+procedural side effects, process execution, and a full simulation scheduler
+are not modeled. Forever loops terminate only through break, return/failure,
+or the configured step budget. Slang differentials compare constant-function
+results only where its public constant-evaluation API is a valid oracle;
+task effects use expected-value tests, not simulation equivalence.
+
+Fresh Apple Silicon M1/arm64 Release validation on 2026-11-19:
+
+- Fresh full native Release build succeeded. CTest ran 51 tests: 42 passed,
+  9 AVX2-only tests skipped, 0 failures.
+- Fresh EDA-only Release build succeeded with Tensor, Acceleration Core, and
+  compatibility disabled. CTest ran 22 tests: 21 passed, 1 AVX2 lexer test
+  skipped, 0 failures.
+- Prescribed Python EDA regression suites: 216 passed.
+- M7.14 Slang control-flow differential test passed. It compares function
+  values for nested loops, returns, four-state if, and case/casez/casex.
+  Existing task tests verify transactional rollback on execution-limit errors.
+- All CTests, including existing delay/event and callable regressions, passed.
+  The four new helpers have no Tensor includes or API dependencies.
+- `git diff --check` and all new-file whitespace checks passed. Existing dirty
+  and untracked worktree changes were preserved; no commit or push was made.
+
+### Native process analysis and synthesis eligibility (M7.15)
+
+The public `verilog_process_analysis.h` API discovers source-ordered
+continuous assignments and `always`, `always_comb`, `always_ff`,
+`always_latch`, and `initial` blocks. Process declaration intent is retained
+independently from inferred combinational/sequential classification. Records
+carry semantic module/signal identities, source locations, event terms,
+assignment categories, timing/unsupported flags, and diagnostics.
+
+Dependency analysis records raw signal reads and writes, constant packed
+selection ranges, dynamic-select uncertainty, control/case/loop expressions,
+and implicit sensitivity separately. Same-module function bodies contribute
+captured signal reads; unresolved call side effects remain unknown. Assignment
+coverage is path-sensitive and bit-level for packed signals, branches, cases,
+concatenations, and supported loop execution guarantees. Unknown coverage
+remains unknown; only known incomplete assignments imply potential storage.
+
+Sequential analysis recognizes one positive- or negative-edge clock,
+structurally matched synchronous/asynchronous reset candidates, active
+polarity, enable/hold patterns, and blocking versus nonblocking assignment
+categories. Additional unmatched edge events are ambiguous. This analysis
+does not simulate processes or schedule nonblocking assignments.
+
+The coordinator aggregates `Eligible`, `Unsupported`, and `Indeterminate`
+results and source-located diagnostics. The current supported subset includes
+resolved continuous assignments, complete `always_comb`, latch-producing
+`always_latch`, and resolved single-clock sequential candidates. Explicitly
+unsupported cases include timing-controlled processes, incomplete
+`always_comb`, unsupported statement forms, ambiguous multiple-edge clocks,
+and conflicting procedural writers. Initial processes are retained but
+indeterminate; dynamic or unresolved dependencies are indeterminate. Multiple
+continuous drivers on declared net symbols/ports remain subject to net
+resolution policy. Cross-process writers are deduplicated by process identity,
+so multiple assignments within one process do not create a false conflict.
+
+The analysis currently runs per source module. It does not merge generated or
+instance-hierarchy drivers, resolve instance-port connections, lower RTL, or
+generate cells. The process differential test compares native versus Slang
+process inventories and then checks native eligibility expectations; it does
+not infer synthesis equivalence from Slang syntax acceptance.
+
+Fresh Apple Silicon M1/arm64 Release validation on 2026-11-19:
+
+- Fresh full native Release build succeeded. CTest ran 57 tests: 48 passed,
+  9 AVX2-only tests skipped, and 0 failed.
+- Fresh EDA-only Release build succeeded with Tensor, Acceleration Core, and
+  compatibility disabled. CTest ran 28 tests: 27 passed, 1 AVX2 lexer test
+  skipped, and 0 failed.
+- Prescribed Python EDA regression suites (`test_eda.py`, `test_eda_graph.py`,
+  `test_eda_equivalence.py`, and `test_eda_fpga.py`): 216 passed.
+- All four Slang differential CTests passed, including process-inventory and
+  native expected-result checks. No procedural synthesis equivalence is
+  claimed.
+- The native EDA implementation has no Tensor or SIMD API dependency.
+- `git diff --check` and new-file whitespace checks passed. Existing dirty and
+  untracked worktree changes were preserved; no commit or push was made.

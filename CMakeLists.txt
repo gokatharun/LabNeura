@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 project(LabNeura LANGUAGES CXX)
 
 include(CheckCXXCompilerFlag)
+include(CheckCXXSourceCompiles)
 include(CTest)
 include(FetchContent)
 include(GNUInstallDirs)
@@ -198,6 +199,49 @@ endif()
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 if(LABNEURA_BUILD_EDA)
+  set(LABNEURA_VERILOG_LEXER_TARGET_ARM64 OFF)
+  set(LABNEURA_VERILOG_LEXER_TARGET_X86 OFF)
+  if(APPLE AND CMAKE_OSX_ARCHITECTURES)
+    if(CMAKE_OSX_ARCHITECTURES STREQUAL "arm64")
+      set(LABNEURA_VERILOG_LEXER_TARGET_ARM64 ON)
+    elseif(CMAKE_OSX_ARCHITECTURES STREQUAL "x86_64")
+      set(LABNEURA_VERILOG_LEXER_TARGET_X86 ON)
+    endif()
+  elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64|ARM64|AARCH64)$")
+    set(LABNEURA_VERILOG_LEXER_TARGET_ARM64 ON)
+  elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|i.86)$")
+    set(LABNEURA_VERILOG_LEXER_TARGET_X86 ON)
+  endif()
+
+  set(LABNEURA_VERILOG_LEXER_HAS_NEON OFF)
+  if(LABNEURA_VERILOG_LEXER_TARGET_ARM64)
+    check_cxx_source_compiles(
+      "#include <arm_neon.h>
+       int main() {
+         const uint8x16_t value = vdupq_n_u8(1);
+         return vgetq_lane_u8(value, 0) == 1 ? 0 : 1;
+       }"
+      LABNEURA_VERILOG_LEXER_COMPILER_HAS_NEON
+    )
+    if(LABNEURA_VERILOG_LEXER_COMPILER_HAS_NEON)
+      set(LABNEURA_VERILOG_LEXER_HAS_NEON ON)
+    endif()
+  endif()
+
+  set(LABNEURA_VERILOG_LEXER_HAS_AVX2 OFF)
+  if(LABNEURA_VERILOG_LEXER_TARGET_X86)
+    if(MSVC)
+      check_cxx_compiler_flag("/arch:AVX2" LABNEURA_VERILOG_LEXER_COMPILER_HAS_AVX2)
+      set(LABNEURA_VERILOG_LEXER_AVX2_FLAG "/arch:AVX2")
+    else()
+      check_cxx_compiler_flag("-mavx2" LABNEURA_VERILOG_LEXER_COMPILER_HAS_AVX2)
+      set(LABNEURA_VERILOG_LEXER_AVX2_FLAG "-mavx2")
+    endif()
+    if(LABNEURA_VERILOG_LEXER_COMPILER_HAS_AVX2)
+      set(LABNEURA_VERILOG_LEXER_HAS_AVX2 ON)
+    endif()
+  endif()
+
   # ======================================
   # Verilog frontend
   # ======================================
@@ -336,6 +380,32 @@ endif()
 if(LABNEURA_BUILD_EDA)
   add_library(labneura_eda_objects OBJECT
     src/labneura/eda/parser/verilog_parser.cpp
+    src/labneura/eda/verilog_lexer.cpp
+    src/labneura/eda/verilog_preprocessor.cpp
+    src/labneura/eda/verilog_syntax.cpp
+    src/labneura/eda/verilog_semantic.cpp
+    src/labneura/eda/verilog_callable_binding.cpp
+    src/labneura/eda/verilog_lvalue.cpp
+    src/labneura/eda/verilog_assignment.cpp
+    src/labneura/eda/verilog_control_flow.cpp
+    src/labneura/eda/verilog_loop_execution.cpp
+    src/labneura/eda/verilog_branch_execution.cpp
+    src/labneura/eda/verilog_function_evaluation.cpp
+    src/labneura/eda/verilog_task_execution.cpp
+    src/labneura/eda/verilog_process_analysis.cpp
+    src/labneura/eda/verilog_process_dependencies.cpp
+    src/labneura/eda/verilog_assignment_coverage.cpp
+    src/labneura/eda/verilog_sequential_analysis.cpp
+    src/labneura/eda/verilog_synthesis_eligibility.cpp
+    src/labneura/eda/verilog_constant.cpp
+    src/labneura/eda/verilog_type.cpp
+    src/labneura/eda/verilog_elaboration.cpp
+    src/labneura/eda/verilog_native_lowering.cpp
+    src/labneura/eda/verilog_expression_lowering.cpp
+    src/labneura/eda/verilog_combinational_lowering.cpp
+    src/labneura/eda/verilog_sequential_lowering.cpp
+    src/labneura/eda/verilog_module_lowering.cpp
+    src/labneura/eda/verilog_byte_classifier.cpp
     src/labneura/eda/parser/liberty_parser.cpp
     src/labneura/eda/netlist/netlist_json.cpp
     src/labneura/eda/netlist/netlist_verilog.cpp
@@ -347,6 +417,15 @@ if(LABNEURA_BUILD_EDA)
     src/labneura/eda/mapping/fpga/fpga_mapping.cpp
     src/labneura/eda/mapping/fpga/fpga_library.cpp
   )
+  if(LABNEURA_VERILOG_LEXER_HAS_AVX2)
+    target_sources(labneura_eda_objects PRIVATE
+      src/labneura/eda/verilog_byte_classifier_avx2.cpp
+    )
+    set_source_files_properties(
+      src/labneura/eda/verilog_byte_classifier_avx2.cpp
+      PROPERTIES COMPILE_OPTIONS "${LABNEURA_VERILOG_LEXER_AVX2_FLAG}"
+    )
+  endif()
   set_target_properties(labneura_eda_objects PROPERTIES
     POSITION_INDEPENDENT_CODE ON
   )
@@ -359,6 +438,22 @@ if(LABNEURA_BUILD_EDA)
       ${CMAKE_CURRENT_BINARY_DIR}/generated
   )
   target_link_libraries(labneura_eda_objects PRIVATE slang::slang)
+  if(LABNEURA_VERILOG_LEXER_HAS_NEON)
+    target_compile_definitions(labneura_eda_objects
+      PRIVATE LABNEURA_VERILOG_LEXER_HAS_NEON=1
+    )
+    message(STATUS "Verilog lexer NEON byte classification enabled")
+  else()
+    message(STATUS "Verilog lexer NEON byte classification unavailable; scalar enabled")
+  endif()
+  if(LABNEURA_VERILOG_LEXER_HAS_AVX2)
+    target_compile_definitions(labneura_eda_objects
+      PRIVATE LABNEURA_VERILOG_LEXER_HAS_AVX2=1
+    )
+    message(STATUS "Verilog lexer AVX2 byte classification compiled; runtime CPU check enabled")
+  else()
+    message(STATUS "Verilog lexer AVX2 byte classification unavailable; scalar fallback enabled")
+  endif()
 
   add_library(labneura_eda STATIC
     $<TARGET_OBJECTS:labneura_eda_objects>
@@ -884,6 +979,387 @@ if(NOT SKBUILD AND LABNEURA_BUILD_COMPAT)
       PROPERTIES SKIP_RETURN_CODE 77
     )
   endif()
+endif()
+
+if(LABNEURA_BUILD_EDA AND NOT SKBUILD)
+  if(BUILD_TESTING)
+    add_executable(labneura_eda_verilog_lexer_test
+      tests/eda_verilog_lexer_test.cpp
+    )
+    target_compile_definitions(labneura_eda_verilog_lexer_test PRIVATE
+      LABNEURA_LEXER_CORPUS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/tests/data/verilog/lexer_corpus.sv"
+    )
+    target_link_libraries(labneura_eda_verilog_lexer_test PRIVATE
+      labneura_eda
+      slang::slang
+    )
+    target_include_directories(labneura_eda_verilog_lexer_test PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    add_test(NAME eda_verilog_lexer COMMAND labneura_eda_verilog_lexer_test)
+    add_test(
+      NAME eda_verilog_lexer_avx2
+      COMMAND labneura_eda_verilog_lexer_test AVX2
+    )
+    set_tests_properties(
+      eda_verilog_lexer_avx2
+      PROPERTIES SKIP_RETURN_CODE 77
+    )
+
+    add_executable(labneura_eda_verilog_preprocessor_test
+      tests/eda_verilog_preprocessor_test.cpp
+    )
+    target_link_libraries(labneura_eda_verilog_preprocessor_test PRIVATE
+      labneura_eda
+      slang::slang
+    )
+    add_test(
+      NAME eda_verilog_preprocessor
+      COMMAND labneura_eda_verilog_preprocessor_test
+    )
+
+    add_executable(labneura_eda_verilog_syntax_test
+      tests/eda_verilog_syntax_test.cpp
+    )
+    target_compile_definitions(labneura_eda_verilog_syntax_test PRIVATE
+      LABNEURA_SYNTAX_FIXTURE_PATH="${CMAKE_CURRENT_SOURCE_DIR}/tests/data/verilog/parser_foundation.sv"
+      LABNEURA_BEHAVIORAL_FIXTURE_PATH="${CMAKE_CURRENT_SOURCE_DIR}/tests/data/verilog/behavioral_rtl.sv"
+    )
+    target_link_libraries(labneura_eda_verilog_syntax_test PRIVATE
+      labneura_eda
+      slang::slang
+    )
+    add_test(
+      NAME eda_verilog_syntax
+      COMMAND labneura_eda_verilog_syntax_test
+    )
+
+    add_executable(labneura_eda_verilog_semantic_test
+      tests/eda_verilog_semantic_test.cpp
+    )
+    target_link_libraries(labneura_eda_verilog_semantic_test PRIVATE
+      labneura_eda
+    )
+    add_test(
+      NAME eda_verilog_semantic
+      COMMAND labneura_eda_verilog_semantic_test
+    )
+
+    add_executable(labneura_eda_verilog_elaboration_test
+      tests/eda_verilog_elaboration_test.cpp
+    )
+    target_link_libraries(labneura_eda_verilog_elaboration_test PRIVATE
+      labneura_eda
+      slang::slang
+    )
+    add_test(
+      NAME eda_verilog_elaboration
+      COMMAND labneura_eda_verilog_elaboration_test
+    )
+
+    add_executable(labneura_eda_verilog_type_test
+      tests/eda_verilog_type_test.cpp
+    )
+    target_link_libraries(labneura_eda_verilog_type_test PRIVATE
+      labneura_eda
+      slang::slang
+    )
+    add_test(
+      NAME eda_verilog_type
+      COMMAND labneura_eda_verilog_type_test
+    )
+
+    add_executable(labneura_eda_verilog_callable_test
+      tests/eda_verilog_callable_test.cpp
+    )
+    target_link_libraries(labneura_eda_verilog_callable_test PRIVATE
+      labneura_eda
+      slang::slang
+    )
+    add_test(
+      NAME eda_verilog_callable
+      COMMAND labneura_eda_verilog_callable_test
+    )
+
+    add_executable(labneura_eda_verilog_legacy_ports_test
+      tests/eda_verilog_legacy_ports_test.cpp
+    )
+    target_link_libraries(labneura_eda_verilog_legacy_ports_test PRIVATE
+      labneura_eda
+      slang::slang
+    )
+    add_test(
+      NAME eda_verilog_legacy_ports
+      COMMAND labneura_eda_verilog_legacy_ports_test
+    )
+
+    add_executable(labneura_eda_verilog_callable_binding_test
+      tests/eda_verilog_callable_binding_test.cpp
+    )
+    target_link_libraries(labneura_eda_verilog_callable_binding_test PRIVATE
+      labneura_eda
+    )
+    add_test(
+      NAME eda_verilog_callable_binding
+      COMMAND labneura_eda_verilog_callable_binding_test
+    )
+
+    add_executable(labneura_eda_verilog_lvalue_test
+      tests/eda_verilog_lvalue_test.cpp
+    )
+    target_link_libraries(labneura_eda_verilog_lvalue_test PRIVATE labneura_eda)
+    add_test(NAME eda_verilog_lvalue COMMAND labneura_eda_verilog_lvalue_test)
+
+    add_executable(labneura_eda_verilog_assignment_test
+      tests/eda_verilog_assignment_test.cpp
+    )
+    target_link_libraries(labneura_eda_verilog_assignment_test PRIVATE labneura_eda)
+    add_test(NAME eda_verilog_assignment COMMAND labneura_eda_verilog_assignment_test)
+
+    add_executable(labneura_eda_verilog_function_evaluation_test
+      tests/eda_verilog_function_evaluation_test.cpp
+    )
+    target_link_libraries(labneura_eda_verilog_function_evaluation_test PRIVATE
+      labneura_eda
+    )
+    add_test(
+      NAME eda_verilog_function_evaluation
+      COMMAND labneura_eda_verilog_function_evaluation_test
+    )
+
+    add_executable(labneura_eda_verilog_task_execution_test
+      tests/eda_verilog_task_execution_test.cpp
+    )
+    target_link_libraries(labneura_eda_verilog_task_execution_test PRIVATE
+      labneura_eda
+    )
+    add_test(
+      NAME eda_verilog_task_execution
+      COMMAND labneura_eda_verilog_task_execution_test
+    )
+
+    add_executable(labneura_eda_verilog_control_flow_test
+      tests/eda_verilog_control_flow_test.cpp
+    )
+    target_link_libraries(labneura_eda_verilog_control_flow_test PRIVATE labneura_eda)
+    add_test(NAME eda_verilog_control_flow
+      COMMAND labneura_eda_verilog_control_flow_test)
+
+    add_executable(labneura_eda_verilog_loop_execution_test
+      tests/eda_verilog_loop_execution_test.cpp
+    )
+    target_link_libraries(labneura_eda_verilog_loop_execution_test PRIVATE labneura_eda)
+    add_test(NAME eda_verilog_loop_execution
+      COMMAND labneura_eda_verilog_loop_execution_test)
+
+    add_executable(labneura_eda_verilog_branch_execution_test
+      tests/eda_verilog_branch_execution_test.cpp
+    )
+    target_link_libraries(labneura_eda_verilog_branch_execution_test PRIVATE labneura_eda)
+    add_test(NAME eda_verilog_branch_execution
+      COMMAND labneura_eda_verilog_branch_execution_test)
+
+    add_executable(labneura_eda_verilog_delay_execution_test
+      tests/eda_verilog_delay_execution_test.cpp
+    )
+    target_link_libraries(labneura_eda_verilog_delay_execution_test PRIVATE
+      labneura_eda
+    )
+    add_test(
+      NAME eda_verilog_delay_execution
+      COMMAND labneura_eda_verilog_delay_execution_test
+    )
+
+    add_executable(labneura_eda_verilog_event_execution_test
+      tests/eda_verilog_event_execution_test.cpp
+    )
+    target_link_libraries(labneura_eda_verilog_event_execution_test PRIVATE
+      labneura_eda
+    )
+    add_test(
+      NAME eda_verilog_event_execution
+      COMMAND labneura_eda_verilog_event_execution_test
+    )
+
+    add_executable(labneura_eda_verilog_process_analysis_test
+      tests/eda_verilog_process_analysis_test.cpp
+    )
+    target_link_libraries(labneura_eda_verilog_process_analysis_test PRIVATE labneura_eda)
+    add_test(NAME eda_verilog_process_analysis
+      COMMAND labneura_eda_verilog_process_analysis_test)
+
+    add_executable(labneura_eda_verilog_process_dependencies_test
+      tests/eda_verilog_process_dependencies_test.cpp
+    )
+    target_link_libraries(labneura_eda_verilog_process_dependencies_test PRIVATE labneura_eda)
+    add_test(NAME eda_verilog_process_dependencies
+      COMMAND labneura_eda_verilog_process_dependencies_test)
+
+    add_executable(labneura_eda_verilog_assignment_coverage_test
+      tests/eda_verilog_assignment_coverage_test.cpp
+    )
+    target_link_libraries(labneura_eda_verilog_assignment_coverage_test PRIVATE labneura_eda)
+    add_test(NAME eda_verilog_assignment_coverage
+      COMMAND labneura_eda_verilog_assignment_coverage_test)
+
+    add_executable(labneura_eda_verilog_sequential_analysis_test
+      tests/eda_verilog_sequential_analysis_test.cpp
+    )
+    target_link_libraries(labneura_eda_verilog_sequential_analysis_test PRIVATE labneura_eda)
+    add_test(NAME eda_verilog_sequential_analysis
+      COMMAND labneura_eda_verilog_sequential_analysis_test)
+
+    add_executable(labneura_eda_verilog_synthesis_eligibility_test
+      tests/eda_verilog_synthesis_eligibility_test.cpp
+    )
+    target_link_libraries(labneura_eda_verilog_synthesis_eligibility_test PRIVATE labneura_eda)
+    add_test(NAME eda_verilog_synthesis_eligibility
+      COMMAND labneura_eda_verilog_synthesis_eligibility_test)
+
+    add_library(labneura_eda_netlist_test_support STATIC
+      tests/support/eda_netlist_evaluator.cpp
+      tests/support/eda_sequential_evaluator.cpp)
+    target_include_directories(labneura_eda_netlist_test_support PUBLIC
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests)
+    target_link_libraries(labneura_eda_netlist_test_support PUBLIC labneura_eda)
+
+    add_executable(labneura_eda_netlist_evaluator_test
+      tests/eda_netlist_evaluator_test.cpp)
+    target_link_libraries(labneura_eda_netlist_evaluator_test PRIVATE
+      labneura_eda_netlist_test_support)
+    add_test(NAME eda_netlist_evaluator
+      COMMAND labneura_eda_netlist_evaluator_test)
+
+    add_executable(labneura_eda_verilog_combinational_equivalence_test
+      tests/eda_verilog_combinational_equivalence_test.cpp)
+    target_compile_definitions(labneura_eda_verilog_combinational_equivalence_test
+      PRIVATE
+        "LABNEURA_NATIVE_COMB_FIXTURE_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/tests/data/verilog/native_equivalence/comb\"")
+    target_link_libraries(labneura_eda_verilog_combinational_equivalence_test
+      PRIVATE labneura_eda_netlist_test_support)
+    add_test(NAME eda_verilog_combinational_equivalence
+      COMMAND labneura_eda_verilog_combinational_equivalence_test)
+
+    add_executable(labneura_eda_verilog_sequential_equivalence_test
+      tests/eda_verilog_sequential_equivalence_test.cpp)
+    target_link_libraries(labneura_eda_verilog_sequential_equivalence_test
+      PRIVATE labneura_eda_netlist_test_support)
+    add_test(NAME eda_verilog_sequential_equivalence
+      COMMAND labneura_eda_verilog_sequential_equivalence_test)
+
+    add_executable(labneura_eda_verilog_randomized_lowering_test
+      tests/eda_verilog_randomized_lowering_test.cpp)
+    target_link_libraries(labneura_eda_verilog_randomized_lowering_test PRIVATE
+      labneura_eda_netlist_test_support)
+    add_test(NAME eda_verilog_randomized_lowering
+      COMMAND labneura_eda_verilog_randomized_lowering_test)
+
+    add_executable(labneura_eda_verilog_native_formal_equivalence_test
+      tests/eda_verilog_native_formal_equivalence_test.cpp)
+    target_compile_definitions(labneura_eda_verilog_native_formal_equivalence_test
+      PRIVATE
+        "LABNEURA_NATIVE_FORMAL_FIXTURE_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/tests/data/verilog/native_equivalence/formal\"")
+    target_link_libraries(labneura_eda_verilog_native_formal_equivalence_test
+      PRIVATE labneura_eda)
+    add_test(NAME eda_verilog_native_formal_equivalence
+      COMMAND labneura_eda_verilog_native_formal_equivalence_test)
+    set_tests_properties(eda_verilog_native_formal_equivalence PROPERTIES
+      SKIP_RETURN_CODE 77 TIMEOUT 90)
+
+    set_tests_properties(
+      eda_netlist_evaluator
+      eda_verilog_combinational_equivalence
+      eda_verilog_sequential_equivalence
+      PROPERTIES TIMEOUT 120)
+
+    foreach(lowering_test IN ITEMS expression combinational sequential module)
+      add_executable(labneura_eda_verilog_${lowering_test}_lowering_test
+        tests/eda_verilog_${lowering_test}_lowering_test.cpp)
+      target_link_libraries(labneura_eda_verilog_${lowering_test}_lowering_test
+        PRIVATE labneura_eda)
+      add_test(NAME eda_verilog_${lowering_test}_lowering
+        COMMAND labneura_eda_verilog_${lowering_test}_lowering_test)
+    endforeach()
+
+    add_executable(labneura_eda_verilog_native_lowering_test
+      tests/eda_verilog_native_lowering_test.cpp)
+    target_link_libraries(labneura_eda_verilog_native_lowering_test
+      PRIVATE labneura_eda)
+    add_test(NAME eda_verilog_native_lowering
+      COMMAND labneura_eda_verilog_native_lowering_test)
+
+    add_executable(labneura_eda_verilog_native_lowering_differential_test
+      tests/eda_verilog_native_lowering_differential_test.cpp)
+    target_link_libraries(labneura_eda_verilog_native_lowering_differential_test
+      PRIVATE labneura_eda slang::slang)
+    add_test(NAME eda_verilog_native_lowering_differential
+      COMMAND labneura_eda_verilog_native_lowering_differential_test)
+
+    add_executable(labneura_eda_verilog_process_differential_test
+      tests/eda_verilog_process_differential_test.cpp
+    )
+    target_link_libraries(labneura_eda_verilog_process_differential_test PRIVATE
+      labneura_eda
+      slang::slang
+    )
+    add_test(NAME eda_verilog_process_differential
+      COMMAND labneura_eda_verilog_process_differential_test)
+
+    add_executable(labneura_eda_verilog_callable_differential_test
+      tests/eda_verilog_callable_differential_test.cpp
+    )
+    target_link_libraries(labneura_eda_verilog_callable_differential_test PRIVATE
+      labneura_eda
+      slang::slang
+    )
+    add_test(
+      NAME eda_verilog_callable_differential
+      COMMAND labneura_eda_verilog_callable_differential_test
+    )
+
+    add_executable(labneura_eda_verilog_assignment_differential_test
+      tests/eda_verilog_assignment_differential_test.cpp
+    )
+    target_link_libraries(labneura_eda_verilog_assignment_differential_test PRIVATE
+      labneura_eda
+      slang::slang
+    )
+    add_test(
+      NAME eda_verilog_assignment_differential
+      COMMAND labneura_eda_verilog_assignment_differential_test
+    )
+
+    add_executable(labneura_eda_verilog_control_flow_differential_test
+      tests/eda_verilog_control_flow_differential_test.cpp
+    )
+    target_link_libraries(labneura_eda_verilog_control_flow_differential_test PRIVATE
+      labneura_eda
+      slang::slang
+    )
+    add_test(
+      NAME eda_verilog_control_flow_differential
+      COMMAND labneura_eda_verilog_control_flow_differential_test
+    )
+  endif()
+
+  add_executable(labneura_lexer_benchmark EXCLUDE_FROM_ALL
+    benchmarks/eda/verilog_lexer_benchmark.cpp
+  )
+  target_compile_definitions(labneura_lexer_benchmark PRIVATE
+    LABNEURA_LEXER_BUILD_TYPE="${CMAKE_BUILD_TYPE}"
+  )
+  target_link_libraries(labneura_lexer_benchmark PRIVATE labneura_eda)
+  target_include_directories(labneura_lexer_benchmark PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+  )
+
+  add_executable(labneura_preprocessor_benchmark EXCLUDE_FROM_ALL
+    benchmarks/eda/verilog_preprocessor_benchmark.cpp
+  )
+  target_compile_definitions(labneura_preprocessor_benchmark PRIVATE
+    LABNEURA_LEXER_BUILD_TYPE="${CMAKE_BUILD_TYPE}"
+  )
+  target_link_libraries(labneura_preprocessor_benchmark PRIVATE labneura_eda)
 endif()
 
 if(SKBUILD)
