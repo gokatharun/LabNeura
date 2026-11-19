@@ -374,7 +374,7 @@ jobs:
             cc: gcc
             cxx: g++
             backend: NEON
-          - os: macos-14
+          - os: macos-latest
             architecture: arm64
             compiler: AppleClang
             cc: clang
@@ -850,13 +850,13 @@ jobs:
           if-no-files-found: warn
 
       - name: Run native backend benchmarks
-        if: github.event_name != 'pull_request' && matrix.compiler != 'clang' && matrix.os != 'macos-14'
+        if: github.event_name != 'pull_request' && matrix.compiler != 'clang' && matrix.os != 'macos-latest'
         run: |
           build/native/labneura_native_backend_benchmark \
             benchmark-${{ matrix.architecture }}-${{ matrix.compiler }}.csv
 
       - name: Upload native benchmark results
-        if: github.event_name != 'pull_request' && matrix.compiler != 'clang' && matrix.os != 'macos-14'
+        if: github.event_name != 'pull_request' && matrix.compiler != 'clang' && matrix.os != 'macos-latest'
         uses: actions/upload-artifact@v4
         with:
           name: simd-benchmarks-${{ matrix.architecture }}-${{ matrix.compiler }}
