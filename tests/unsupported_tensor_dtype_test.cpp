@@ -2,6 +2,7 @@
 #include "labneura/backends/cpu/generic.h"
 #include "test_environment.h"
 #if defined(LABNEURA_TEST_AVX2)
+#include "labneura/backends/common/cpu_features.h"
 #include "labneura/backends/cpu/avx2.h"
 #endif
 #if defined(LABNEURA_TEST_NEON)
@@ -87,9 +88,23 @@ void check_direct_backend_constructors(labneura::QuantizationMode mode,
         labneura::GenericBackend backend(2, mode);
     }, dtype);
 #if defined(LABNEURA_TEST_AVX2)
-    expect_unsupported([&] {
-        labneura::AVX2Backend backend(2, mode);
-    }, dtype);
+    if (labneura::cpu_supports_avx2()) {
+        expect_unsupported([&] {
+            labneura::AVX2Backend backend(2, mode);
+        }, dtype);
+    } else {
+        bool rejected = false;
+        try {
+            labneura::AVX2Backend backend(2, mode);
+        } catch (const std::runtime_error& error) {
+            rejected =
+                error.what() ==
+                std::string(
+                    "AVX2 backend construction requires CPU/OS AVX2 support");
+        }
+        require(rejected,
+                "Direct AVX2 construction accepted an unsupported CPU/OS");
+    }
 #endif
 #if defined(LABNEURA_TEST_NEON)
     expect_unsupported([&] {

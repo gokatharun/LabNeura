@@ -514,6 +514,9 @@ if(LABNEURA_BUILD_TENSOR AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
   # Check for AVX2 support
   check_cxx_compiler_flag("-mavx2" LABNEURA_COMPILER_SUPPORTS_AVX2)
   if(LABNEURA_COMPILER_SUPPORTS_AVX2)
+    target_sources(labneura_tensor_objects PRIVATE
+      src/labneura/backends/cpu/avx2/avx2_backend_constructor.cpp
+    )
     # Apply AVX2 flags to all AVX2 backend files
     set_source_files_properties(
       src/labneura/backends/cpu/avx2/avx2_backend.cpp
@@ -756,6 +759,28 @@ if(NOT SKBUILD AND LABNEURA_BUILD_COMPAT)
     set_tests_properties(
       avx2_int8_multiplication
       neon_int8_subtraction
+      PROPERTIES SKIP_RETURN_CODE 77
+    )
+
+    add_executable(labneura_avx2_integer_arithmetic_test
+      tests/avx2_integer_arithmetic_test.cpp
+    )
+    target_include_directories(labneura_avx2_integer_arithmetic_test PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+    target_link_libraries(labneura_avx2_integer_arithmetic_test PRIVATE labneura)
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64"
+       AND LABNEURA_COMPILER_SUPPORTS_AVX2)
+      target_compile_definitions(labneura_avx2_integer_arithmetic_test
+        PRIVATE LABNEURA_TEST_AVX2=1
+      )
+    endif()
+    add_test(
+      NAME avx2_integer_arithmetic
+      COMMAND labneura_avx2_integer_arithmetic_test
+    )
+    set_tests_properties(
+      avx2_integer_arithmetic
       PROPERTIES SKIP_RETURN_CODE 77
     )
 

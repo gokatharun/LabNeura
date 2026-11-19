@@ -1,3 +1,4 @@
+import ast
 import os
 import subprocess
 import sys
@@ -12,6 +13,19 @@ PACKAGE_SOURCE = (
     / "core"
     / "src"
     / "labneura"
+)
+PACKAGE_VERSION = ast.literal_eval(
+    next(
+        statement.value
+        for statement in ast.parse(
+            (PACKAGE_SOURCE / "__init__.py").read_text(encoding="utf-8")
+        ).body
+        if isinstance(statement, ast.Assign)
+        and any(
+            isinstance(target, ast.Name) and target.id == "__version__"
+            for target in statement.targets
+        )
+    )
 )
 
 PUBLIC_TENSOR_EXPORTS = (
@@ -139,7 +153,7 @@ def test_component_combinations_and_optional_imports(tmp_path):
         root = make_package(tmp_path / name, tensor=tensor, eda=eda)
         checks = [
             "import labneura",
-            "assert labneura.__version__ == '0.4.3'",
+            f"assert labneura.__version__ == {PACKAGE_VERSION!r}",
         ]
         if tensor is None:
             checks.append("assert not hasattr(labneura, 'Tensor')")

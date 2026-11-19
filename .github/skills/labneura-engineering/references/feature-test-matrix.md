@@ -327,3 +327,19 @@ A feature is complete only when its semantics are documented, implementation exi
 - [ ] Sequential formal equivalence, unbounded sequential proof, general
   SystemVerilog event scheduling, four-state netlist evaluation, and generic
   cells outside the eight-cell two-state evaluator subset.
+
+### Cross-platform stabilization (M7.17.1)
+- [x] Local Apple Silicon M1 full native Release CTest: 59 passed; 10 AVX2
+  tests skipped because the ARM64 CPU does not support AVX2.
+- [x] Forced Generic and NEON backend verification: seven focused tests each,
+  all passed without skips.
+- [x] Local EDA-only Release build with Tensor, Acceleration Core, and
+  compatibility disabled: 38 CTests passed; the AVX2 lexer test skipped.
+- [x] Prescribed EDA Python regressions: 216 passed. Full Python suite:
+  1,212 passed, with 225 skips classified as unavailable AVX2 cases,
+  Generic-only broadcast coverage, or absent optional extension variables.
+- [ ] Ubuntu x86-64 GCC and Clang full native and EDA-only builds.
+- [ ] Native Ubuntu ARM64 build and strict NEON execution.
+- [ ] Hosted macOS ARM64 native and EDA-only builds.
+- [ ] Linux AVX2 job executes all ten AVX2 CTests without skips.
+- [ ] EDA AddressSanitizer/UndefinedBehaviorSanitizer job passes.

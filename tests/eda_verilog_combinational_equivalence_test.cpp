@@ -123,13 +123,22 @@ std::uint64_t port_unsigned(const VerificationPortValues& values,
 
 std::int64_t signed_value(std::uint64_t value, std::size_t width) {
     if (width == 0) return 0;
+    if (width > 64)
+        throw std::invalid_argument("signed reference width exceeds 64 bits");
+
     const std::uint64_t sign = std::uint64_t{1} << (width - 1);
-    const std::uint64_t mask = (std::uint64_t{1} << width) - 1;
+    const std::uint64_t mask =
+        width == 64 ? std::numeric_limits<std::uint64_t>::max()
+                    : (std::uint64_t{1} << width) - 1;
     value &= mask;
-    return (value & sign) != 0
-               ? static_cast<std::int64_t>(value) -
-                     static_cast<std::int64_t>(std::uint64_t{1} << width)
-               : static_cast<std::int64_t>(value);
+    if ((value & sign) == 0)
+        return static_cast<std::int64_t>(value);
+
+    // For a negative two's-complement value, the complemented, width-masked
+    // pattern fits in int64_t. This produces the signed value without casting
+    // an out-of-range unsigned value or overflowing signed arithmetic.
+    const auto complement = static_cast<std::int64_t>((~value) & mask);
+    return -1 - complement;
 }
 
 VerificationBits bits(std::uint64_t value, std::size_t width) {
@@ -397,6 +406,37 @@ void test_comparison_signedness_and_logical_bitwise() {
         });
 }
 
+void test_signed_reference_width_boundaries() {
+    require(signed_value(0, 1) == 0 && signed_value(1, 1) == -1,
+            "one-bit signed reference conversion is incorrect");
+
+    const auto width63_sign = std::uint64_t{1} << 62;
+    const auto width63_mask = (std::uint64_t{1} << 63) - 1;
+    require(signed_value(width63_sign, 63) ==
+                    std::numeric_limits<std::int64_t>::min() / 2 &&
+                signed_value(width63_mask, 63) == -1 &&
+                signed_value(width63_sign - 1, 63) ==
+                    std::numeric_limits<std::int64_t>::max() / 2,
+            "63-bit signed reference boundary conversion is incorrect");
+
+    require(signed_value(std::uint64_t{1} << 63, 64) ==
+                    std::numeric_limits<std::int64_t>::min() &&
+                signed_value(std::numeric_limits<std::uint64_t>::max(), 64) == -1 &&
+                signed_value(static_cast<std::uint64_t>(
+                                 std::numeric_limits<std::int64_t>::max()),
+                             64) == std::numeric_limits<std::int64_t>::max(),
+            "64-bit signed reference boundary conversion is incorrect");
+
+    bool rejected_wide_value = false;
+    try {
+        (void)signed_value(0, 65);
+    } catch (const std::invalid_argument&) {
+        rejected_wide_value = true;
+    }
+    require(rejected_wide_value,
+            "signed reference conversion accepted a width greater than 64 bits");
+}
+
 void test_shifts_and_signed_conversion() {
     exhaustively_compare(
         "shifts_and_conversions", "shifts_and_conversions.sv",
@@ -481,6 +521,7 @@ int main() {
     run(test_gates_and_adders);
     run(test_arithmetic_width_and_truncation);
     run(test_comparison_signedness_and_logical_bitwise);
+    run(test_signed_reference_width_boundaries);
     run(test_shifts_and_signed_conversion);
     run(test_packed_ranges_selections_and_concatenations);
     run(test_conditional_case_and_blocking_order);

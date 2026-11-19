@@ -1407,6 +1407,45 @@ Fresh Apple Silicon M1/arm64 Release validation on 2026-11-19:
 - `git diff --check` and new-file whitespace checks passed. Existing dirty and
   untracked worktree changes were preserved; no commit or push was made.
 
+### Cross-platform stabilization and Linux AVX2 verification (M7.17.1)
+
+The baseline checkpoint `9d11240` is present on `origin/main` through merge
+`69508d2`. Stabilization changes add a baseline-compiled AVX2 constructor that
+checks CPU/OS support before allocation, a strict AVX2 integer arithmetic
+regression, portable signed-reference boundary handling, explicit scalar
+lexer coverage, and a package-version test that follows the package source
+instead of a stale literal. CI now covers Linux x86-64 GCC/Clang, Linux ARM64,
+macOS ARM64, strict Generic/AVX2/NEON execution, EDA-only configurations,
+Yosys formal CTest, and EDA sanitizers.
+
+Fresh local Apple Silicon M1/arm64 Release validation on 2026-11-19:
+
+- Full native CTest: 69 registered; 59 passed and 10 skipped because this
+  ARM64 host cannot execute AVX2. The skipped tests are
+  `avx2_int8_multiplication`, `avx2_integer_arithmetic`,
+  `fp32_avx2_allocating`, `add_into_avx2`, `tensor_nd_avx2`,
+  `tensor_comparison_avx2`, `bool_dtype_avx2`, `avx2_allocation_safety`,
+  `avx2_fp16_arithmetic`, and `eda_verilog_lexer_avx2`.
+- Forced Generic CTest: all 7 focused tests passed with no skips. Forced NEON
+  selection was confirmed and all 7 focused NEON tests passed with no skips.
+- EDA-only Release build succeeded with Tensor, Acceleration Core, and
+  compatibility all disabled. CTest ran 39 tests: 38 passed, including the
+  native Yosys formal-equivalence test; only `eda_verilog_lexer_avx2` skipped
+  because AVX2 is unavailable.
+- Prescribed EDA Python regressions: 216 passed. Full Python suite: 1,212
+  passed, 225 skipped, and 3 pytest return-value warnings. The skips divide
+  into 91 AVX2-only cases unavailable on ARM64, 125 cases for broadcast
+  operations documented as Generic-only, and 9 packaging cases requiring
+  optional compiled-extension environment variables not supplied by this
+  source-tree run. `tests/python_packaging/test_core_package.py`: 10 passed.
+- The new baseline AVX2 constructor passed local Clang syntax checking; this
+  ARM64 host cannot compile or execute its x86-specific CMake target.
+- `git diff --check` and workflow YAML/step-schema checks passed.
+
+Linux x86-64 GCC/Clang, Linux ARM64, hosted macOS ARM64, runtime AVX2, hosted
+NEON, and sanitizer results remain unverified until the stabilization GitHub
+Actions jobs complete. M7.17.1 is not complete until those required jobs pass.
+
 ### Native RTL verification and differential validation (M7.17)
 
 Test support now provides a deterministic, two-state evaluator for AND2, OR2,

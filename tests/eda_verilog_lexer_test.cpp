@@ -657,7 +657,9 @@ void test_backend_environment_selection() {
 
 void test_differential_against_slang() {
     const std::string source = read_corpus();
-    auto scalar = labneura::eda::lex_verilog(source);
+    auto scalar = labneura::eda::lex_verilog(
+        source, {VerilogLanguageVersion::SystemVerilog2017,
+                 VerilogLexerBackend::Scalar});
 
     slang::SourceManager source_manager;
     auto slang_buffer = source_manager.assignText("lexer_corpus.sv", source);
@@ -745,7 +747,8 @@ void test_keyword_tables_against_slang() {
             require(table != nullptr, "Slang versioned keyword table is unavailable");
             const bool expected_keyword = table->contains(word);
             auto result = labneura::eda::lex_verilog(
-                std::string(word), {version.scalar});
+                std::string(word),
+                {version.scalar, VerilogLexerBackend::Scalar});
             if ((result.tokens[0].kind == VerilogTokenKind::Keyword) != expected_keyword) {
                 throw std::runtime_error(
                     "scalar keyword table differs from Slang for '" + std::string(word) +
@@ -782,6 +785,7 @@ int main(int argc, char** argv) {
         test_locations_and_boundaries();
         test_environment_selection();
         test_byte_classifiers();
+        test_classification_scanner();
         test_lexer_backend_equivalence();
         test_backend_environment_selection();
         test_differential_against_slang();
