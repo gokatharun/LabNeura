@@ -577,6 +577,23 @@ private:
     }
 
     bool scan_operator_or_punctuation() {
+        switch (text_[offset_]) {
+            case '(':
+            case ')':
+            case '[':
+            case ']':
+            case '{':
+            case '}':
+            case ',':
+            case ';': {
+                const size_t start = offset_++;
+                emit(VerilogTokenKind::Punctuation, start, offset_);
+                return true;
+            }
+            default:
+                break;
+        }
+
         static constexpr std::string_view operators[] = {
             "<<<=", ">>>=", "|->", "|=>", "#-#", "#=#", "+/-", "+%-", "<->", "<<<", ">>>",
             "===", "!==", "==?", "!=?", "&&&", "->>", "<<=", ">>=", "**=", "++", "--", "**",
