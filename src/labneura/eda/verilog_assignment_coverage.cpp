@@ -43,15 +43,11 @@ bool is_process_signal(const VerilogProcess& process,
 
 const Symbol* symbol_at(const VerilogExpression& expression,
                         const VerilogSemanticAnalysisResult& semantic) {
-    const auto exact = std::find_if(
-        semantic.references.begin(), semantic.references.end(),
-        [&](const auto& reference) {
-            return reference.declaration &&
-                   reference.location.source == expression.location.source &&
-                   reference.location.byte_offset == expression.location.byte_offset;
-        });
-    if (exact != semantic.references.end())
-        return exact->declaration;
+    for (const auto& entry : semantic.references_at(expression.location)) {
+        const auto& reference = semantic.references[entry.reference_ordinal];
+        if (reference.declaration)
+            return reference.declaration;
+    }
 
     const Symbol* result = nullptr;
     for (const auto& reference : semantic.references) {
@@ -137,16 +133,12 @@ private:
         const auto resolve = [&](std::string_view name,
                                  const VerilogSyntaxLocation& location)
             -> std::optional<VerilogConstantValue> {
-            const auto reference = std::find_if(
-                semantic_.references.begin(), semantic_.references.end(),
-                [&](const auto& item) {
-                    return item.name == name &&
-                           item.location.source == location.source &&
-                           item.location.byte_offset == location.byte_offset &&
-                           item.declaration;
-                });
-            if (reference != semantic_.references.end()) {
-                const auto value = types_.symbol_constants.find(reference->declaration);
+            for (const auto& entry : semantic_.references_at(location)) {
+                const auto& reference =
+                    semantic_.references[entry.reference_ordinal];
+                if (reference.name != name || !reference.declaration)
+                    continue;
+                const auto value = types_.symbol_constants.find(reference.declaration);
                 if (value != types_.symbol_constants.end())
                     return value->second;
             }

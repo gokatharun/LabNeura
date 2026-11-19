@@ -116,6 +116,90 @@ semantic-reference lookup experiment, guarded by all M7.17 equivalence tests,
 followed by the identical 33-workload rerun. Do not optimize the lexer first:
 NEON changed end-to-end syntax time only slightly on the measured workload.
 
+## M7.18.2 indexed semantic references (2026-11-19)
+
+The immutable performance checkpoint is commit `41254c6`. The optimized tree
+is intentionally uncommitted pending review. The implementation retains
+`semantic.references` as the ordered compatibility and diagnostic oracle and
+adds one 24-byte ordinal entry per reference. Entries are stable-sorted by
+source-buffer identity and byte offset once, after semantic resolution. A
+binary search returns the complete duplicate range in original insertion
+order; consumers then retain their established first-match, last-match,
+declaration-filter, and null-result behavior. Symbols and scopes remain owned
+by the semantic model, so moving the result does not invalidate indexed symbol
+identity. External mutation of the public reference vector requires an
+explicit `rebuild_reference_index()`.
+
+The audited location lookups were in assignment coverage (symbol and constant
+resolution), callable evaluation, lvalue resolution, native lowering (symbol
+and constant resolution), process/event analysis, process dependencies,
+sequential analysis, task execution, and type analysis. Each previously
+searched the complete reference vector, making repeated resolution O(R) per
+lookup and common lowering paths O(R x L). Name-only ambiguity fallbacks remain
+linear because they implement a different global-name contract and were not a
+confirmed location-lookup hotspot.
+
+Standalone experiments included construction in total cost and tested misses,
+duplicates, sequential/random access, and sets from 65 to 60,469 references.
+At 60,469 references and 2,048 queries, representative total times were
+74-84 ms linear, 1.24-1.25 ms sorted, 1.88 ms hash, and 1.26-1.29 ms dense.
+Sorted storage was about 1.45 MB versus 2.42 MB estimated for the hash index.
+Linear lookup remained competitive at 65 references. Dense storage was not
+selected because the production key is a `(source identity, byte offset)` pair
+without an existing bounded dense ID; hash storage used more memory and did
+not preserve deterministic duplicate ordering without extra machinery.
+
+### Apple M1 before and after
+
+The exact 33 M7.18.1 sources, hashes, Release compiler configuration, scalar
+backend, two warmups, and nine repetitions were reused. All hashes matched.
+Speedup is baseline time divided by optimized time.
+
+| Boundary | Geometric mean | Median workload | Range |
+|---|---:|---:|---:|
+| Syntax | 1.006x | 0.998x | 0.951-1.176x |
+| Semantic | 1.203x | 1.050x | 0.921-2.038x |
+| Source-to-netlist | 1.967x | 1.625x | 0.952-12.394x |
+
+For the 100 KiB Boolean workload:
+
+| Boundary | Baseline median | Indexed median | Indexed p95 | Speedup |
+|---|---:|---:|---:|---:|
+| Syntax | 20.998 ms | 20.581 ms | 20.763 ms | 1.020x |
+| Semantic | 88.911 ms | 43.720 ms | 49.045 ms | 2.034x |
+| Source-to-netlist | 1,025.755 ms | 82.761 ms | 85.074 ms | 12.394x |
+
+That workload contained 9,027 semantic references. Its representative index
+construction took 102,333 ns and reserved 216,648 bytes; no duplicate source
+locations occurred in this generated input. Timing instrumentation is disabled
+unless `LABNEURA_EDA_REFERENCE_INDEX_PROFILE` is set. The complete boundary
+still compares structurally different products and is not an equivalent
+gate-level native-versus-Slang claim.
+
+An unsandboxed `/usr/bin/time -l` run measured 84,606,976-byte peak RSS for the
+full optimized benchmark process, versus 84,295,680 bytes at baseline. A fresh
+macOS `sample` profile no longer shows the old full-vector resolver or
+`_platform_memcmp` as leading entries. `references_at()` had eight collapsed
+samples; lexer classification and synthesis eligibility are now visible among
+the sampled work. Hardware counters and xctrace remained unavailable.
+
+Correctness evidence includes a fresh full Release CTest run (72 registered,
+62 passed and 10 expected ARM64 AVX2 skips), plus the separate EDA-only run
+(42 registered, 41 passed and one expected AVX2 skip), all Python
+`test_eda*.py` regressions, the existing
+Slang differential and M7.17 equivalence/formal/randomized tests, and focused
+linear-oracle comparisons for real analysis plus synthetic duplicate, missing,
+distinct-buffer, deterministic-rebuild, and move cases. `git diff --check`
+passes. Linux x86-64 optimized profiling, AVX2 timing, `perf`, sanitizer
+reruns, and hardware counters remain unavailable on this Apple M1 host; the
+earlier Linux correctness workflow is not presented as M7.18.2 performance
+evidence. Machine-readable optimized results are in
+`benchmarking/results/m7182-m1-20261119/`.
+
+The next evidence-backed optimization is to profile synthesis eligibility and
+the remaining name-only constant fallbacks, then consider stable semantic IDs
+only if their measured share justifies the added lifecycle complexity.
+
 ## Reproduction
 
 ```sh

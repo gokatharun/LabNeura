@@ -355,3 +355,17 @@ A feature is complete only when its semantics are documented, implementation exi
   native sampled profile.
 - [ ] Linux x86-64 AVX2 timing/counters, 1 MiB/4 MiB controlled complete runs,
   Slang top-20 sampled functions, and allocation traces.
+
+### Indexed semantic reference resolution (M7.18.2)
+
+- [x] Sorted ordinal index preserves source identity, duplicate insertion
+  order, missing references, null declarations, deterministic rebuilds, and
+  move stability against the linear oracle.
+- [x] Exact 33-workload Apple M1 before/after comparison with matching hashes,
+  Release/scalar configuration, median and p95 timings, construction cost,
+  storage estimate, peak RSS, and fresh sampled profile.
+- [x] Full Release CTest: 62 passed and 10 expected ARM64 AVX2 skips. EDA-only
+  Release: 41 passed and one expected AVX2 skip. Selected Python EDA suites
+  passed.
+- [ ] Linux x86-64 optimized scalar/AVX2 timing, `perf` counters and profile,
+  plus sanitizer reruns on suitable CI hardware.

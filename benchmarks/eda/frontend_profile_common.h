@@ -96,7 +96,12 @@ inline void emit_result(std::string_view category, std::string_view frontend,
                         const TimingSummary& timing,
                         std::string_view correctness_status,
                         std::string_view build_configuration,
-                        std::string_view execution_backend = "cpu") {
+                        std::string_view execution_backend = "cpu",
+                        std::optional<std::size_t> semantic_reference_count = {},
+                        std::optional<std::size_t> index_construction_count = {},
+                        std::optional<std::uint64_t> index_construction_nanoseconds = {},
+                        std::optional<std::size_t> index_storage_bytes = {},
+                        std::optional<std::size_t> duplicate_reference_locations = {}) {
     std::cout << std::setprecision(12)
               << "{\"schema_version\":1,\"category\":\""
               << json_escape(category) << "\",\"frontend\":\""
@@ -131,6 +136,24 @@ inline void emit_result(std::string_view category, std::string_view frontend,
               << ",\"iqr_seconds\":" << timing.iqr_seconds
               << ",\"cpu_time_seconds\":null,\"peak_rss_bytes\":null"
                  ",\"allocation_count\":null,\"allocation_bytes\":null"
+              << ",\"semantic_reference_count\":";
+    if (semantic_reference_count) std::cout << *semantic_reference_count;
+    else std::cout << "null";
+    std::cout << ",\"index_construction_count\":";
+    if (index_construction_count) std::cout << *index_construction_count;
+    else std::cout << "null";
+    std::cout << ",\"index_construction_nanoseconds\":";
+    if (index_construction_nanoseconds)
+        std::cout << *index_construction_nanoseconds;
+    else std::cout << "null";
+    std::cout << ",\"index_storage_bytes\":";
+    if (index_storage_bytes) std::cout << *index_storage_bytes;
+    else std::cout << "null";
+    std::cout << ",\"duplicate_reference_locations\":";
+    if (duplicate_reference_locations)
+        std::cout << *duplicate_reference_locations;
+    else std::cout << "null";
+    std::cout
               << ",\"correctness_status\":\""
               << json_escape(correctness_status)
               << "\",\"build_configuration\":\""

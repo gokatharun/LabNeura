@@ -2,6 +2,9 @@
 #include "labneura/eda/verilog_callable_binding.h"
 
 #include <algorithm>
+#include <chrono>
+#include <cstdlib>
+#include <functional>
 #include <string>
 #include <type_traits>
 #include <unordered_set>
@@ -81,6 +84,7 @@ public:
         collect_instances();
         resolve_design_units();
         resolve_callables();
+        result_.rebuild_reference_index();
         return std::move(result_);
     }
 
@@ -976,6 +980,63 @@ private:
 };
 
 } // namespace
+
+void VerilogSemanticAnalysisResult::rebuild_reference_index() {
+    const bool profile =
+        std::getenv("LABNEURA_EDA_REFERENCE_INDEX_PROFILE") != nullptr;
+    const auto start = profile ? std::chrono::steady_clock::now()
+                               : std::chrono::steady_clock::time_point{};
+    reference_index.clear();
+    reference_index.reserve(references.size());
+    for (size_t ordinal = 0; ordinal < references.size(); ++ordinal) {
+        const auto& location = references[ordinal].location;
+        reference_index.push_back(
+            {location.source.get(), location.byte_offset, ordinal});
+    }
+    const auto source_less = std::less<const VerilogSourceBuffer*>{};
+    std::stable_sort(reference_index.begin(), reference_index.end(),
+                     [&](const auto& left, const auto& right) {
+        if (source_less(left.source, right.source)) return true;
+        if (source_less(right.source, left.source)) return false;
+        return left.byte_offset < right.byte_offset;
+    });
+    size_t duplicates = 0;
+    for (size_t index = 1; index < reference_index.size(); ++index) {
+        if (reference_index[index - 1].source == reference_index[index].source &&
+            reference_index[index - 1].byte_offset ==
+                reference_index[index].byte_offset)
+            ++duplicates;
+    }
+    const auto elapsed = profile
+        ? static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+              std::chrono::steady_clock::now() - start).count())
+        : 0;
+    reference_index_statistics = {
+        references.size(), reference_index.size(),
+        reference_index.capacity() * sizeof(VerilogSemanticReferenceIndexEntry),
+        elapsed,
+        duplicates};
+}
+
+VerilogSemanticReferenceIndexRange VerilogSemanticAnalysisResult::references_at(
+    const VerilogSyntaxLocation& location) const {
+    const auto source_less = std::less<const VerilogSourceBuffer*>{};
+    const auto first = std::lower_bound(
+        reference_index.begin(), reference_index.end(), location,
+        [&](const auto& entry, const auto& sought) {
+            if (source_less(entry.source, sought.source.get())) return true;
+            if (source_less(sought.source.get(), entry.source)) return false;
+            return entry.byte_offset < sought.byte_offset;
+        });
+    const auto last = std::upper_bound(
+        first, reference_index.end(), location,
+        [&](const auto& sought, const auto& entry) {
+            if (source_less(sought.source.get(), entry.source)) return true;
+            if (source_less(entry.source, sought.source.get())) return false;
+            return sought.byte_offset < entry.byte_offset;
+        });
+    return {first, last};
+}
 
 const VerilogSemanticSymbol* lookup_verilog_symbol(const VerilogSemanticScope& scope,
                                                    std::string_view name,

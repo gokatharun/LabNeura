@@ -29,14 +29,14 @@ const Symbol* find_callee_symbol(const VerilogSemanticAnalysisResult& semantic,
                                  const VerilogExpression& call) {
     if (!call.first)
         return nullptr;
-    for (auto reference = semantic.references.rbegin();
-         reference != semantic.references.rend(); ++reference) {
-        if (reference->location.source == call.first->location.source &&
-            reference->location.byte_offset == call.first->location.byte_offset &&
-            reference->declaration &&
-            (reference->declaration->kind == VerilogSemanticSymbolKind::Function ||
-             reference->declaration->kind == VerilogSemanticSymbolKind::Task))
-            return reference->declaration;
+    const auto range = semantic.references_at(call.first->location);
+    for (auto entry = range.end(); entry != range.begin();) {
+        --entry;
+        const auto& reference = semantic.references[entry->reference_ordinal];
+        if (reference.declaration &&
+            (reference.declaration->kind == VerilogSemanticSymbolKind::Function ||
+             reference.declaration->kind == VerilogSemanticSymbolKind::Task))
+            return reference.declaration;
     }
     return nullptr;
 }

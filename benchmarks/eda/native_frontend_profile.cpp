@@ -127,6 +127,8 @@ int main(int argc, char** argv) {
         const auto signals = signal_count(syntax);
         const auto nets = baseline.lowered.module->get_nets().size();
         const auto instances = baseline.lowered.module->get_instances().size();
+        const auto& index =
+            baseline.elaborated.semantic.reference_index_statistics;
 
         const auto syntax_timing = measure(kWarmups, kRepetitions, [&] {
             auto parsed = parse_verilog_syntax(
@@ -148,7 +150,10 @@ int main(int argc, char** argv) {
                     source.size(), tokens.tokens.size() - 1, modules, processes,
                     signals, std::nullopt, std::nullopt, std::nullopt,
                     kWarmups, kRepetitions,
-                    semantic_timing, "accepted", LABNEURA_FRONTEND_PROFILE_BUILD_TYPE);
+                    semantic_timing, "accepted", LABNEURA_FRONTEND_PROFILE_BUILD_TYPE,
+                    "cpu", index.reference_count, 1,
+                    index.construction_nanoseconds, index.estimated_storage_bytes,
+                    index.duplicate_location_count);
 
         const auto complete_timing = measure(kWarmups, kRepetitions, [&] {
             (void)run_pipeline(source, top, backend, true);
@@ -157,7 +162,10 @@ int main(int argc, char** argv) {
                     hash, source.size(), tokens.tokens.size() - 1, modules,
                     processes, signals, baseline.lowered.module->get_ports().size(),
                     nets, instances, kWarmups, kRepetitions,
-                    complete_timing, "lowered", LABNEURA_FRONTEND_PROFILE_BUILD_TYPE);
+                    complete_timing, "lowered", LABNEURA_FRONTEND_PROFILE_BUILD_TYPE,
+                    "cpu", index.reference_count, 1,
+                    index.construction_nanoseconds, index.estimated_storage_bytes,
+                    index.duplicate_location_count);
         return 0;
     }
     catch (const std::exception& error) {

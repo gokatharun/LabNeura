@@ -1407,6 +1407,29 @@ Fresh Apple Silicon M1/arm64 Release validation on 2026-11-19:
 - `git diff --check` and new-file whitespace checks passed. Existing dirty and
   untracked worktree changes were preserved; no commit or push was made.
 
+### Indexed semantic reference resolution (M7.18.2)
+
+Semantic analysis now builds one stable-sorted ordinal index over the public
+ordered reference collection. The key is source-buffer identity plus byte
+offset; duplicate ranges retain insertion order. Confirmed location-based
+linear scans in assignment coverage, callable/lvalue/type resolution, process
+analysis, and native lowering use the shared binary-search API. Name-only
+ambiguity fallbacks remain linear and the ordered reference collection remains
+the compatibility and test oracle.
+
+On the matched 33-workload Apple M1 Release/scalar suite, geometric-mean
+speedup was 1.203x for semantic and 1.967x for source-to-netlist. The 100 KiB
+Boolean workload improved from 88.911 ms to 43.720 ms semantic and from
+1,025.755 ms to 82.761 ms source-to-netlist. Its 9,027-entry index reserved
+216,648 bytes and took 102,333 ns to construct with optional instrumentation.
+Peak process RSS was 84,606,976 bytes versus 84,295,680 bytes at baseline.
+
+Fresh full Release CTest registered 72 tests: 62 passed and 10 ARM64 AVX2 tests
+skipped. EDA-only Release registered 42: 41 passed and one AVX2 test skipped.
+All selected Python EDA regressions passed. Linux optimized AVX2 profiling,
+hardware counters, and sanitizer reruns remain delegated to CI or suitable
+Linux hardware.
+
 ### Slang versus native frontend comparative profiling (M7.18.1, partial)
 
 Opt-in Release benchmarks now measure matched syntax, forced semantic, and

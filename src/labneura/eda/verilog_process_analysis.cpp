@@ -25,10 +25,9 @@ const VerilogSemanticSymbol* resolve_event_symbol(
     const VerilogSemanticAnalysisResult& semantic) {
     if (expression.kind != VerilogExpressionKind::Identifier)
         return nullptr;
-    for (const auto& reference : semantic.references) {
-        if (reference.location.source == expression.location.source &&
-            reference.location.byte_offset == expression.location.byte_offset &&
-            reference.declaration)
+    for (const auto& entry : semantic.references_at(expression.location)) {
+        const auto& reference = semantic.references[entry.reference_ordinal];
+        if (reference.declaration)
             return reference.declaration;
     }
     return nullptr;

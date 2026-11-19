@@ -73,23 +73,15 @@ const VerilogSemanticSymbol* resolve_callable(
     if (!call.first)
         return nullptr;
 
-    const auto same_location = [&](const VerilogSemanticReference& reference) {
-        return reference.location.source == call.first->location.source &&
-               reference.location.byte_offset == call.first->location.byte_offset;
-    };
-    auto found = std::find_if(semantic.references.begin(), semantic.references.end(),
-                              [&](const auto& reference) {
-                                  return same_location(reference) &&
-                                         reference.declaration &&
-                                         (reference.declaration->kind ==
-                                              VerilogSemanticSymbolKind::Task ||
-                                          reference.declaration->kind ==
-                                              VerilogSemanticSymbolKind::Function);
-                              });
-    if (found != semantic.references.end())
-        return found->declaration;
+    for (const auto& entry : semantic.references_at(call.first->location)) {
+        const auto& reference = semantic.references[entry.reference_ordinal];
+        if (reference.declaration &&
+            (reference.declaration->kind == VerilogSemanticSymbolKind::Task ||
+             reference.declaration->kind == VerilogSemanticSymbolKind::Function))
+            return reference.declaration;
+    }
 
-    found = std::find_if(semantic.references.begin(), semantic.references.end(),
+    const auto found = std::find_if(semantic.references.begin(), semantic.references.end(),
                          [&](const auto& reference) {
                              return reference.declaration &&
                                     reference.name == call.first->text &&

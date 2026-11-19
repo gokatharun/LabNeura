@@ -1402,6 +1402,12 @@ if(LABNEURA_BUILD_EDA AND NOT SKBUILD)
     slang::slang
   )
 
+  add_executable(labneura_semantic_reference_index_benchmark EXCLUDE_FROM_ALL
+    benchmarks/eda/semantic_reference_index_benchmark.cpp
+  )
+  target_link_libraries(labneura_semantic_reference_index_benchmark PRIVATE
+    labneura_eda)
+
   if(BUILD_TESTING)
     add_executable(labneura_eda_frontend_profile_schema_test
       tests/eda_frontend_profile_schema_test.cpp
@@ -1411,6 +1417,20 @@ if(LABNEURA_BUILD_EDA AND NOT SKBUILD)
     )
     add_test(NAME eda_frontend_profile_schema
       COMMAND labneura_eda_frontend_profile_schema_test)
+
+    add_executable(labneura_eda_semantic_reference_index_experiment_test
+      tests/eda_semantic_reference_index_experiment_test.cpp)
+    target_link_libraries(labneura_eda_semantic_reference_index_experiment_test
+      PRIVATE labneura_eda)
+    add_test(NAME eda_semantic_reference_index_experiment
+      COMMAND labneura_eda_semantic_reference_index_experiment_test)
+
+    add_executable(labneura_eda_semantic_reference_index_test
+      tests/eda_semantic_reference_index_test.cpp)
+    target_link_libraries(labneura_eda_semantic_reference_index_test
+      PRIVATE labneura_eda)
+    add_test(NAME eda_semantic_reference_index
+      COMMAND labneura_eda_semantic_reference_index_test)
   endif()
 endif()
 

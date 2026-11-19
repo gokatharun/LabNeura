@@ -20,15 +20,11 @@ void diagnose(Result& result, std::string code, std::string message,
 const VerilogSemanticSymbol* identifier_symbol(
     const VerilogExpression& expression,
     const VerilogSemanticAnalysisResult& semantic) {
-    const auto found = std::find_if(
-        semantic.references.begin(), semantic.references.end(),
-        [&](const VerilogSemanticReference& reference) {
-            return reference.location.source == expression.location.source &&
-                   reference.location.byte_offset == expression.location.byte_offset &&
-                   reference.declaration;
-        });
-    if (found != semantic.references.end())
-        return found->declaration;
+    for (const auto& entry : semantic.references_at(expression.location)) {
+        const auto& reference = semantic.references[entry.reference_ordinal];
+        if (reference.declaration)
+            return reference.declaration;
+    }
     const auto named = std::find_if(
         semantic.references.begin(), semantic.references.end(),
         [&](const VerilogSemanticReference& reference) {

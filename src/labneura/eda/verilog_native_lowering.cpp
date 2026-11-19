@@ -150,16 +150,12 @@ VerilogNativeLoweringSignal* VerilogNativeLoweringSession::signal(
 
 const VerilogSemanticSymbol* VerilogNativeLoweringSession::resolve_symbol(
     const VerilogExpression& expression) const {
-    const auto reference = std::find_if(
-        semantic.references.begin(), semantic.references.end(),
-        [&](const auto& candidate) {
-            return candidate.location.source == expression.location.source &&
-                   candidate.location.byte_offset ==
-                       expression.location.byte_offset &&
-                   candidate.declaration;
-        });
-    return reference == semantic.references.end() ? nullptr
-                                                   : reference->declaration;
+    for (const auto& entry : semantic.references_at(expression.location)) {
+        const auto& reference = semantic.references[entry.reference_ordinal];
+        if (reference.declaration)
+            return reference.declaration;
+    }
+    return nullptr;
 }
 
 std::optional<VerilogConstantValue>
@@ -168,20 +164,16 @@ VerilogNativeLoweringSession::evaluate_constant(
     const auto resolver = [&](std::string_view name,
                               const VerilogSyntaxLocation& location)
         -> std::optional<VerilogConstantValue> {
-        const auto reference = std::find_if(
-            semantic.references.begin(), semantic.references.end(),
-            [&](const auto& candidate) {
-                return candidate.name == name && candidate.declaration &&
-                       candidate.location.source == location.source &&
-                       candidate.location.byte_offset == location.byte_offset;
-            });
-        if (reference != semantic.references.end()) {
+        for (const auto& entry : semantic.references_at(location)) {
+            const auto& reference = semantic.references[entry.reference_ordinal];
+            if (reference.name != name || !reference.declaration)
+                continue;
             if (const auto constant_value =
-                    types.symbol_constants.find(reference->declaration);
+                    types.symbol_constants.find(reference.declaration);
                 constant_value != types.symbol_constants.end())
                 return constant_value->second;
             if (const auto parameter =
-                    elaborated_top.parameters.find(reference->declaration->name);
+                    elaborated_top.parameters.find(reference.declaration->name);
                 parameter != elaborated_top.parameters.end())
                 return parameter->second;
         }

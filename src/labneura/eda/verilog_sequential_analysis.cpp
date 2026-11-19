@@ -8,9 +8,9 @@ namespace {
 const VerilogSemanticSymbol* ref_at(const VerilogExpression* e,
                                     const VerilogSemanticAnalysisResult& sem) {
     if (!e || e->kind != VerilogExpressionKind::Identifier) return nullptr;
-    for (const auto& r : sem.references)
-        if (r.location.byte_offset == e->location.byte_offset &&
-            r.location.source == e->location.source) return r.declaration;
+    const auto references = sem.references_at(e->location);
+    if (!references.empty())
+        return sem.references[references.begin()->reference_ordinal].declaration;
     return nullptr;
 }
 

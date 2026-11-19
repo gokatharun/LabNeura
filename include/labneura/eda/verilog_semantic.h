@@ -83,6 +83,33 @@ struct VerilogSemanticReference {
     const VerilogSemanticSymbol* declaration = nullptr;
 };
 
+struct VerilogSemanticReferenceIndexEntry {
+    const VerilogSourceBuffer* source = nullptr;
+    size_t byte_offset = 0;
+    size_t reference_ordinal = 0;
+};
+
+struct VerilogSemanticReferenceIndexRange {
+    using Iterator = std::vector<VerilogSemanticReferenceIndexEntry>::const_iterator;
+    Iterator first;
+    Iterator last;
+
+    Iterator begin() const noexcept { return first; }
+    Iterator end() const noexcept { return last; }
+    bool empty() const noexcept { return first == last; }
+    size_t size() const noexcept {
+        return static_cast<size_t>(last - first);
+    }
+};
+
+struct VerilogSemanticReferenceIndexStatistics {
+    size_t reference_count = 0;
+    size_t entry_count = 0;
+    size_t estimated_storage_bytes = 0;
+    uint64_t construction_nanoseconds = 0;
+    size_t duplicate_location_count = 0;
+};
+
 struct VerilogSemanticDiagnostic {
     std::string code;
     std::string message;
@@ -98,6 +125,16 @@ struct VerilogSemanticAnalysisResult {
     VerilogSemanticModel model;
     std::vector<VerilogSemanticReference> references;
     std::vector<VerilogSemanticDiagnostic> diagnostics;
+    // The ordered references remain the compatibility and diagnostic oracle.
+    // This compact ordinal index is built after resolution and preserves the
+    // insertion order of duplicate source locations. Call rebuild after any
+    // intentional external mutation of references.
+    std::vector<VerilogSemanticReferenceIndexEntry> reference_index;
+    VerilogSemanticReferenceIndexStatistics reference_index_statistics;
+
+    void rebuild_reference_index();
+    VerilogSemanticReferenceIndexRange references_at(
+        const VerilogSyntaxLocation& location) const;
 
     bool has_errors() const noexcept { return !diagnostics.empty(); }
 };

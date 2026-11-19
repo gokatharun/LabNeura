@@ -1,0 +1,116 @@
+{
+  "benchmark_command": [
+    "/tmp/labneura-m7182/labneura_native_frontend_profile",
+    "benchmarking/results/m7181-m1-20261119/workloads/boolean_100kib.sv",
+    "frontend_boolean_1003",
+    "scalar",
+    "boolean_102400"
+  ],
+  "hardware_counters": {
+    "reason": "portable unprivileged hardware counters are not exposed by this script on macOS",
+    "status": "unavailable",
+    "value": null
+  },
+  "peak_rss": {
+    "metric": {
+      "status": "available",
+      "unit": "bytes",
+      "value": 84606976
+    },
+    "run": {
+      "command": [
+        "/usr/bin/time",
+        "-l",
+        "/tmp/labneura-m7182/labneura_native_frontend_profile",
+        "benchmarking/results/m7181-m1-20261119/workloads/boolean_100kib.sv",
+        "frontend_boolean_1003",
+        "scalar",
+        "boolean_102400"
+      ],
+      "returncode": 0,
+      "stderr": "benchmarking/results/m7182-m1-20261119/profiles/native-boolean-100k-valid/rss.stderr.txt",
+      "stdout": "benchmarking/results/m7182-m1-20261119/profiles/native-boolean-100k-valid/rss.stdout.txt",
+      "wall_time_ns": 1923440208
+    }
+  },
+  "platform": {
+    "machine": "arm64",
+    "system": "Darwin"
+  },
+  "sampling_profile": {
+    "sample": {
+      "artifact": "benchmarking/results/m7182-m1-20261119/profiles/native-boolean-100k-valid/sample.txt",
+      "sampler_returncode": 0,
+      "sampler_stderr": "Sampling process 54476 for 1 second with 1 millisecond of run time between samples\nSampling completed, processing symbols...\nSample analysis of process 54476 written to file benchmarking/results/m7182-m1-20261119/profiles/native-boolean-100k-valid/sample.txt\n",
+      "status": "available",
+      "target_returncode": 0
+    },
+    "xctrace_allocations": {
+      "artifact": null,
+      "run": {
+        "command": [
+          "xcrun",
+          "xctrace",
+          "record",
+          "--template",
+          "Allocations",
+          "--output",
+          "benchmarking/results/m7182-m1-20261119/profiles/native-boolean-100k-valid/allocations.trace",
+          "--launch",
+          "--",
+          "/tmp/labneura-m7182/labneura_native_frontend_profile",
+          "benchmarking/results/m7181-m1-20261119/workloads/boolean_100kib.sv",
+          "frontend_boolean_1003",
+          "scalar",
+          "boolean_102400"
+        ],
+        "returncode": 72,
+        "stderr": "benchmarking/results/m7182-m1-20261119/profiles/native-boolean-100k-valid/allocations.stderr.txt",
+        "stdout": "benchmarking/results/m7182-m1-20261119/profiles/native-boolean-100k-valid/allocations.stdout.txt",
+        "wall_time_ns": 7205666
+      },
+      "status": "unavailable"
+    },
+    "xctrace_time_profiler": {
+      "artifact": null,
+      "run": {
+        "command": [
+          "xcrun",
+          "xctrace",
+          "record",
+          "--template",
+          "Time Profiler",
+          "--output",
+          "benchmarking/results/m7182-m1-20261119/profiles/native-boolean-100k-valid/time-profile.trace",
+          "--launch",
+          "--",
+          "/tmp/labneura-m7182/labneura_native_frontend_profile",
+          "benchmarking/results/m7181-m1-20261119/workloads/boolean_100kib.sv",
+          "frontend_boolean_1003",
+          "scalar",
+          "boolean_102400"
+        ],
+        "returncode": 72,
+        "stderr": "benchmarking/results/m7182-m1-20261119/profiles/native-boolean-100k-valid/xctrace.stderr.txt",
+        "stdout": "benchmarking/results/m7182-m1-20261119/profiles/native-boolean-100k-valid/xctrace.stdout.txt",
+        "wall_time_ns": 8107584
+      },
+      "status": "unavailable"
+    }
+  },
+  "schema_version": 1,
+  "separate_runs": true,
+  "timing": {
+    "command": [
+      "/tmp/labneura-m7182/labneura_native_frontend_profile",
+      "benchmarking/results/m7181-m1-20261119/workloads/boolean_100kib.sv",
+      "frontend_boolean_1003",
+      "scalar",
+      "boolean_102400"
+    ],
+    "returncode": 0,
+    "stderr": "benchmarking/results/m7182-m1-20261119/profiles/native-boolean-100k-valid/timing.stderr.txt",
+    "stdout": "benchmarking/results/m7182-m1-20261119/profiles/native-boolean-100k-valid/timing.stdout.jsonl",
+    "wall_time_ns": 1927081167
+  }
+}

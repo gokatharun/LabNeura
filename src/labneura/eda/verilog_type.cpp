@@ -887,11 +887,10 @@ private:
         if (!call.first)
             return nullptr;
         const auto& callee_location = call.first->location;
-        for (const auto& reference : semantic_.references) {
-            if (reference.location.source == callee_location.source &&
-                reference.location.byte_offset == callee_location.byte_offset)
-                return reference.declaration;
-        }
+        const auto references = semantic_.references_at(callee_location);
+        if (!references.empty())
+            return semantic_.references[references.begin()->reference_ordinal]
+                .declaration;
         return nullptr;
     }
 

@@ -11,11 +11,9 @@ namespace {
 
 const VerilogSemanticSymbol* symbol_for(const VerilogExpression& expression,
                                         const VerilogSemanticAnalysisResult& semantic) {
-    for (const auto& reference : semantic.references) {
-        if (reference.location.source == expression.location.source &&
-            reference.location.byte_offset == expression.location.byte_offset)
-            return reference.declaration;
-    }
+    const auto references = semantic.references_at(expression.location);
+    if (!references.empty())
+        return semantic.references[references.begin()->reference_ordinal].declaration;
     return nullptr;
 }
 
