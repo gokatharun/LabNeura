@@ -1,5 +1,21 @@
 # EDA Verilog lexer benchmark
 
+## Comparative frontend profiling
+
+M7.18.1 adds opt-in `labneura_native_frontend_profile` and
+`labneura_slang_frontend_profile` targets. They emit one JSON object per
+measurement boundary and are excluded from normal builds. Deterministic
+workloads, platform profiling, and aggregation are provided by:
+
+- `generate_frontend_workloads.py`
+- `profile_frontends.py`
+- `aggregate_frontend_results.py`
+
+Unavailable counters and tools are recorded as null with a reason. Timing,
+RSS, hardware-counter, allocation, and sampling runs are separate processes so
+instrumentation overhead is not mixed into steady-state timing. See
+`docs/eda-frontend-profiling.md` for the baseline, limitations, and commands.
+
 The benchmark runs the scalar and, when compiled and supported by the current
 CPU, NEON and AVX2 Verilog/SystemVerilog byte classifiers and lexer over the
 same representative source files. It reports

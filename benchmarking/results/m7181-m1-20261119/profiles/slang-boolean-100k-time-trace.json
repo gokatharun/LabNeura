@@ -1,0 +1,5 @@
+{ "traceEvents": [
+{ "pid":1, "tid":0, "ph":"X", "ts":169, "dur":3100, "name":"parseFile", "args":{ "detail":"profile.sv" } },
+{ "pid":1, "tid":0, "ph":"X", "ts":3297, "dur":2921, "name":"AST Instance", "args":{ "detail":"frontend_boolean_1003" } },
+{ "cat":"", "pid":1, "tid":0, "ts":0, "ph":"M", "name":"process_name", "args":{ "name":"slang" } }
+] }

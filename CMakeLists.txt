@@ -1385,6 +1385,33 @@ if(LABNEURA_BUILD_EDA AND NOT SKBUILD)
     LABNEURA_LEXER_BUILD_TYPE="${CMAKE_BUILD_TYPE}"
   )
   target_link_libraries(labneura_preprocessor_benchmark PRIVATE labneura_eda)
+
+  add_executable(labneura_native_frontend_profile EXCLUDE_FROM_ALL
+    benchmarks/eda/native_frontend_profile.cpp
+  )
+  target_compile_definitions(labneura_native_frontend_profile PRIVATE
+    LABNEURA_FRONTEND_PROFILE_BUILD_TYPE="${CMAKE_BUILD_TYPE}"
+  )
+  target_link_libraries(labneura_native_frontend_profile PRIVATE labneura_eda)
+
+  add_executable(labneura_slang_frontend_profile EXCLUDE_FROM_ALL
+    benchmarks/eda/slang_frontend_profile.cpp
+  )
+  target_link_libraries(labneura_slang_frontend_profile PRIVATE
+    labneura_eda
+    slang::slang
+  )
+
+  if(BUILD_TESTING)
+    add_executable(labneura_eda_frontend_profile_schema_test
+      tests/eda_frontend_profile_schema_test.cpp
+    )
+    target_include_directories(labneura_eda_frontend_profile_schema_test PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/eda
+    )
+    add_test(NAME eda_frontend_profile_schema
+      COMMAND labneura_eda_frontend_profile_schema_test)
+  endif()
 endif()
 
 if(SKBUILD)

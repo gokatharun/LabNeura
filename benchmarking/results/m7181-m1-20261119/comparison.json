@@ -1,0 +1,2381 @@
+{
+  "comparisons": [
+    {
+      "category": "semantic",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.000346125,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.34910220296135785,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.000120833,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "09f077d1574a42ee",
+      "workload_identity": "continuous_1024"
+    },
+    {
+      "category": "semantic",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.000342,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.3607456140350877,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.000123375,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "222e3131a97c7e48",
+      "workload_identity": "sequential_1024"
+    },
+    {
+      "category": "semantic",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.003542917,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.20979633448934873,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.000743291,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "3bb235079625e683",
+      "workload_identity": "conditional_10240"
+    },
+    {
+      "category": "semantic",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.003819917,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.17443651262579787,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.000666333,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "3d5b843bbb892fe9",
+      "workload_identity": "arithmetic_10240"
+    },
+    {
+      "category": "semantic",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.00387925,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.16644119352967715,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.000645667,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "415df9c35fcd9083",
+      "workload_identity": "sequential_10240"
+    },
+    {
+      "category": "semantic",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.003587042,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.19539079832352116,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.000700875,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "475ef3e0fbffe187",
+      "workload_identity": "case_10240"
+    },
+    {
+      "category": "semantic",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.088910833,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.07098448847060065,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.00631129,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "4804cc2ded717d75",
+      "workload_identity": "boolean_102400"
+    },
+    {
+      "category": "semantic",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.072287917,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.07252014192081369,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.00524233,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "480887e9fe9bc679",
+      "workload_identity": "wide_102400"
+    },
+    {
+      "category": "semantic",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.000248042,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.6996476403189782,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.000173542,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "4d0e52a7f33effe9",
+      "workload_identity": "literal_1024"
+    },
+    {
+      "category": "semantic",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.076835375,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.07695244540681945,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.00591267,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "5250846026b4a0c1",
+      "workload_identity": "arithmetic_102400"
+    },
+    {
+      "category": "semantic",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.001135916,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.23061476376774337,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.000261959,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "55bcb25747468eff",
+      "workload_identity": "comment_10240"
+    },
+    {
+      "category": "semantic",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.000254708,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.4295742575812303,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.000109416,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "59339991f590813e",
+      "workload_identity": "parameter_1024"
+    },
+    {
+      "category": "semantic",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.000570625,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.6962400876232202,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.000397292,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "59b725a95737ba13",
+      "workload_identity": "boolean_1024"
+    },
+    {
+      "category": "semantic",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.003421916,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.17996759710057172,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.000615834,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "65f1a6050bbf99bc",
+      "workload_identity": "continuous_10240"
+    },
+    {
+      "category": "semantic",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.1002825,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.05390481888664523,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.00540571,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "74204de8e58b8d27",
+      "workload_identity": "sequential_102400"
+    },
+    {
+      "category": "semantic",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.0138555,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.12774710403810763,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.00177,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "833adb545790f7bb",
+      "workload_identity": "identifier_102400"
+    },
+    {
+      "category": "semantic",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.003135333,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.14220977484688227,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.000445875,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "8cff2d8451b13d69",
+      "workload_identity": "parameter_10240"
+    },
+    {
+      "category": "semantic",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.002298208,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.6333369303387683,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.00145554,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "8df9e19e4cf45d0f",
+      "workload_identity": "literal_10240"
+    },
+    {
+      "category": "semantic",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.000345875,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.38537621973256236,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.000133292,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "8e1e420d4b168e14",
+      "workload_identity": "conditional_1024"
+    },
+    {
+      "category": "semantic",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.014551875,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.13290383541639822,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.001934,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "929399d084f41187",
+      "workload_identity": "comment_102400"
+    },
+    {
+      "category": "semantic",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.074335375,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.0872554957851494,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.00648617,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "94863af658731040",
+      "workload_identity": "conditional_102400"
+    },
+    {
+      "category": "semantic",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.000328917,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.40346956831054637,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.000132708,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "97b0190aaab8bd2d",
+      "workload_identity": "case_1024"
+    },
+    {
+      "category": "semantic",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.073222083,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.08280111342912766,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.00606287,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "a3dafad87aa1dc40",
+      "workload_identity": "case_102400"
+    },
+    {
+      "category": "semantic",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.000138792,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.6439492189751571,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 8.9375e-05,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "abbe73d6b9c1322e",
+      "workload_identity": "comment_1024"
+    },
+    {
+      "category": "semantic",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.003461667,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.1794776909506316,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.000621292,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "b6e5cab149621425",
+      "workload_identity": "wide_10240"
+    },
+    {
+      "category": "semantic",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.071483708,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.07298348317353655,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.00521713,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "c4bd46097b0914d9",
+      "workload_identity": "continuous_102400"
+    },
+    {
+      "category": "semantic",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.001091125,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.2174361324321228,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.00023725,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "d4f129d3e87b72af",
+      "workload_identity": "identifier_10240"
+    },
+    {
+      "category": "semantic",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.004188,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.17537201528175742,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.000734458,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "d91f1b01484729ba",
+      "workload_identity": "boolean_10240"
+    },
+    {
+      "category": "semantic",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.036514709,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.4335814370039209,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.0158321,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "d9921554a920ac67",
+      "workload_identity": "literal_102400"
+    },
+    {
+      "category": "semantic",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.000143125,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.5828262008733625,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 8.3417e-05,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "e31d9aac4bbd9ff0",
+      "workload_identity": "identifier_1024"
+    },
+    {
+      "category": "semantic",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.12089575,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.029765976057884586,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.00359858,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "e683c84fa760931e",
+      "workload_identity": "parameter_102400"
+    },
+    {
+      "category": "semantic",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.000410333,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.30990926881337844,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.000127166,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "f607ecabcc603d5c",
+      "workload_identity": "wide_1024"
+    },
+    {
+      "category": "semantic",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.000490292,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.3429935630195883,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.000168167,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "f85024465be4c759",
+      "workload_identity": "arithmetic_1024"
+    },
+    {
+      "category": "source_to_netlist",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.00049725,
+      "native_metrics": null,
+      "native_speedup_ratio": 1.261856209150327,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": 58,
+        "net_count": 119,
+        "port_count": 6
+      },
+      "slang_median_seconds": 0.000627458,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": 0,
+        "net_count": 6,
+        "port_count": 6
+      },
+      "structurally_equal": false,
+      "workload_content_hash": "09f077d1574a42ee",
+      "workload_identity": "continuous_1024"
+    },
+    {
+      "category": "source_to_netlist",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.000531166,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.9181065806169822,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": 139,
+        "net_count": 196,
+        "port_count": 6
+      },
+      "slang_median_seconds": 0.000487667,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": 0,
+        "net_count": 6,
+        "port_count": 6
+      },
+      "structurally_equal": false,
+      "workload_content_hash": "222e3131a97c7e48",
+      "workload_identity": "sequential_1024"
+    },
+    {
+      "category": "source_to_netlist",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.008698292,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.24455950662497877,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": 676,
+        "net_count": 949,
+        "port_count": 6
+      },
+      "slang_median_seconds": 0.00212725,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": 0,
+        "net_count": 6,
+        "port_count": 6
+      },
+      "structurally_equal": false,
+      "workload_content_hash": "3bb235079625e683",
+      "workload_identity": "conditional_10240"
+    },
+    {
+      "category": "source_to_netlist",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.012795916,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.1671103498960137,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": 2433,
+        "net_count": 2810,
+        "port_count": 6
+      },
+      "slang_median_seconds": 0.00213833,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": 0,
+        "net_count": 6,
+        "port_count": 6
+      },
+      "structurally_equal": false,
+      "workload_content_hash": "3d5b843bbb892fe9",
+      "workload_identity": "arithmetic_10240"
+    },
+    {
+      "category": "source_to_netlist",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.010099416,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.10668537665940288,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": 1569,
+        "net_count": 2198,
+        "port_count": 6
+      },
+      "slang_median_seconds": 0.00107746,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": 0,
+        "net_count": 6,
+        "port_count": 6
+      },
+      "structurally_equal": false,
+      "workload_content_hash": "415df9c35fcd9083",
+      "workload_identity": "sequential_10240"
+    },
+    {
+      "category": "source_to_netlist",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.010804625,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.10660157108645603,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": 1301,
+        "net_count": 1670,
+        "port_count": 6
+      },
+      "slang_median_seconds": 0.00115179,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": 0,
+        "net_count": 6,
+        "port_count": 6
+      },
+      "structurally_equal": false,
+      "workload_content_hash": "475ef3e0fbffe187",
+      "workload_identity": "case_10240"
+    },
+    {
+      "category": "source_to_netlist",
+      "execution_backend": "cpu",
+      "native_median_seconds": 1.025754792,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.0204585931878347,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": 10030,
+        "net_count": 12039,
+        "port_count": 6
+      },
+      "slang_median_seconds": 0.0209855,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": 0,
+        "net_count": 6,
+        "port_count": 6
+      },
+      "structurally_equal": false,
+      "workload_content_hash": "4804cc2ded717d75",
+      "workload_identity": "boolean_102400"
+    },
+    {
+      "category": "source_to_netlist",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.456495666,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.027730821873783132,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": 5558,
+        "net_count": 11119,
+        "port_count": 6
+      },
+      "slang_median_seconds": 0.012659,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": 0,
+        "net_count": 6,
+        "port_count": 6
+      },
+      "structurally_equal": false,
+      "workload_content_hash": "480887e9fe9bc679",
+      "workload_identity": "wide_102400"
+    },
+    {
+      "category": "source_to_netlist",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.000710791,
+      "native_metrics": null,
+      "native_speedup_ratio": 1.1772096157660972,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": 794,
+        "net_count": 845,
+        "port_count": 6
+      },
+      "slang_median_seconds": 0.00083675,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": 0,
+        "net_count": 6,
+        "port_count": 6
+      },
+      "structurally_equal": false,
+      "workload_content_hash": "4d0e52a7f33effe9",
+      "workload_identity": "literal_1024"
+    },
+    {
+      "category": "source_to_netlist",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.702178375,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.02241310835013966,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": 22609,
+        "net_count": 26090,
+        "port_count": 6
+      },
+      "slang_median_seconds": 0.015738,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": 0,
+        "net_count": 6,
+        "port_count": 6
+      },
+      "structurally_equal": false,
+      "workload_content_hash": "5250846026b4a0c1",
+      "workload_identity": "arithmetic_102400"
+    },
+    {
+      "category": "source_to_netlist",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.001968459,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.4755623561374659,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": 198,
+        "net_count": 399,
+        "port_count": 6
+      },
+      "slang_median_seconds": 0.000936125,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": 0,
+        "net_count": 6,
+        "port_count": 6
+      },
+      "structurally_equal": false,
+      "workload_content_hash": "55bcb25747468eff",
+      "workload_identity": "comment_10240"
+    },
+    {
+      "category": "source_to_netlist",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.000310125,
+      "native_metrics": null,
+      "native_speedup_ratio": 1.654036275695284,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": 32,
+        "net_count": 65,
+        "port_count": 6
+      },
+      "slang_median_seconds": 0.000512958,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": 0,
+        "net_count": 6,
+        "port_count": 6
+      },
+      "structurally_equal": false,
+      "workload_content_hash": "59339991f590813e",
+      "workload_identity": "parameter_1024"
+    },
+    {
+      "category": "source_to_netlist",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.000993416,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.9183806179888385,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": 110,
+        "net_count": 135,
+        "port_count": 6
+      },
+      "slang_median_seconds": 0.000912334,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": 0,
+        "net_count": 6,
+        "port_count": 6
+      },
+      "structurally_equal": false,
+      "workload_content_hash": "59b725a95737ba13",
+      "workload_identity": "boolean_1024"
+    },
+    {
+      "category": "source_to_netlist",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.008603,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.20732651400674185,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": 596,
+        "net_count": 1195,
+        "port_count": 6
+      },
+      "slang_median_seconds": 0.00178363,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": 0,
+        "net_count": 6,
+        "port_count": 6
+      },
+      "structurally_equal": false,
+      "workload_content_hash": "65f1a6050bbf99bc",
+      "workload_identity": "continuous_10240"
+    },
+    {
+      "category": "source_to_netlist",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.536323667,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.010780952539989253,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": 14654,
+        "net_count": 20517,
+        "port_count": 6
+      },
+      "slang_median_seconds": 0.00578208,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": 0,
+        "net_count": 6,
+        "port_count": 6
+      },
+      "structurally_equal": false,
+      "workload_content_hash": "74204de8e58b8d27",
+      "workload_identity": "sequential_102400"
+    },
+    {
+      "category": "source_to_netlist",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.039876542,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.10071610522296542,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": 1692,
+        "net_count": 2823,
+        "port_count": 6
+      },
+      "slang_median_seconds": 0.00401621,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": 0,
+        "net_count": 570,
+        "port_count": 6
+      },
+      "structurally_equal": false,
+      "workload_content_hash": "833adb545790f7bb",
+      "workload_identity": "identifier_102400"
+    },
+    {
+      "category": "source_to_netlist",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.004263584,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.2762652266262375,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": 316,
+        "net_count": 633,
+        "port_count": 6
+      },
+      "slang_median_seconds": 0.00117788,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": 0,
+        "net_count": 6,
+        "port_count": 6
+      },
+      "structurally_equal": false,
+      "workload_content_hash": "8cff2d8451b13d69",
+      "workload_identity": "parameter_10240"
+    },
+    {
+      "category": "source_to_netlist",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.008457708,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.3128211567483768,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": 8318,
+        "net_count": 8825,
+        "port_count": 6
+      },
+      "slang_median_seconds": 0.00264575,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": 0,
+        "net_count": 6,
+        "port_count": 6
+      },
+      "structurally_equal": false,
+      "workload_content_hash": "8df9e19e4cf45d0f",
+      "workload_identity": "literal_10240"
+    },
+    {
+      "category": "source_to_netlist",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.000502167,
+      "native_metrics": null,
+      "native_speedup_ratio": 1.1886822511236301,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": 66,
+        "net_count": 95,
+        "port_count": 6
+      },
+      "slang_median_seconds": 0.000596917,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": 0,
+        "net_count": 6,
+        "port_count": 6
+      },
+      "structurally_equal": false,
+      "workload_content_hash": "8e1e420d4b168e14",
+      "workload_identity": "conditional_1024"
+    },
+    {
+      "category": "source_to_netlist",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.062532792,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.07643397723229757,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": 1920,
+        "net_count": 3843,
+        "port_count": 6
+      },
+      "slang_median_seconds": 0.00477963,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": 0,
+        "net_count": 6,
+        "port_count": 6
+      },
+      "structurally_equal": false,
+      "workload_content_hash": "929399d084f41187",
+      "workload_identity": "comment_102400"
+    },
+    {
+      "category": "source_to_netlist",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.460321834,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.03488385475975489,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": 6336,
+        "net_count": 8873,
+        "port_count": 6
+      },
+      "slang_median_seconds": 0.0160578,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": 0,
+        "net_count": 6,
+        "port_count": 6
+      },
+      "structurally_equal": false,
+      "workload_content_hash": "94863af658731040",
+      "workload_identity": "conditional_102400"
+    },
+    {
+      "category": "source_to_netlist",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.000520042,
+      "native_metrics": null,
+      "native_speedup_ratio": 1.0499959618646186,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": 125,
+        "net_count": 158,
+        "port_count": 6
+      },
+      "slang_median_seconds": 0.000546042,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": 0,
+        "net_count": 6,
+        "port_count": 6
+      },
+      "structurally_equal": false,
+      "workload_content_hash": "97b0190aaab8bd2d",
+      "workload_identity": "case_1024"
+    },
+    {
+      "category": "source_to_netlist",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.62225275,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.010433589887710419,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": 12249,
+        "net_count": 15746,
+        "port_count": 6
+      },
+      "slang_median_seconds": 0.00649233,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": 0,
+        "net_count": 6,
+        "port_count": 6
+      },
+      "structurally_equal": false,
+      "workload_content_hash": "a3dafad87aa1dc40",
+      "workload_identity": "case_102400"
+    },
+    {
+      "category": "source_to_netlist",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.000178417,
+      "native_metrics": null,
+      "native_speedup_ratio": 2.7433428428905318,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": 18,
+        "net_count": 39,
+        "port_count": 6
+      },
+      "slang_median_seconds": 0.000489459,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": 0,
+        "net_count": 6,
+        "port_count": 6
+      },
+      "structurally_equal": false,
+      "workload_content_hash": "abbe73d6b9c1322e",
+      "workload_identity": "comment_1024"
+    },
+    {
+      "category": "source_to_netlist",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.008634917,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.20469218175461326,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": 598,
+        "net_count": 1199,
+        "port_count": 6
+      },
+      "slang_median_seconds": 0.0017675,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": 0,
+        "net_count": 6,
+        "port_count": 6
+      },
+      "structurally_equal": false,
+      "workload_content_hash": "b6e5cab149621425",
+      "workload_identity": "wide_10240"
+    },
+    {
+      "category": "source_to_netlist",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.458272834,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.027443258833884966,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": 5558,
+        "net_count": 11119,
+        "port_count": 6
+      },
+      "slang_median_seconds": 0.0125765,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": 0,
+        "net_count": 6,
+        "port_count": 6
+      },
+      "structurally_equal": false,
+      "workload_content_hash": "c4bd46097b0914d9",
+      "workload_identity": "continuous_102400"
+    },
+    {
+      "category": "source_to_netlist",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.001623542,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.5007569868842322,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": 171,
+        "net_count": 288,
+        "port_count": 6
+      },
+      "slang_median_seconds": 0.000813,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": 0,
+        "net_count": 63,
+        "port_count": 6
+      },
+      "structurally_equal": false,
+      "workload_content_hash": "d4f129d3e87b72af",
+      "workload_identity": "identifier_10240"
+    },
+    {
+      "category": "source_to_netlist",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.016704208,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.1589491701731683,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": 1080,
+        "net_count": 1299,
+        "port_count": 6
+      },
+      "slang_median_seconds": 0.00265512,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": 0,
+        "net_count": 6,
+        "port_count": 6
+      },
+      "structurally_equal": false,
+      "workload_content_hash": "d91f1b01484729ba",
+      "workload_identity": "boolean_10240"
+    },
+    {
+      "category": "source_to_netlist",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.222666542,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.10475889098776232,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": 80192,
+        "net_count": 85055,
+        "port_count": 6
+      },
+      "slang_median_seconds": 0.0233263,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": 0,
+        "net_count": 6,
+        "port_count": 6
+      },
+      "structurally_equal": false,
+      "workload_content_hash": "d9921554a920ac67",
+      "workload_identity": "literal_102400"
+    },
+    {
+      "category": "source_to_netlist",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.000183291,
+      "native_metrics": null,
+      "native_speedup_ratio": 2.5028506582429033,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": 18,
+        "net_count": 33,
+        "port_count": 6
+      },
+      "slang_median_seconds": 0.00045875,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": 0,
+        "net_count": 12,
+        "port_count": 6
+      },
+      "structurally_equal": false,
+      "workload_content_hash": "e31d9aac4bbd9ff0",
+      "workload_identity": "identifier_1024"
+    },
+    {
+      "category": "source_to_netlist",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.186115084,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.0377656117330071,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": 3008,
+        "net_count": 6017,
+        "port_count": 6
+      },
+      "slang_median_seconds": 0.00702875,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": 0,
+        "net_count": 6,
+        "port_count": 6
+      },
+      "structurally_equal": false,
+      "workload_content_hash": "e683c84fa760931e",
+      "workload_identity": "parameter_102400"
+    },
+    {
+      "category": "source_to_netlist",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.000563042,
+      "native_metrics": null,
+      "native_speedup_ratio": 1.1619914677768266,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": 58,
+        "net_count": 119,
+        "port_count": 6
+      },
+      "slang_median_seconds": 0.00065425,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": 0,
+        "net_count": 6,
+        "port_count": 6
+      },
+      "structurally_equal": false,
+      "workload_content_hash": "f607ecabcc603d5c",
+      "workload_identity": "wide_1024"
+    },
+    {
+      "category": "source_to_netlist",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.000874417,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.8896396113067336,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": 236,
+        "net_count": 275,
+        "port_count": 6
+      },
+      "slang_median_seconds": 0.000777916,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": 0,
+        "net_count": 6,
+        "port_count": 6
+      },
+      "structurally_equal": false,
+      "workload_content_hash": "f85024465be4c759",
+      "workload_identity": "arithmetic_1024"
+    },
+    {
+      "category": "syntax",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.000172541,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.46728024063845697,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 8.0625e-05,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "09f077d1574a42ee",
+      "workload_identity": "continuous_1024"
+    },
+    {
+      "category": "syntax",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.000166167,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.4927271961340098,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 8.1875e-05,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "222e3131a97c7e48",
+      "workload_identity": "sequential_1024"
+    },
+    {
+      "category": "syntax",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.001901,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.1945686480799579,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.000369875,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "3bb235079625e683",
+      "workload_identity": "conditional_10240"
+    },
+    {
+      "category": "syntax",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.001896292,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.19109662435953959,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.000362375,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "3d5b843bbb892fe9",
+      "workload_identity": "arithmetic_10240"
+    },
+    {
+      "category": "syntax",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.001687208,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.19697275024774658,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.000332334,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "415df9c35fcd9083",
+      "workload_identity": "sequential_10240"
+    },
+    {
+      "category": "syntax",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.001919292,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.20335206940892786,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.000390292,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "475ef3e0fbffe187",
+      "workload_identity": "case_10240"
+    },
+    {
+      "category": "syntax",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.020997708,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.15478689388384675,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.00325017,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "4804cc2ded717d75",
+      "workload_identity": "boolean_102400"
+    },
+    {
+      "category": "syntax",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.01584825,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.16478917230609055,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.00261162,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "480887e9fe9bc679",
+      "workload_identity": "wide_102400"
+    },
+    {
+      "category": "syntax",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.000121334,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.678564952939819,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 8.2333e-05,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "4d0e52a7f33effe9",
+      "workload_identity": "literal_1024"
+    },
+    {
+      "category": "syntax",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.017895333,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.16241441274102025,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.00290646,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "5250846026b4a0c1",
+      "workload_identity": "arithmetic_102400"
+    },
+    {
+      "category": "syntax",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.000592583,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.2643781546213779,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.000156666,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "55bcb25747468eff",
+      "workload_identity": "comment_10240"
+    },
+    {
+      "category": "syntax",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.000121834,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.6357666989510318,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 7.7458e-05,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "59339991f590813e",
+      "workload_identity": "parameter_1024"
+    },
+    {
+      "category": "syntax",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.000364667,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.32986532919074113,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.000120291,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "59b725a95737ba13",
+      "workload_identity": "boolean_1024"
+    },
+    {
+      "category": "syntax",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.001612084,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.20118864773795908,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.000324333,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "65f1a6050bbf99bc",
+      "workload_identity": "continuous_10240"
+    },
+    {
+      "category": "syntax",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.016446375,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.1613778112197977,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.00265408,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "74204de8e58b8d27",
+      "workload_identity": "sequential_102400"
+    },
+    {
+      "category": "syntax",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.00613775,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.16016308907987456,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.000983041,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "833adb545790f7bb",
+      "workload_identity": "identifier_102400"
+    },
+    {
+      "category": "syntax",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.001077541,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.2377329493726921,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.000256167,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "8cff2d8451b13d69",
+      "workload_identity": "parameter_10240"
+    },
+    {
+      "category": "syntax",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.001138167,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.2721481118324464,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.00030975,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "8df9e19e4cf45d0f",
+      "workload_identity": "literal_10240"
+    },
+    {
+      "category": "syntax",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.000192166,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.4473111788765963,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 8.5958e-05,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "8e1e420d4b168e14",
+      "workload_identity": "conditional_1024"
+    },
+    {
+      "category": "syntax",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.005621667,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.18518350517737886,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.00104104,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "929399d084f41187",
+      "workload_identity": "comment_102400"
+    },
+    {
+      "category": "syntax",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.017774542,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.16649542924931623,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.00295938,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "94863af658731040",
+      "workload_identity": "conditional_102400"
+    },
+    {
+      "category": "syntax",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.000190125,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.4584720578566732,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 8.7167e-05,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "97b0190aaab8bd2d",
+      "workload_identity": "case_1024"
+    },
+    {
+      "category": "syntax",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.018134625,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.1769840843138471,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.00320954,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "a3dafad87aa1dc40",
+      "workload_identity": "case_102400"
+    },
+    {
+      "category": "syntax",
+      "execution_backend": "cpu",
+      "native_median_seconds": 6.8e-05,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.9552647058823529,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 6.4958e-05,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "abbe73d6b9c1322e",
+      "workload_identity": "comment_1024"
+    },
+    {
+      "category": "syntax",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.001630333,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.2033326933822722,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.0003315,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "b6e5cab149621425",
+      "workload_identity": "wide_10240"
+    },
+    {
+      "category": "syntax",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.015815667,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.16483149272174233,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.00260692,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "c4bd46097b0914d9",
+      "workload_identity": "continuous_102400"
+    },
+    {
+      "category": "syntax",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.0006365,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.2371704634721131,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.000150959,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "d4f129d3e87b72af",
+      "workload_identity": "identifier_10240"
+    },
+    {
+      "category": "syntax",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.002268041,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.17627150479202094,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.000399791,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "d91f1b01484729ba",
+      "workload_identity": "boolean_10240"
+    },
+    {
+      "category": "syntax",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.011584,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.21271408839779005,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.00246408,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "d9921554a920ac67",
+      "workload_identity": "literal_102400"
+    },
+    {
+      "category": "syntax",
+      "execution_backend": "cpu",
+      "native_median_seconds": 8.375e-05,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.7641791044776118,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 6.4e-05,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "e31d9aac4bbd9ff0",
+      "workload_identity": "identifier_1024"
+    },
+    {
+      "category": "syntax",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.010551917,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.1849739720280211,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.00195183,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "e683c84fa760931e",
+      "workload_identity": "parameter_102400"
+    },
+    {
+      "category": "syntax",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.000206875,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.4235649546827795,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 8.7625e-05,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "f607ecabcc603d5c",
+      "workload_identity": "wide_1024"
+    },
+    {
+      "category": "syntax",
+      "execution_backend": "cpu",
+      "native_median_seconds": 0.000263416,
+      "native_metrics": null,
+      "native_speedup_ratio": 0.41964421295593285,
+      "native_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "slang_median_seconds": 0.000110541,
+      "slang_metrics": null,
+      "slang_structure": {
+        "cell_types": null,
+        "instance_count": null,
+        "net_count": null,
+        "port_count": null
+      },
+      "structurally_equal": true,
+      "workload_content_hash": "f85024465be4c759",
+      "workload_identity": "arithmetic_1024"
+    }
+  ],
+  "phases": []
+}

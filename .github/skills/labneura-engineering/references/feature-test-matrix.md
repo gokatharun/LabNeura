@@ -343,3 +343,15 @@ A feature is complete only when its semantics are documented, implementation exi
 - [ ] Hosted macOS ARM64 native and EDA-only builds.
 - [ ] Linux AVX2 job executes all ten AVX2 CTests without skips.
 - [ ] EDA AddressSanitizer/UndefinedBehaviorSanitizer job passes.
+
+### Comparative frontend profiling (M7.18.1)
+- [x] Opt-in native and Slang syntax, semantic, and complete-path Release benchmarks.
+- [x] Deterministic 11-family workload generator with SHA-256 manifests and
+  tested 1 KiB, 10 KiB, and 100 KiB tiers.
+- [x] Machine-readable nullable metrics, comparison validation, Markdown/JSON
+  aggregation, macOS/Linux profiler orchestration, and schema tests.
+- [x] Apple M1 baseline across 33 workloads, native scalar/NEON comparison,
+  Slang hierarchical trace, peak RSS/cycle/instruction measurements, and a
+  native sampled profile.
+- [ ] Linux x86-64 AVX2 timing/counters, 1 MiB/4 MiB controlled complete runs,
+  Slang top-20 sampled functions, and allocation traces.

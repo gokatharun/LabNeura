@@ -1407,6 +1407,40 @@ Fresh Apple Silicon M1/arm64 Release validation on 2026-11-19:
 - `git diff --check` and new-file whitespace checks passed. Existing dirty and
   untracked worktree changes were preserved; no commit or push was made.
 
+### Slang versus native frontend comparative profiling (M7.18.1, partial)
+
+Opt-in Release benchmarks now measure matched syntax, forced semantic, and
+complete public frontend boundaries without changing production behavior.
+Deterministic generation covers eleven workload families; schema, generator,
+profiling-wrapper, and aggregation tests are registered or runnable
+independently. Slang remains pinned to `11.0.0+7ddf4059f` and its hierarchical
+time trace is captured without modifying the dependency.
+
+The initial Apple M1 baseline covers 33 matched workloads at 1 KiB, 10 KiB,
+and 100 KiB. Median Slang/native ratios across all workloads were 0.203 for
+syntax, 0.195 for semantic, and 0.207 for complete paths; values below one mean
+native was slower. Complete output structures differ materially because native
+lowering expands generic gates while public `parse_verilog()` retains
+behavioral structure, so these are boundary-cost measurements rather than
+equivalent-netlist speedups. On the 100 KiB Boolean fixture native generated
+12,039 nets and 10,030 cells; peak process RSS was 84.3 MB versus Slang's
+17.2 MB. NEON improved native syntax median by about 4.2% over scalar.
+
+Native sampling identified semantic-reference linear searches and their
+underlying string/location comparisons as the dominant hotspot. Slang's trace
+reported `parseFile` and `AST Instance` as its largest captured scopes. Full
+raw results and the report are under
+`benchmarking/results/m7181-m1-20261119/`; methodology and limitations are in
+`docs/eda-frontend-profiling.md`. Linux AVX2/perf, allocation tracing, Slang
+top-20 sampling, and controlled 1 MiB/4 MiB complete runs remain pending, so
+M7.18.1 is not declared complete. No optimization was implemented.
+
+Fresh local validation: full Release CTest registered 70 tests, with 60 passed,
+10 expected ARM64 AVX2 skips, and no failures. EDA-only Release CTest registered
+40 tests, with 39 passed, one expected AVX2 lexer skip, and no failures. The
+prescribed Python EDA suites passed all 216 tests. Twelve new Python profiling,
+workload, and aggregation tests passed, as did the native schema CTest.
+
 ### Cross-platform stabilization and Linux AVX2 verification (M7.17.1)
 
 The baseline checkpoint `9d11240` is present on `origin/main` through merge

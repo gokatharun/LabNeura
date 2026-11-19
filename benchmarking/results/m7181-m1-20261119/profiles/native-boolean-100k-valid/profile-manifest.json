@@ -1,0 +1,116 @@
+{
+  "benchmark_command": [
+    "/tmp/labneura-m7181/labneura_native_frontend_profile",
+    "benchmarking/results/m7181-m1-20261119/workloads/boolean_100kib.sv",
+    "frontend_boolean_1003",
+    "scalar",
+    "boolean_102400"
+  ],
+  "hardware_counters": {
+    "reason": "portable unprivileged hardware counters are not exposed by this script on macOS",
+    "status": "unavailable",
+    "value": null
+  },
+  "peak_rss": {
+    "metric": {
+      "reason": "macOS time output did not contain maximum resident set size",
+      "status": "unavailable",
+      "value": null
+    },
+    "run": {
+      "command": [
+        "/usr/bin/time",
+        "-l",
+        "/tmp/labneura-m7181/labneura_native_frontend_profile",
+        "benchmarking/results/m7181-m1-20261119/workloads/boolean_100kib.sv",
+        "frontend_boolean_1003",
+        "scalar",
+        "boolean_102400"
+      ],
+      "returncode": 1,
+      "stderr": "benchmarking/results/m7181-m1-20261119/profiles/native-boolean-100k-valid/rss.stderr.txt",
+      "stdout": "benchmarking/results/m7181-m1-20261119/profiles/native-boolean-100k-valid/rss.stdout.txt",
+      "wall_time_ns": 13611177833
+    }
+  },
+  "platform": {
+    "machine": "arm64",
+    "system": "Darwin"
+  },
+  "sampling_profile": {
+    "sample": {
+      "artifact": null,
+      "sampler_returncode": 255,
+      "sampler_stderr": "sample[45774]: sample cannot examine process 45773 (labneura_native_frontend_profile) for unknown reasons, even though it appears to exist; try running with `sudo`.\n",
+      "status": "unavailable",
+      "target_returncode": 0
+    },
+    "xctrace_allocations": {
+      "artifact": null,
+      "run": {
+        "command": [
+          "xcrun",
+          "xctrace",
+          "record",
+          "--template",
+          "Allocations",
+          "--output",
+          "benchmarking/results/m7181-m1-20261119/profiles/native-boolean-100k-valid/allocations.trace",
+          "--launch",
+          "--",
+          "/tmp/labneura-m7181/labneura_native_frontend_profile",
+          "benchmarking/results/m7181-m1-20261119/workloads/boolean_100kib.sv",
+          "frontend_boolean_1003",
+          "scalar",
+          "boolean_102400"
+        ],
+        "returncode": 72,
+        "stderr": "benchmarking/results/m7181-m1-20261119/profiles/native-boolean-100k-valid/allocations.stderr.txt",
+        "stdout": "benchmarking/results/m7181-m1-20261119/profiles/native-boolean-100k-valid/allocations.stdout.txt",
+        "wall_time_ns": 6367416
+      },
+      "status": "unavailable"
+    },
+    "xctrace_time_profiler": {
+      "artifact": null,
+      "run": {
+        "command": [
+          "xcrun",
+          "xctrace",
+          "record",
+          "--template",
+          "Time Profiler",
+          "--output",
+          "benchmarking/results/m7181-m1-20261119/profiles/native-boolean-100k-valid/time-profile.trace",
+          "--launch",
+          "--",
+          "/tmp/labneura-m7181/labneura_native_frontend_profile",
+          "benchmarking/results/m7181-m1-20261119/workloads/boolean_100kib.sv",
+          "frontend_boolean_1003",
+          "scalar",
+          "boolean_102400"
+        ],
+        "returncode": 72,
+        "stderr": "benchmarking/results/m7181-m1-20261119/profiles/native-boolean-100k-valid/xctrace.stderr.txt",
+        "stdout": "benchmarking/results/m7181-m1-20261119/profiles/native-boolean-100k-valid/xctrace.stdout.txt",
+        "wall_time_ns": 9152458
+      },
+      "status": "unavailable"
+    }
+  },
+  "schema_version": 1,
+  "separate_runs": true,
+  "timing": {
+    "command": [
+      "/tmp/labneura-m7181/labneura_native_frontend_profile",
+      "benchmarking/results/m7181-m1-20261119/workloads/boolean_100kib.sv",
+      "frontend_boolean_1003",
+      "scalar",
+      "boolean_102400"
+    ],
+    "returncode": 0,
+    "stderr": "benchmarking/results/m7181-m1-20261119/profiles/native-boolean-100k-valid/timing.stderr.txt",
+    "stdout": "benchmarking/results/m7181-m1-20261119/profiles/native-boolean-100k-valid/timing.stdout.jsonl",
+    "wall_time_ns": 13599411792
+  }
+}
