@@ -878,7 +878,7 @@ private:
         if (!expression)
             return unknown_type();
         auto type = infer_expression(*expression, types, constants);
-        result_.expression_types[expression] = type;
+        result_.expression_types.insert_or_assign(expression, type);
         return type;
     }
 
@@ -1119,7 +1119,7 @@ private:
                 break;
             }
         }
-        result_.expression_types[&expression] = result;
+        result_.expression_types.insert_or_assign(&expression, result);
         return result;
     }
 
