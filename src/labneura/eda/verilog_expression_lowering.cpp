@@ -176,9 +176,24 @@ std::optional<VerilogNativeLoweringValue> lower_select(
                          expression.location);
         return std::nullopt;
     }
-    auto base = lower(session, *expression.first, resolver);
-    if (!base)
-        return std::nullopt;
+    std::optional<VerilogNativeLoweringValue> owned_base;
+    const std::vector<std::string>* base_bits = nullptr;
+    if (!resolver &&
+        expression.first->kind == VerilogExpressionKind::Identifier) {
+        const VerilogIntegralType* base_type = nullptr;
+        if (!valid_type(session, *expression.first, base_type))
+            return std::nullopt;
+        if (const auto* symbol = session.resolve_symbol(*expression.first)) {
+            if (const auto* signal = session.signal(symbol))
+                base_bits = &signal->bits;
+        }
+    }
+    if (!base_bits) {
+        owned_base = lower(session, *expression.first, resolver);
+        if (!owned_base)
+            return std::nullopt;
+        base_bits = &owned_base->bits;
+    }
 
     std::vector<std::string> selected;
     if (expression.select_kind == VerilogSelectKind::Bit) {
@@ -190,14 +205,14 @@ std::optional<VerilogNativeLoweringValue> lower_select(
             return std::nullopt;
         }
         const auto position = declared_index_to_position(
-            session, *expression.first, *index, base->bits.size());
+            session, *expression.first, *index, base_bits->size());
         if (!position) {
             session.diagnose("OutOfRangeNativeSelect",
                              "out-of-range bit selects cannot be represented as a hardware bit",
                              expression.location);
             return std::nullopt;
         }
-        selected.push_back(base->bits[*position]);
+        selected.push_back((*base_bits)[*position]);
     } else {
         if (!expression.third) {
             session.diagnose("MalformedNativeSelect",
@@ -267,14 +282,14 @@ std::optional<VerilogNativeLoweringValue> lower_select(
             }
             const int64_t logical_index = low_bound + static_cast<int64_t>(bit);
             const auto position = declared_index_to_position(
-                session, *expression.first, logical_index, base->bits.size());
+                session, *expression.first, logical_index, base_bits->size());
             if (!position) {
                 session.diagnose("OutOfRangeNativeSelect",
                                  "out-of-range part selects cannot be represented as hardware bits",
                                  expression.location);
                 return std::nullopt;
             }
-            selected.push_back(base->bits[*position]);
+            selected.push_back((*base_bits)[*position]);
         }
     }
     return VerilogNativeLoweringValue{std::move(selected), result_type.is_signed};

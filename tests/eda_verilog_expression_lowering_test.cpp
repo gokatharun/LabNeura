@@ -49,6 +49,26 @@ bool has_cell(const Module& module, std::string_view type) {
                        });
 }
 
+bool has_buffer(const Module& module, std::string_view source,
+                std::string_view destination) {
+    return std::any_of(module.get_instances().begin(), module.get_instances().end(),
+                       [&](const auto& instance) {
+        if (instance.get_cell_type() != "BUF")
+            return false;
+        const auto& connections = instance.get_connections();
+        const auto input = std::find_if(connections.begin(), connections.end(),
+                                        [](const auto& connection) {
+                                            return connection.get_pin() == "A";
+                                        });
+        const auto output = std::find_if(connections.begin(), connections.end(),
+                                         [](const auto& connection) {
+                                             return connection.get_pin() == "Y";
+                                         });
+        return input != connections.end() && output != connections.end() &&
+               input->get_net() == source && output->get_net() == destination;
+    });
+}
+
 void test_bitwise_logic_arithmetic_and_conditional_cells() {
     Fixture fixture(
         "module m(input logic [3:0] a, b, input logic sel, output logic [3:0] q,\n"
@@ -74,6 +94,29 @@ void test_static_select_concatenation_and_replication() {
         "endmodule\n");
     require(fixture.lowered.succeeded(),
             "static packed selects, concatenation, and replication did not lower");
+}
+
+void test_identifier_select_range_direction_and_part_mapping() {
+    Fixture fixture(
+        "module m(input logic [7:4] descending, input logic [0:3] ascending,\n"
+        "         output logic high, low, output logic [3:0] part, part_up);\n"
+        "  assign high = descending[7];\n"
+        "  assign low = ascending[0];\n"
+        "  assign part = descending[7:4];\n"
+        "  assign part_up = ascending[3 -: 4];\n"
+        "endmodule\n");
+    require(fixture.lowered.succeeded(),
+            "identifier selects on ascending or descending ranges did not lower");
+    const auto& module = *fixture.lowered.module;
+    require(has_buffer(module, "descending[7]", "high") &&
+                has_buffer(module, "ascending[0]", "low"),
+            "bit-select range direction changed the selected source net");
+    require(has_buffer(module, "descending[4]", "part[0]") &&
+                has_buffer(module, "descending[7]", "part[3]"),
+            "static part-select bit ordering changed during lowering");
+    require(has_buffer(module, "ascending[0]", "part_up[0]") &&
+                has_buffer(module, "ascending[3]", "part_up[3]"),
+            "indexed part-select mapping changed on an ascending declaration");
 }
 
 void test_unsupported_dynamic_select_and_four_state_literal_diagnose() {
@@ -108,6 +151,7 @@ int main() {
     try {
         test_bitwise_logic_arithmetic_and_conditional_cells();
         test_static_select_concatenation_and_replication();
+        test_identifier_select_range_direction_and_part_mapping();
         test_unsupported_dynamic_select_and_four_state_literal_diagnose();
         test_unsupported_arithmetic_operator_diagnoses();
     } catch (const std::exception& exception) {

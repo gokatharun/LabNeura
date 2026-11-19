@@ -45,6 +45,26 @@ bool has_cell(const Module& module, std::string_view type) {
                        });
 }
 
+bool has_buffer(const Module& module, std::string_view source,
+                std::string_view destination) {
+    return std::any_of(module.get_instances().begin(), module.get_instances().end(),
+                       [&](const auto& instance) {
+        if (instance.get_cell_type() != "BUF")
+            return false;
+        const auto& connections = instance.get_connections();
+        const auto input = std::find_if(connections.begin(), connections.end(),
+                                        [](const auto& connection) {
+                                            return connection.get_pin() == "A";
+                                        });
+        const auto output = std::find_if(connections.begin(), connections.end(),
+                                         [](const auto& connection) {
+                                             return connection.get_pin() == "Y";
+                                         });
+        return input != connections.end() && output != connections.end() &&
+               input->get_net() == source && output->get_net() == destination;
+    });
+}
+
 void test_ordered_blocking_assignments_and_if_merge() {
     Fixture fixture(
         "module m(input logic a, b, sel, output logic q);\n"
@@ -61,6 +81,22 @@ void test_ordered_blocking_assignments_and_if_merge() {
                 has_cell(*fixture.lowered.module, "MUX2") &&
                 has_cell(*fixture.lowered.module, "BUF"),
             "lowering omitted expected combinational operator, mux, or output buffer");
+}
+
+void test_procedural_select_reads_updated_value() {
+    Fixture fixture(
+        "module m(input logic [3:0] a, input logic b, output logic q);\n"
+        "  logic [3:0] tmp;\n"
+        "  always_comb begin\n"
+        "    tmp = a;\n"
+        "    tmp[0] = b;\n"
+        "    q = tmp[0];\n"
+        "  end\n"
+        "endmodule\n");
+    require(fixture.lowered.succeeded(),
+            "procedural identifier select after a blocking write did not lower");
+    require(has_buffer(*fixture.lowered.module, "b", "q"),
+            "procedural select bypassed the updated value environment");
 }
 
 void test_case_default_and_static_concatenated_destination() {
@@ -106,6 +142,7 @@ void test_nonblocking_combinational_process_is_rejected() {
 int main() {
     try {
         test_ordered_blocking_assignments_and_if_merge();
+        test_procedural_select_reads_updated_value();
         test_case_default_and_static_concatenated_destination();
         test_incomplete_process_is_not_given_an_implicit_zero();
         test_nonblocking_combinational_process_is_rejected();
