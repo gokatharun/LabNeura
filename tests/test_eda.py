@@ -1583,18 +1583,33 @@ def test_synthesized_behavioral_design_maps_to_liberty_flops(tmp_path):
 
 
 def test_generic_map_behavioral_dual_edge_set_reset_and_tristate(tmp_path):
-    source = tmp_path / "misc.v"
-    source.write_text("""
-module misc(input clk, input rn, input s, input d, input en, input a,
-            output reg q, output reg both, output y);
+    set_reset = tmp_path / "set_reset.v"
+    set_reset.write_text("""
+module set_reset(input clk, input rn, input s, input d, output reg q);
   always @(posedge clk or negedge rn or posedge s)
     if (!rn) q <= 1'b0; else if (s) q <= 1'b1; else q <= d;
-  always @(posedge clk or negedge clk) both <= d;
-  assign y = en ? a : 1'bz;
+endmodule
+""")
+    with pytest.raises(RuntimeError, match="UnsupportedAsynchronousResetValue"):
+        eda.generic_map(eda.parse_verilog(str(set_reset)))
+
+    dual_edge = tmp_path / "dual_edge.v"
+    dual_edge.write_text("""
+module dual_edge(input clk, input d, output reg q);
+  always @(posedge clk or negedge clk) q <= d;
 endmodule
 """)
     with pytest.raises(RuntimeError, match="AmbiguousSequentialClock"):
-        eda.generic_map(eda.parse_verilog(str(source)))
+        eda.generic_map(eda.parse_verilog(str(dual_edge)))
+
+    tristate = tmp_path / "tristate.v"
+    tristate.write_text("""
+module tristate(input en, input a, output y);
+  assign y = en ? a : 1'bz;
+endmodule
+""")
+    with pytest.raises(RuntimeError, match="X/Z constants"):
+        eda.generic_map(eda.parse_verilog(str(tristate)))
 
 
 def test_parse_verilog_flags_behavioral_modules_and_generic_map_lowers_them(tmp_path):

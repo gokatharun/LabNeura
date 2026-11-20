@@ -67,6 +67,10 @@ public:
     std::string_view name() const noexcept { return name_; }
     std::string_view text() const noexcept { return text_; }
     VerilogSourceLocation location(size_t byte_offset) const;
+    // Optimized for monotonically increasing offsets. line_index_hint is
+    // updated in place and safely reset if the caller moves backwards.
+    VerilogSourceLocation location(size_t byte_offset,
+                                   size_t& line_index_hint) const;
 
 private:
     uint32_t id_;

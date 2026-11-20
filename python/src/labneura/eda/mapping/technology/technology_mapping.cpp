@@ -452,6 +452,9 @@ std::optional<std::size_t> generic_input_index(const std::string& pin) {
 
 Module tech_map(const Module& generic_module,
                 const StandardCellLibrary& cell_library) {
+    if (!generic_module.get_memories().empty())
+        throw std::runtime_error(
+            "technology mapping does not yet map retained Memory nodes to SRAM macros");
     std::vector<Instance> instances;
     instances.reserve(generic_module.get_instances().size());
     std::map<std::string, std::optional<StandardCell>> cell_cache;

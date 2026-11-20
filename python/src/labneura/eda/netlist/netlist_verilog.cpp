@@ -406,6 +406,9 @@ void validate_verilog_tree(const Module& module) {
 }  // namespace
 
 std::string to_verilog(const Module& module) {
+    if (!module.get_memories().empty())
+        throw std::runtime_error(
+            "Verilog export does not yet serialize retained Memory nodes");
     validate_verilog_tree(module);
     std::ostringstream output;
     emit_verilog(output, module);

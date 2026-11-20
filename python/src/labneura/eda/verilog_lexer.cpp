@@ -2,8 +2,10 @@
 #include "verilog_byte_classifier.h"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cstdlib>
+#include <initializer_list>
 #include <limits>
 #include <stdexcept>
 #include <utility>
@@ -56,18 +58,59 @@ constexpr std::string_view systemverilog_2009_keywords =
 
 constexpr std::string_view systemverilog_2012_keywords = "implements interconnect nettype soft";
 
-bool contains_word(std::string_view words, std::string_view word) {
-    size_t pos = 0;
-    while ((pos = words.find(word, pos)) != std::string_view::npos) {
-        const bool starts_word = pos == 0 || words[pos - 1] == ' ';
-        const size_t end = pos + word.size();
-        const bool ends_word = end == words.size() || words[end] == ' ';
-        if (starts_word && ends_word)
-            return true;
-        pos = end;
+constexpr size_t keyword_hash(std::string_view word) {
+    size_t hash = sizeof(size_t) == 8 ? size_t{1469598103934665603ULL} : size_t{2166136261U};
+    constexpr size_t prime = sizeof(size_t) == 8 ? size_t{1099511628211ULL} : size_t{16777619U};
+    for (const unsigned char ch : word) {
+        hash ^= ch;
+        hash *= prime;
     }
-    return false;
+    return hash;
 }
+
+template <size_t Capacity>
+class KeywordLookup {
+    static_assert((Capacity & (Capacity - 1)) == 0,
+                  "keyword lookup capacity must be a power of two");
+
+public:
+    consteval explicit KeywordLookup(std::string_view words) {
+        size_t start = 0;
+        while (start < words.size()) {
+            const size_t end = words.find(' ', start);
+            const auto word = words.substr(start, end == std::string_view::npos
+                                                      ? words.size() - start
+                                                      : end - start);
+            size_t slot = keyword_hash(word) & (Capacity - 1);
+            while (!slots_[slot].empty())
+                slot = (slot + 1) & (Capacity - 1);
+            slots_[slot] = word;
+            if (end == std::string_view::npos)
+                break;
+            start = end + 1;
+        }
+    }
+
+    constexpr bool contains(std::string_view word) const {
+        size_t slot = keyword_hash(word) & (Capacity - 1);
+        while (!slots_[slot].empty()) {
+            if (slots_[slot] == word)
+                return true;
+            slot = (slot + 1) & (Capacity - 1);
+        }
+        return false;
+    }
+
+private:
+    std::array<std::string_view, Capacity> slots_{};
+};
+
+constexpr KeywordLookup<256> verilog_1995_keyword_lookup{verilog_1995_keywords};
+constexpr KeywordLookup<64> verilog_2001_keyword_lookup{verilog_2001_keywords};
+constexpr KeywordLookup<4> verilog_2005_keyword_lookup{verilog_2005_keywords};
+constexpr KeywordLookup<256> systemverilog_2005_keyword_lookup{systemverilog_2005_keywords};
+constexpr KeywordLookup<64> systemverilog_2009_keyword_lookup{systemverilog_2009_keywords};
+constexpr KeywordLookup<16> systemverilog_2012_keyword_lookup{systemverilog_2012_keywords};
 
 bool is_identifier_start(unsigned char ch) {
     return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || ch == '_';
@@ -175,13 +218,15 @@ public:
                     offset_, text_.size(), byte_classifier::ByteClass::Whitespace);
                 continue;
             }
-            if (text_.substr(offset_, 2) == "//") {
-                scan_line_comment();
-                continue;
-            }
-            if (text_.substr(offset_, 2) == "/*") {
-                scan_block_comment();
-                continue;
+            if (ch == '/' && offset_ + 1 < text_.size()) {
+                if (text_[offset_ + 1] == '/') {
+                    scan_line_comment();
+                    continue;
+                }
+                if (text_[offset_ + 1] == '*') {
+                    scan_block_comment();
+                    continue;
+                }
             }
             if (ch == '"') {
                 scan_string();
@@ -231,55 +276,55 @@ private:
     }
 
     bool is_keyword(std::string_view word) const {
-        if (contains_word(verilog_1995_keywords, word))
+        if (verilog_1995_keyword_lookup.contains(word))
             return true;
 
         switch (options_.language_version) {
             case VerilogLanguageVersion::Verilog1995:
                 return false;
             case VerilogLanguageVersion::Verilog2001:
-                return contains_word(verilog_2001_keywords, word);
+                return verilog_2001_keyword_lookup.contains(word);
             case VerilogLanguageVersion::Verilog2005:
-                return contains_word(verilog_2001_keywords, word) ||
-                       contains_word(verilog_2005_keywords, word);
+                return verilog_2001_keyword_lookup.contains(word) ||
+                       verilog_2005_keyword_lookup.contains(word);
             case VerilogLanguageVersion::SystemVerilog2005:
-                return contains_word(verilog_2001_keywords, word) ||
-                       contains_word(verilog_2005_keywords, word) ||
-                       contains_word(systemverilog_2005_keywords, word);
+                return verilog_2001_keyword_lookup.contains(word) ||
+                       verilog_2005_keyword_lookup.contains(word) ||
+                       systemverilog_2005_keyword_lookup.contains(word);
             case VerilogLanguageVersion::SystemVerilog2009:
-                return contains_word(verilog_2001_keywords, word) ||
-                       contains_word(verilog_2005_keywords, word) ||
-                       contains_word(systemverilog_2005_keywords, word) ||
-                       contains_word(systemverilog_2009_keywords, word);
+                return verilog_2001_keyword_lookup.contains(word) ||
+                       verilog_2005_keyword_lookup.contains(word) ||
+                       systemverilog_2005_keyword_lookup.contains(word) ||
+                       systemverilog_2009_keyword_lookup.contains(word);
             case VerilogLanguageVersion::SystemVerilog2012:
-                return contains_word(verilog_2001_keywords, word) ||
-                       contains_word(verilog_2005_keywords, word) ||
-                       contains_word(systemverilog_2005_keywords, word) ||
-                       contains_word(systemverilog_2009_keywords, word) ||
-                       contains_word(systemverilog_2012_keywords, word);
+                return verilog_2001_keyword_lookup.contains(word) ||
+                       verilog_2005_keyword_lookup.contains(word) ||
+                       systemverilog_2005_keyword_lookup.contains(word) ||
+                       systemverilog_2009_keyword_lookup.contains(word) ||
+                       systemverilog_2012_keyword_lookup.contains(word);
             case VerilogLanguageVersion::SystemVerilog2017:
-                return contains_word(verilog_2001_keywords, word) ||
-                       contains_word(verilog_2005_keywords, word) ||
-                       contains_word(systemverilog_2005_keywords, word) ||
-                       contains_word(systemverilog_2009_keywords, word) ||
-                       contains_word(systemverilog_2012_keywords, word);
+                return verilog_2001_keyword_lookup.contains(word) ||
+                       verilog_2005_keyword_lookup.contains(word) ||
+                       systemverilog_2005_keyword_lookup.contains(word) ||
+                       systemverilog_2009_keyword_lookup.contains(word) ||
+                       systemverilog_2012_keyword_lookup.contains(word);
             case VerilogLanguageVersion::SystemVerilog2023:
-                return contains_word(verilog_2001_keywords, word) ||
-                       contains_word(verilog_2005_keywords, word) ||
-                       contains_word(systemverilog_2005_keywords, word) ||
-                       contains_word(systemverilog_2009_keywords, word) ||
-                       contains_word(systemverilog_2012_keywords, word);
+                return verilog_2001_keyword_lookup.contains(word) ||
+                       verilog_2005_keyword_lookup.contains(word) ||
+                       systemverilog_2005_keyword_lookup.contains(word) ||
+                       systemverilog_2009_keyword_lookup.contains(word) ||
+                       systemverilog_2012_keyword_lookup.contains(word);
         }
         return false;
     }
 
     void emit(VerilogTokenKind kind, size_t start, size_t end) {
-        const auto location = source_->location(start);
+        const auto location = source_->location(start, location_line_hint_);
         tokens_.push_back({kind, source_->id(), start, end - start, location.line, location.column});
     }
 
     void add_error(VerilogLexErrorKind kind, size_t start, size_t length) {
-        const auto location = source_->location(start);
+        const auto location = source_->location(start, location_line_hint_);
         errors_.push_back({kind, source_->id(), start, length, location.line, location.column});
     }
 
@@ -594,21 +639,89 @@ private:
                 break;
         }
 
-        static constexpr std::string_view operators[] = {
-            "<<<=", ">>>=", "|->", "|=>", "#-#", "#=#", "+/-", "+%-", "<->", "<<<", ">>>",
-            "===", "!==", "==?", "!=?", "&&&", "->>", "<<=", ">>=", "**=", "++", "--", "**",
-            "&&", "||", "<=", ">=", "==", "!=", "~&", "~|", "~^", "^~", "<<", ">>", "+:",
-            "-:", ":=", ":/", "::", ".*", "->", "=>", "*>", "##", "+=", "-=", "*=", "/=",
-            "%=", "&=", "|=", "^=", "=", "+", "-", "*", "/", "%", "&", "|", "^", "~", "!",
-            "<", ">", "?"
-        };
-        for (const auto op : operators) {
-            if (text_.substr(offset_, op.size()) == op) {
+        const auto match_operator = [this](std::initializer_list<std::string_view> candidates) {
+            for (const auto op : candidates) {
+                if (text_.substr(offset_, op.size()) != op)
+                    continue;
                 const size_t start = offset_;
                 offset_ += op.size();
                 emit(VerilogTokenKind::Operator, start, offset_);
                 return true;
             }
+            return false;
+        };
+
+        switch (text_[offset_]) {
+            case '<':
+                if (match_operator({"<<<=", "<->", "<<<", "<<=", "<=", "<<", "<"}))
+                    return true;
+                break;
+            case '>':
+                if (match_operator({">>>=", ">>>", ">>=", ">=", ">>", ">"}))
+                    return true;
+                break;
+            case '|':
+                if (match_operator({"|->", "|=>", "||", "|=", "|"}))
+                    return true;
+                break;
+            case '#':
+                if (match_operator({"#-#", "#=#", "##"}))
+                    return true;
+                break;
+            case '+':
+                if (match_operator({"+/-", "+%-", "++", "+:", "+=", "+"}))
+                    return true;
+                break;
+            case '-':
+                if (match_operator({"->>", "--", "-:", "->", "-=", "-"}))
+                    return true;
+                break;
+            case '=':
+                if (match_operator({"===", "==?", "==", "=>", "="}))
+                    return true;
+                break;
+            case '!':
+                if (match_operator({"!==", "!=?", "!=", "!"}))
+                    return true;
+                break;
+            case '&':
+                if (match_operator({"&&&", "&&", "&=", "&"}))
+                    return true;
+                break;
+            case '*':
+                if (match_operator({"**=", "**", "*>", "*=", "*"}))
+                    return true;
+                break;
+            case '~':
+                if (match_operator({"~&", "~|", "~^", "~"}))
+                    return true;
+                break;
+            case '^':
+                if (match_operator({"^~", "^=", "^"}))
+                    return true;
+                break;
+            case ':':
+                if (match_operator({":=", ":/", "::"}))
+                    return true;
+                break;
+            case '.':
+                if (match_operator({".*"}))
+                    return true;
+                break;
+            case '/':
+                if (match_operator({"/=", "/"}))
+                    return true;
+                break;
+            case '%':
+                if (match_operator({"%=", "%"}))
+                    return true;
+                break;
+            case '?':
+                if (match_operator({"?"}))
+                    return true;
+                break;
+            default:
+                break;
         }
 
         constexpr std::string_view multi_punctuation[] = {"'{", "@@"};
@@ -635,6 +748,7 @@ private:
     VerilogLexerOptions options_;
     byte_classifier::ClassificationScanner classifier_;
     size_t offset_ = 0;
+    size_t location_line_hint_ = 0;
     std::vector<VerilogToken> tokens_;
     std::vector<VerilogLexError> errors_;
 };
@@ -661,6 +775,24 @@ VerilogSourceLocation VerilogSourceBuffer::location(size_t byte_offset) const {
     const auto it = std::upper_bound(line_starts_.begin(), line_starts_.end(), byte_offset);
     const size_t line_index = static_cast<size_t>(it - line_starts_.begin() - 1);
     return {line_index + 1, byte_offset - line_starts_[line_index] + 1};
+}
+
+VerilogSourceLocation VerilogSourceBuffer::location(
+    size_t byte_offset, size_t& line_index_hint) const {
+    if (byte_offset > text_.size())
+        throw std::out_of_range("Verilog source offset is past the end of the buffer");
+    if (line_index_hint >= line_starts_.size() ||
+        line_starts_[line_index_hint] > byte_offset) {
+        const auto it = std::upper_bound(line_starts_.begin(), line_starts_.end(),
+                                         byte_offset);
+        line_index_hint = static_cast<size_t>(it - line_starts_.begin() - 1);
+    } else {
+        while (line_index_hint + 1 < line_starts_.size() &&
+               line_starts_[line_index_hint + 1] <= byte_offset)
+            ++line_index_hint;
+    }
+    return {line_index_hint + 1,
+            byte_offset - line_starts_[line_index_hint] + 1};
 }
 
 std::string_view VerilogLexResult::spelling(const VerilogToken& token) const {

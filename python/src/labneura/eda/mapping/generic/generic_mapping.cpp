@@ -676,6 +676,8 @@ struct GenericMapper {
 }  // namespace
 
 Module generic_map(const Module& rtl_module) {
+    if (!rtl_module.get_memories().empty())
+        return rtl_module;
     if (rtl_module.native_context_ && rtl_module.is_behavioral()) {
         const auto& context = *rtl_module.native_context_;
         const auto lowered = lower_verilog_native(

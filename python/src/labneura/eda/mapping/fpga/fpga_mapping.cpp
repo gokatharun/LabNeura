@@ -482,6 +482,9 @@ private:
 
 Module fpga_map(const Module& generic_module, std::size_t lut_size,
                 const StandardCellLibrary& library) {
+    if (!generic_module.get_memories().empty())
+        throw std::runtime_error(
+            "FPGA mapping does not yet map retained Memory nodes to BRAMs");
     if (lut_size < 2 || lut_size > 6) {
         throw std::invalid_argument("lut_size must be between 2 and 6");
     }

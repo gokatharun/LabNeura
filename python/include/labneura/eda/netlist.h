@@ -207,6 +207,58 @@ private:
     Expression rhs_;
 };
 
+enum class MemoryReadDuringWrite {
+    ReadBeforeWrite
+};
+
+// Technology-independent synchronous single-port memory. This is deliberately
+// retained above the bit-cell layer so FPGA BRAM and ASIC SRAM mapping can
+// consume it without first expanding storage into flip-flops and muxes.
+class Memory {
+public:
+    Memory(std::string name, std::size_t word_width, std::size_t depth,
+           std::size_t address_width, std::string clock,
+           std::string write_enable, std::vector<std::string> write_address,
+           std::vector<std::string> write_data,
+           std::vector<std::string> read_address,
+           std::vector<std::string> read_data,
+           MemoryReadDuringWrite read_during_write =
+               MemoryReadDuringWrite::ReadBeforeWrite)
+        : name_(std::move(name)), word_width_(word_width), depth_(depth),
+          address_width_(address_width), clock_(std::move(clock)),
+          write_enable_(std::move(write_enable)),
+          write_address_(std::move(write_address)), write_data_(std::move(write_data)),
+          read_address_(std::move(read_address)), read_data_(std::move(read_data)),
+          read_during_write_(read_during_write) {}
+
+    const std::string& get_name() const noexcept { return name_; }
+    std::size_t get_word_width() const noexcept { return word_width_; }
+    std::size_t get_depth() const noexcept { return depth_; }
+    std::size_t get_address_width() const noexcept { return address_width_; }
+    const std::string& get_clock() const noexcept { return clock_; }
+    const std::string& get_write_enable() const noexcept { return write_enable_; }
+    const std::vector<std::string>& get_write_address() const noexcept { return write_address_; }
+    const std::vector<std::string>& get_write_data() const noexcept { return write_data_; }
+    const std::vector<std::string>& get_read_address() const noexcept { return read_address_; }
+    const std::vector<std::string>& get_read_data() const noexcept { return read_data_; }
+    MemoryReadDuringWrite get_read_during_write() const noexcept {
+        return read_during_write_;
+    }
+
+private:
+    std::string name_;
+    std::size_t word_width_ = 0;
+    std::size_t depth_ = 0;
+    std::size_t address_width_ = 0;
+    std::string clock_;
+    std::string write_enable_;
+    std::vector<std::string> write_address_;
+    std::vector<std::string> write_data_;
+    std::vector<std::string> read_address_;
+    std::vector<std::string> read_data_;
+    MemoryReadDuringWrite read_during_write_ = MemoryReadDuringWrite::ReadBeforeWrite;
+};
+
 class Project;
 
 class Module {
@@ -216,7 +268,7 @@ public:
            std::vector<Instance> instances,
            std::vector<ContinuousAssignment> assignments = {},
            bool behavioral = false, std::string hierarchy_instance_name = {},
-           std::vector<Module> child_modules = {})
+           std::vector<Module> child_modules = {}, std::vector<Memory> memories = {})
         : name_(std::move(name)),
           ports_(std::move(ports)),
           nets_(std::move(nets)),
@@ -224,7 +276,7 @@ public:
           assignments_(std::move(assignments)),
           behavioral_(behavioral),
           hierarchy_instance_name_(std::move(hierarchy_instance_name)),
-          child_modules_(std::move(child_modules)) {}
+          child_modules_(std::move(child_modules)), memories_(std::move(memories)) {}
 
     const std::string& get_name() const noexcept { return name_; }
     // Empty for a standalone module definition; otherwise the instance name
@@ -244,6 +296,7 @@ public:
     const std::vector<ContinuousAssignment>& get_assignments() const noexcept {
         return assignments_;
     }
+    const std::vector<Memory>& get_memories() const noexcept { return memories_; }
     std::size_t get_port_count() const noexcept { return ports_.size(); }
     std::size_t get_wire_count() const noexcept {
         std::size_t count = 0;
@@ -264,6 +317,7 @@ private:
     bool behavioral_ = false;
     std::string hierarchy_instance_name_;
     std::vector<Module> child_modules_;
+    std::vector<Memory> memories_;
     std::shared_ptr<detail::ParsedVerilogContext> parsed_context_;
     std::shared_ptr<const detail::NativeVerilogProjectContext> native_context_;
 

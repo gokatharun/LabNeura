@@ -142,6 +142,39 @@ bool initialize_verilog_native_module(VerilogNativeLoweringSession& session) {
             ok = false;
             continue;
         }
+        const auto type_it = session.types.symbol_types.find(found->second);
+        if (type_it != session.types.symbol_types.end() &&
+            type_it->second.category == VerilogTypeCategory::Array) {
+            const auto& array_type = type_it->second;
+            const bool supported = declaration.unpacked_dimensions.size() == 1 &&
+                array_type.unpacked_dimensions.size() == 1 &&
+                array_type.unpacked_element_count &&
+                *array_type.unpacked_element_count > 0 &&
+                array_type.element_type &&
+                array_type.element_type->is_known_integral() &&
+                array_type.element_type->category == VerilogTypeCategory::Integral &&
+                array_type.element_type->packed_dimensions.size() <= 1 &&
+                array_type.unpacked_dimensions.front().left &&
+                array_type.unpacked_dimensions.front().right &&
+                *array_type.unpacked_dimensions.front().left == 0 &&
+                *array_type.unpacked_dimensions.front().right >= 0;
+            if (!supported ||
+                static_cast<uint64_t>(*array_type.unpacked_dimensions.front().right) + 1 !=
+                    *array_type.unpacked_element_count) {
+                session.diagnose(
+                    "UnsupportedNativeMemoryDeclaration",
+                    "native memory inference requires one static [0:DEPTH-1] unpacked dimension and integral packed words",
+                    declaration.location);
+                ok = false;
+                continue;
+            }
+            session.memory_declarations.emplace(
+                found->second,
+                VerilogNativeMemoryDeclaration{
+                    found->second, &declaration, *array_type.element_type,
+                    *array_type.unpacked_element_count});
+            continue;
+        }
         ok = add_signal(session, found->second, std::nullopt) && ok;
     }
     return ok;
