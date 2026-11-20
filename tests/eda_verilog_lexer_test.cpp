@@ -245,6 +245,20 @@ void test_locations_and_boundaries() {
     }
     require(rejected_out_of_range_location, "source location must reject an out-of-range offset");
 
+    size_t line_hint = 0;
+    for (size_t offset = 0; offset <= result.source->text().size(); ++offset) {
+        const auto expected = result.source->location(offset);
+        const auto hinted = result.source->location(offset, line_hint);
+        require(expected.line == hinted.line && expected.column == hinted.column,
+                "monotonic hinted source location differs from binary-search lookup");
+    }
+    for (size_t offset = result.source->text().size(); offset != 0; --offset) {
+        const auto expected = result.source->location(offset - 1);
+        const auto hinted = result.source->location(offset - 1, line_hint);
+        require(expected.line == hinted.line && expected.column == hinted.column,
+                "backward hinted source location did not safely reset");
+    }
+
     constexpr std::string_view complete = "module m; logic [3:0] a = 4'hf; endmodule";
     for (size_t size = 0; size <= complete.size(); ++size) {
         auto prefix = labneura::eda::lex_verilog(std::string(complete.substr(0, size)));
@@ -427,6 +441,35 @@ void test_byte_classifiers() {
         compare_classification_backends(nullptr, 0, VerilogLexerBackend::Neon,
                                         VerilogLexerBackend::Avx2);
 
+    std::array<unsigned char, 4096 + 32> randomized{};
+    uint32_t state = 0x4c455834u;
+    for (auto& byte : randomized) {
+        state ^= state << 13;
+        state ^= state >> 17;
+        state ^= state << 5;
+        byte = static_cast<unsigned char>(state);
+    }
+    constexpr std::array<size_t, 12> boundary_lengths = {
+        0, 1, 15, 16, 31, 32, 33, 63, 64, 65, 257, 4096
+    };
+    for (size_t address_offset = 0; address_offset < 32; ++address_offset) {
+        for (const size_t length : boundary_lengths) {
+            size_t consumed = 0;
+            do {
+                const size_t block_size = std::min(
+                    byte_classifier::classification_block_width, length - consumed);
+                const auto* input = randomized.data() + address_offset + consumed;
+                if (byte_classifier::neon_available())
+                    compare_classification_blocks(input, block_size,
+                                                  VerilogLexerBackend::Neon);
+                if (byte_classifier::avx2_available())
+                    compare_classification_blocks(input, block_size,
+                                                  VerilogLexerBackend::Avx2);
+                consumed += block_size;
+            } while (consumed < length);
+        }
+    }
+
     if (!byte_classifier::avx2_available())
         std::cout << "AVX2 classification parity explicitly skipped: unavailable at runtime\n";
 
@@ -555,6 +598,27 @@ void test_lexer_backend_equivalence() {
     while (large.size() < 2 * 1024 * 1024)
         large += "wire signal_123; // realistic repeated declaration\n";
     sources.push_back(std::move(large));
+
+    constexpr std::array<std::string_view, 20> random_fragments = {
+        "wire value_17;\n", "logic [31:0] packed_name;\r\n",
+        "// comment with /* nested-looking */ text\n", "/* block // marker */\n",
+        "assign y = a && b || !c;\n", "8'hfF 16'sd42 1.25e-3 ",
+        "\"string with \\\" quote\" ", "\\escaped.identifier ",
+        "`define TOKEN value\n", "$display ", "<<< >>> <<<= >>>= ",
+        "module endmodule always_comb logic ", "let nettype automatic ",
+        "( ) [ ] { } , ; : . @ # ' ", "\r\n\t\f\v",
+        "identifier$tail another_123 ", "'0 '1 'x 'z ",
+        "casez casex unique priority ", "/* stars ****/ ", "// final comment\r\n"
+    };
+    std::string randomized_source;
+    uint32_t random_state = 0x4c455834u;
+    for (size_t i = 0; i < 1024; ++i) {
+        random_state ^= random_state << 13;
+        random_state ^= random_state >> 17;
+        random_state ^= random_state << 5;
+        randomized_source += random_fragments[random_state % random_fragments.size()];
+    }
+    sources.push_back(std::move(randomized_source));
 
     for (const auto& text : sources) {
         auto source = std::make_shared<const labneura::eda::VerilogSourceBuffer>(text);
@@ -767,15 +831,36 @@ void test_keyword_tables_against_slang() {
 
 int main(int argc, char** argv) {
     try {
-        if (argc == 2 && std::string_view(argv[1]) == "AVX2") {
-            if (!byte_classifier::avx2_available()) {
-                std::cout << "AVX2 lexer tests skipped: runtime AVX2 backend unavailable\n";
+        if (argc == 2 && (std::string_view(argv[1]) == "SCALAR" ||
+                          std::string_view(argv[1]) == "NEON" ||
+                          std::string_view(argv[1]) == "AVX2")) {
+            const std::string_view mode(argv[1]);
+            const auto backend = mode == "SCALAR" ? VerilogLexerBackend::Scalar :
+                                 mode == "NEON" ? VerilogLexerBackend::Neon :
+                                                  VerilogLexerBackend::Avx2;
+            const bool available = backend == VerilogLexerBackend::Scalar ||
+                                   (backend == VerilogLexerBackend::Neon &&
+                                    byte_classifier::neon_available()) ||
+                                   (backend == VerilogLexerBackend::Avx2 &&
+                                    byte_classifier::avx2_available());
+            if (!available) {
+                std::cout << mode
+                          << " lexer tests skipped: runtime backend unavailable\n";
                 return 77;
             }
             test_byte_classifiers();
             test_classification_scanner();
             test_lexer_backend_equivalence();
-            std::cout << "AVX2 byte-classifier and full-lexer parity tests passed\n";
+            const auto source = std::make_shared<const labneura::eda::VerilogSourceBuffer>(
+                read_corpus(), "lexer_corpus.sv");
+            const auto scalar = labneura::eda::lex_verilog(
+                source, {VerilogLanguageVersion::SystemVerilog2017,
+                         VerilogLexerBackend::Scalar});
+            const auto selected = labneura::eda::lex_verilog(
+                source, {VerilogLanguageVersion::SystemVerilog2017, backend});
+            require_same_lex_result(scalar, selected);
+            std::cout << mode
+                      << " byte-classifier and full-lexer parity tests passed\n";
             return 0;
         }
         if (argc != 1)

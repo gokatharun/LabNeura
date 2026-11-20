@@ -365,6 +365,25 @@ A feature is complete only when its semantics are documented, implementation exi
   cells outside the eight-cell two-state evaluator subset.
 
 ### Cross-platform stabilization (M7.17.1)
+- [x] Native lexer exposes explicit Scalar, NEON, and AVX2 correctness modes;
+  unavailable optimized backends return the CTest skip code instead of being
+  reported as executed.
+- [x] CI registrations require Scalar lexer execution on Linux x86_64,
+  Linux ARM64, macOS ARM64, and Windows x86_64; require NEON on both ARM64
+  runners; and require AVX2 on capable Linux x86_64 runners. Windows executes
+  AVX2 parity when the hosted CPU exposes it and records an explicit skip
+  otherwise.
+- [ ] Execute the updated lexer matrix remotely and record platform throughput;
+  local cross-compilation does not satisfy runtime verification.
+- [x] Deterministic randomized lexer parity covers every byte class, 0/1/15/16/
+  31/32/33/63/64/65/257/4096-byte boundaries, all starts modulo 32, full token
+  metadata, diagnostics, spelling, locations, and EOF.
+- [x] Cross-platform performance jobs emit raw logs plus schema-versioned JSON;
+  a dependent job consolidates macOS ARM64, Linux ARM64, Linux x86_64, and
+  Windows MSVC results into Markdown/JSON without timing thresholds.
+- [x] Optional Slang lexer comparison uses an externally provisioned pinned
+  validation dependency, identical in-memory source bytes, pre-timing
+  correctness checks, warmups/repetitions, and no production Slang linkage.
 - [x] Local Apple Silicon M1 full native Release CTest: 59 passed; 10 AVX2
   tests skipped because the ARM64 CPU does not support AVX2.
 - [x] Forced Generic and NEON backend verification: seven focused tests each,

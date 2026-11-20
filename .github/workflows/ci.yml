@@ -218,13 +218,45 @@ jobs:
             -DLABNEURA_ENABLE_SLANG_VALIDATION=OFF `
             -DFETCHCONTENT_FULLY_DISCONNECTED=ON
           cmake --build build/eda-windows --config Release --parallel 2
+          cmake --build build/eda-windows --config Release `
+            --target labneura_lexer_benchmark --parallel 2
           $ctestOutput = ctest --test-dir build/eda-windows -C Release `
             --output-on-failure --no-tests=error 2>&1
           $ctestOutput | Write-Host
           if ($LASTEXITCODE -ne 0) { throw "Windows EDA-only CTest failed" }
-          if ($ctestOutput -match "(?im)Not Run|\*\*\*Skipped") {
-            throw "Windows EDA-only CTest contains a missing executable or skip"
+          if ($ctestOutput -match "(?im)Not Run") {
+            throw "Windows EDA-only CTest contains a missing executable"
           }
+          $lexerTest = (Resolve-Path `
+            "build/eda-windows/Release/labneura_eda_verilog_lexer_test.exe").Path
+          & $lexerTest SCALAR
+          if ($LASTEXITCODE -ne 0) {
+            throw "Windows scalar lexer parity failed"
+          }
+          & $lexerTest AVX2
+          if ($LASTEXITCODE -eq 77) {
+            Write-Host "Windows AVX2 lexer explicitly skipped: CPU unavailable"
+          } elseif ($LASTEXITCODE -ne 0) {
+            throw "Windows AVX2 lexer parity failed"
+          }
+          & "build/eda-windows/Release/labneura_lexer_benchmark.exe" `
+            tests/data/verilog/lexer_corpus.sv `
+            examples/verilog/ibex/ibex_alu.sv `
+            examples/verilog/8080_core/i8080.v `
+            2>&1 | Tee-Object windows-lexer-benchmark.log
+          if ($LASTEXITCODE -ne 0) {
+            throw "Windows lexer benchmark failed"
+          }
+          if (-not (Select-String -Path windows-lexer-benchmark.log `
+              -Pattern "backend=scalar" -Quiet)) {
+            throw "Windows lexer benchmark did not execute scalar backend"
+          }
+      - name: Upload Windows lexer benchmark
+        uses: actions/upload-artifact@v4
+        with:
+          name: lexer-benchmark-windows-x86_64-msvc
+          path: windows-lexer-benchmark.log
+          if-no-files-found: error
       - name: Build Slang-free core and EDA wheels
         shell: pwsh
         env:
@@ -552,6 +584,211 @@ jobs:
             coverage.txt
             coverage_html
 
+  lexer-performance:
+    name: Lexer performance (${{ matrix.platform }})
+    if: github.event_name != 'pull_request'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    env:
+      SLANG_COMMIT: 7ddf4059f79eff508dd486eb42fd650cdf320d52
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: linux-x86_64
+            backend: AVX2
+          - os: ubuntu-24.04-arm
+            platform: linux-arm64
+            backend: NEON
+          - os: macos-latest
+            platform: macos-arm64
+            backend: NEON
+          - os: windows-2022
+            platform: windows-x86_64-msvc
+            backend: AVX2
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Set up MSVC
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Provision pinned external Slang (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          git clone --filter=blob:none https://github.com/MikePopoloski/slang.git \
+            "$RUNNER_TEMP/slang-src"
+          git -C "$RUNNER_TEMP/slang-src" checkout "$SLANG_COMMIT"
+          cmake -S "$RUNNER_TEMP/slang-src" -B "$RUNNER_TEMP/slang-build" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$RUNNER_TEMP/slang-install" \
+            -DSLANG_INCLUDE_TESTS=OFF \
+            -DSLANG_INCLUDE_TOOLS=OFF \
+            -DSLANG_INCLUDE_PYLIB=OFF \
+            -DSLANG_INCLUDE_DOCS=OFF \
+            -DSLANG_INCLUDE_INSTALL=ON \
+            -DSLANG_USE_MIMALLOC=OFF
+          cmake --build "$RUNNER_TEMP/slang-build" --config Release \
+            --target install --parallel 2
+
+      - name: Provision pinned external Slang (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          git clone --filter=blob:none https://github.com/MikePopoloski/slang.git `
+            "$env:RUNNER_TEMP/slang-src"
+          git -C "$env:RUNNER_TEMP/slang-src" checkout $env:SLANG_COMMIT
+          cmake -S "$env:RUNNER_TEMP/slang-src" -B "$env:RUNNER_TEMP/slang-build" `
+            -A x64 `
+            -DCMAKE_INSTALL_PREFIX="$env:RUNNER_TEMP/slang-install" `
+            -DSLANG_INCLUDE_TESTS=OFF `
+            -DSLANG_INCLUDE_TOOLS=OFF `
+            -DSLANG_INCLUDE_PYLIB=OFF `
+            -DSLANG_INCLUDE_DOCS=OFF `
+            -DSLANG_INCLUDE_INSTALL=ON `
+            -DSLANG_USE_MIMALLOC=OFF
+          cmake --build "$env:RUNNER_TEMP/slang-build" --config Release `
+            --target install --parallel 2
+
+      - name: Configure isolated validation build (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          cmake -S . -B build/slang-lexer-validation \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/slang-install" \
+            -DBUILD_TESTING=ON \
+            -DLABNEURA_BUILD_ACCEL_CORE=OFF \
+            -DLABNEURA_BUILD_TENSOR=OFF \
+            -DLABNEURA_BUILD_COMPAT=OFF \
+            -DLABNEURA_BUILD_EDA=ON \
+            -DLABNEURA_ENABLE_SLANG_VALIDATION=ON \
+            -DFETCHCONTENT_FULLY_DISCONNECTED=ON
+          cmake --build build/slang-lexer-validation \
+            --target labneura_eda_verilog_lexer_test \
+                     labneura_lexer_slang_benchmark \
+            --parallel 2
+
+      - name: Configure isolated validation build (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cmake -S . -B build/slang-lexer-validation `
+            -A x64 `
+            -DCMAKE_PREFIX_PATH="$env:RUNNER_TEMP/slang-install" `
+            -DBUILD_TESTING=ON `
+            -DLABNEURA_BUILD_ACCEL_CORE=OFF `
+            -DLABNEURA_BUILD_TENSOR=OFF `
+            -DLABNEURA_BUILD_COMPAT=OFF `
+            -DLABNEURA_BUILD_EDA=ON `
+            -DLABNEURA_ENABLE_SLANG_VALIDATION=ON `
+            -DFETCHCONTENT_FULLY_DISCONNECTED=ON
+          cmake --build build/slang-lexer-validation --config Release `
+            --target labneura_eda_verilog_lexer_test `
+                     labneura_lexer_slang_benchmark `
+            --parallel 2
+
+      - name: Run lexer correctness and benchmark (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          ctest --test-dir build/slang-lexer-validation \
+            --output-on-failure --no-tests=error \
+            -R '^eda_verilog_lexer$'
+          build/slang-lexer-validation/labneura_eda_verilog_lexer_test SCALAR
+          build/slang-lexer-validation/labneura_eda_verilog_lexer_test \
+            '${{ matrix.backend }}'
+          build/slang-lexer-validation/labneura_lexer_slang_benchmark \
+            tests/data/verilog/lexer_corpus.sv \
+            examples/verilog/ibex/ibex_alu.sv \
+            examples/verilog/8080_core/i8080.v \
+            | tee lexer-benchmark-${{ matrix.platform }}.log
+          grep -q 'backend=scalar' lexer-benchmark-${{ matrix.platform }}.log
+          grep -q 'backend=slang' lexer-benchmark-${{ matrix.platform }}.log
+
+      - name: Run lexer correctness and benchmark (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          ctest --test-dir build/slang-lexer-validation -C Release `
+            --output-on-failure --no-tests=error -R '^eda_verilog_lexer$'
+          $test = "build/slang-lexer-validation/Release/labneura_eda_verilog_lexer_test.exe"
+          & $test SCALAR
+          if ($LASTEXITCODE -ne 0) { throw "Windows scalar lexer parity failed" }
+          & $test AVX2
+          if ($LASTEXITCODE -eq 77) {
+            Write-Host "Windows AVX2 unavailable; benchmark will report N/A"
+          } elseif ($LASTEXITCODE -ne 0) {
+            throw "Windows AVX2 lexer parity failed"
+          }
+          $benchmark = "build/slang-lexer-validation/Release/labneura_lexer_slang_benchmark.exe"
+          & $benchmark `
+            tests/data/verilog/lexer_corpus.sv `
+            examples/verilog/ibex/ibex_alu.sv `
+            examples/verilog/8080_core/i8080.v `
+            2>&1 | Tee-Object lexer-benchmark-${{ matrix.platform }}.log
+          if ($LASTEXITCODE -ne 0) { throw "Windows lexer benchmark failed" }
+
+      - name: Convert benchmark to structured JSON
+        run: >-
+          python scripts/lexer_benchmark_report.py parse
+          --input lexer-benchmark-${{ matrix.platform }}.log
+          --output lexer-benchmark-${{ matrix.platform }}.json
+          --platform ${{ matrix.platform }}
+
+      - name: Upload lexer comparison
+        uses: actions/upload-artifact@v4
+        with:
+          name: lexer-performance-${{ matrix.platform }}
+          path: |
+            lexer-benchmark-${{ matrix.platform }}.log
+            lexer-benchmark-${{ matrix.platform }}.json
+          if-no-files-found: error
+
+  lexer-performance-summary:
+    name: Consolidate lexer performance
+    if: github.event_name != 'pull_request' && needs.lexer-performance.result == 'success'
+    needs: lexer-performance
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: lexer-performance-*
+          path: lexer-performance-artifacts
+          merge-multiple: true
+      - name: Generate consolidated reports
+        run: |
+          python scripts/lexer_benchmark_report.py aggregate \
+            --input-dir lexer-performance-artifacts \
+            --json lexer-performance-summary.json \
+            --markdown lexer-performance-summary.md
+          cat lexer-performance-summary.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lexer-performance-summary
+          path: |
+            lexer-performance-summary.json
+            lexer-performance-summary.md
+          if-no-files-found: error
+
   native-simd:
     name: Native validation (${{ matrix.architecture }}, ${{ matrix.compiler }})
     runs-on: ${{ matrix.os }}
@@ -709,7 +946,28 @@ jobs:
             -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 
       - name: Build native tests and benchmark
-        run: cmake --build build/native --parallel 2
+        run: |
+          cmake --build build/native --parallel 2
+          cmake --build build/native --target labneura_lexer_benchmark \
+            --parallel 2
+
+      - name: Require scalar lexer parity to execute
+        run: |
+          set -o pipefail
+          ctest --test-dir build/native -V \
+            -R '^eda_verilog_lexer_scalar$' \
+            2>&1 | tee scalar-lexer-ctest.log
+          grep -Eq 'eda_verilog_lexer_scalar.*Passed' scalar-lexer-ctest.log
+
+      - name: Measure native lexer backends
+        run: |
+          build/native/labneura_lexer_benchmark \
+            tests/data/verilog/lexer_corpus.sv \
+            examples/verilog/ibex/ibex_alu.sv \
+            examples/verilog/8080_core/i8080.v \
+            | tee "lexer-benchmark-${{ matrix.architecture }}-${{ matrix.compiler }}.log"
+          grep -q 'backend=scalar' \
+            "lexer-benchmark-${{ matrix.architecture }}-${{ matrix.compiler }}.log"
 
       - name: Verify AVX2 and F16C compiler flags
         if: matrix.architecture == 'x86_64'
@@ -886,7 +1144,7 @@ jobs:
         run: |
           set -o pipefail
           ctest --test-dir build/native -V \
-            -R '^(neon_int8_subtraction|fp32_neon_allocating|add_into_neon|tensor_nd_neon|tensor_comparison_neon|bool_dtype_neon|neon_fp16_arithmetic)$' \
+            -R '^(neon_int8_subtraction|fp32_neon_allocating|add_into_neon|tensor_nd_neon|tensor_comparison_neon|bool_dtype_neon|neon_fp16_arithmetic|eda_verilog_lexer_neon)$' \
             2>&1 | tee neon-focused-ctest.log
           python - <<'PY'
           import re
@@ -900,6 +1158,7 @@ jobs:
               "tensor_comparison_neon",
               "bool_dtype_neon",
               "neon_fp16_arithmetic",
+              "eda_verilog_lexer_neon",
           }
           statuses = {}
           for line in Path("neon-focused-ctest.log").read_text().splitlines():
@@ -1051,6 +1310,8 @@ jobs:
             generic-focused-ctest.log
             avx2-focused-ctest.log
             neon-focused-ctest.log
+            scalar-lexer-ctest.log
+            lexer-benchmark-${{ matrix.architecture }}-${{ matrix.compiler }}.log
             avx2-fp16-regression.log
             python-native-${{ matrix.architecture }}-${{ matrix.compiler }}.log
             python-eda-${{ matrix.architecture }}-${{ matrix.compiler }}.log

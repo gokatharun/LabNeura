@@ -1,6 +1,14 @@
 #include "labneura/eda/verilog_lexer.h"
 #include "labneura/eda/verilog_byte_classifier.h"
 
+#if defined(LABNEURA_ENABLE_SLANG_LEXER_BENCHMARK)
+#    include <slang/diagnostics/Diagnostics.h>
+#    include <slang/parsing/Lexer.h>
+#    include <slang/text/SourceManager.h>
+#    include <slang/util/BumpAllocator.h>
+#    include <slang/util/VersionInfo.h>
+#endif
+
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -10,6 +18,7 @@
 #include <iostream>
 #include <iterator>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
@@ -36,6 +45,16 @@ struct Measurements {
     size_t tokens = 0;
     size_t retained_bytes = 0;
 };
+
+#if defined(LABNEURA_ENABLE_SLANG_LEXER_BENCHMARK)
+uint64_t consume_spelling(uint64_t checksum, std::string_view spelling) {
+    for (const unsigned char ch : spelling) {
+        checksum ^= ch;
+        checksum *= 1099511628211ULL;
+    }
+    return checksum;
+}
+#endif
 
 double percentile(const std::vector<double>& sorted, double fraction) {
     const size_t index = static_cast<size_t>(std::ceil(fraction * sorted.size())) - 1;
@@ -117,10 +136,144 @@ Measurements measure_lexer(const std::vector<Input>& inputs,
                 std::cerr << "lexical errors in benchmark source: " << input.name << '\n';
                 std::exit(1);
             }
+#if defined(LABNEURA_ENABLE_SLANG_LEXER_BENCHMARK)
+            for (const auto& token : result.tokens) {
+                pass.checksum ^= static_cast<uint64_t>(token.kind) << 56;
+                pass.checksum ^= token.byte_offset ^ (token.length << 17);
+                pass.checksum ^= (token.line << 7) ^ token.column;
+                pass.checksum = consume_spelling(pass.checksum,
+                                                 result.spelling(token));
+            }
+#endif
         }
         return pass;
     });
 }
+
+#if defined(LABNEURA_ENABLE_SLANG_LEXER_BENCHMARK)
+struct SlangInput {
+    slang::SourceManager source_manager;
+    slang::SourceBuffer buffer;
+
+    explicit SlangInput(const Input& input) :
+        buffer(source_manager.assignText(input.name,
+                                         std::string(input.source->text()))) {}
+};
+
+Measurements measure_slang_lexer(const std::vector<Input>& inputs) {
+    std::vector<std::unique_ptr<SlangInput>> slang_inputs;
+    slang_inputs.reserve(inputs.size());
+    for (const auto& input : inputs)
+        slang_inputs.push_back(std::make_unique<SlangInput>(input));
+
+    return measure([&] {
+        Measurements pass;
+        for (const auto& input : slang_inputs) {
+            slang::BumpAllocator allocator;
+            slang::Diagnostics diagnostics;
+            slang::parsing::Lexer lexer(input->buffer, allocator, diagnostics,
+                                        input->source_manager);
+            while (true) {
+                const auto token = lexer.lex(
+                    slang::parsing::KeywordVersion::v1800_2017);
+                pass.checksum ^= static_cast<uint64_t>(token.kind) << 56;
+                pass.checksum ^= token.location().offset();
+                pass.checksum ^=
+                    static_cast<uint64_t>(input->source_manager.getLineNumber(
+                        token.location())) << 7;
+                pass.checksum ^=
+                    input->source_manager.getColumnNumber(token.location());
+                pass.checksum = consume_spelling(pass.checksum, token.rawText());
+                if (token.kind == slang::parsing::TokenKind::EndOfFile)
+                    break;
+                ++pass.tokens;
+            }
+            if (!diagnostics.empty()) {
+                std::cerr << "Slang lexical diagnostics in benchmark source\n";
+                std::exit(1);
+            }
+        }
+        return pass;
+    });
+}
+
+void verify_slang_parity(const Input& input) {
+    const auto native = labneura::eda::lex_verilog(
+        input.source,
+        {labneura::eda::VerilogLanguageVersion::SystemVerilog2017,
+         labneura::eda::VerilogLexerBackend::Scalar});
+    if (!native.errors.empty())
+        throw std::runtime_error("native lexer diagnostics prevent comparison");
+
+    SlangInput slang_input(input);
+    slang::BumpAllocator allocator;
+    slang::Diagnostics diagnostics;
+    slang::parsing::Lexer lexer(slang_input.buffer, allocator, diagnostics,
+                                slang_input.source_manager);
+    std::vector<slang::parsing::Token> slang_tokens;
+    while (true) {
+        auto token = lexer.lex(slang::parsing::KeywordVersion::v1800_2017);
+        if (token.kind == slang::parsing::TokenKind::EndOfFile)
+            break;
+        slang_tokens.push_back(token);
+    }
+    if (!diagnostics.empty())
+        throw std::runtime_error("Slang diagnostics prevent comparison");
+
+    size_t slang_index = 0;
+    for (const auto& token : native.tokens) {
+        if (token.kind == labneura::eda::VerilogTokenKind::LineComment ||
+            token.kind == labneura::eda::VerilogTokenKind::BlockComment)
+            continue;
+        if (token.kind == labneura::eda::VerilogTokenKind::EndOfFile)
+            break;
+        if (slang_index >= slang_tokens.size())
+            throw std::runtime_error("native lexer has a token after Slang EOF");
+        const auto spelling = native.spelling(token);
+        size_t combined_size = 0;
+        std::string combined_spelling;
+        const size_t first = slang_index;
+        while (combined_size < spelling.size()) {
+            if (slang_index >= slang_tokens.size())
+                throw std::runtime_error("Slang token group ended early");
+            const auto& slang_token = slang_tokens[slang_index];
+            if (slang_token.location().offset() != token.byte_offset + combined_size)
+                throw std::runtime_error("native and Slang offsets differ");
+            combined_spelling.append(slang_token.rawText());
+            combined_size += slang_token.rawText().size();
+            ++slang_index;
+        }
+        if (combined_spelling != spelling)
+            throw std::runtime_error("native and Slang spellings differ");
+        const auto& first_token = slang_tokens[first];
+        if (slang_input.source_manager.getLineNumber(first_token.location()) != token.line ||
+            slang_input.source_manager.getColumnNumber(first_token.location()) != token.column)
+            throw std::runtime_error("native and Slang source positions differ");
+    }
+    if (slang_index != slang_tokens.size())
+        throw std::runtime_error("Slang has trailing tokens after native EOF");
+}
+
+void print_slang_measurements(size_t input_bytes, size_t corpus_tokens,
+                              const Measurements& results,
+                              std::string_view input_name = {}) {
+    std::cout << "case=lexer_end_to_end backend=slang"
+              << " input_bytes=" << input_bytes
+              << " corpus_tokens=" << corpus_tokens
+              << (input_name.empty() ? "" : " input=") << input_name
+              << " median_seconds=" << results.median_seconds
+              << " iqr_seconds=" << results.iqr_seconds
+              << " p95_seconds=" << results.p95_seconds
+              << " median_MB_per_second="
+              << input_bytes / results.median_seconds / 1'000'000.0
+              << " tokens_per_pass=" << results.tokens
+              << " median_tokens_per_second="
+              << results.tokens / results.median_seconds
+              << " retained_token_and_error_capacity_bytes=unavailable"
+              << " slang_version=" << slang::VersionInfo::getVersionString()
+              << " checksum=" << results.checksum << '\n';
+}
+#endif
 
 void print_measurements(std::string_view category,
                         labneura::eda::VerilogLexerBackend backend, size_t input_bytes,
@@ -211,6 +364,35 @@ int main(int argc, char** argv) {
                                measure_lexer(single_input, backend), input.name);
         }
     }
+
+#if defined(LABNEURA_ENABLE_SLANG_LEXER_BENCHMARK)
+    for (const auto& input : inputs)
+        verify_slang_parity(input);
+    print_slang_measurements(input_bytes, corpus_tokens,
+                             measure_slang_lexer(inputs));
+    for (const auto& input : inputs) {
+        const std::vector<Input> single_input = {input};
+        print_slang_measurements(input.source->text().size(), input.tokens,
+                                 measure_slang_lexer(single_input), input.name);
+    }
+#elif defined(__linux__)
+    std::ifstream cpu_info("/proc/cpuinfo");
+    for (std::string line; std::getline(cpu_info, line);) {
+        const auto separator = line.find(':');
+        if (separator == std::string::npos)
+            continue;
+        const auto key = line.substr(0, separator);
+        if (key.find("model name") == std::string::npos &&
+            key.find("Hardware") == std::string::npos)
+            continue;
+        const auto first = line.find_first_not_of(" \t", separator + 1);
+        cpu_model = first == std::string::npos ? "unknown" : line.substr(first);
+        break;
+    }
+#elif defined(_WIN32)
+    if (const char* identifier = std::getenv("PROCESSOR_IDENTIFIER"))
+        cpu_model = identifier;
+#endif
 
     std::string cpu_model = "unknown";
 #if defined(__APPLE__)

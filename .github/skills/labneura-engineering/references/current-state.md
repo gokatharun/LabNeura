@@ -29,6 +29,44 @@ is reserved for externally provisioned differential validation. Unsupported
 native constructs must diagnose rather than fall back. Native AST JSON parity,
 instance arrays, and unsupported lowering forms remain breaking limitations.
 
+## Native lexer L2-L4 validation
+
+The native lexer now uses monotonic source-location lookup, allocation-free
+compile-time keyword tables, first-byte longest-operator dispatch, and guarded
+comment-prefix checks. On Apple M1, the 70,664-byte benchmark corpus measured
+59.59 MB/s Scalar and 90.70 MB/s NEON after L2; retained token/error capacity
+remained 829,440 bytes. These are local workload-specific measurements.
+
+L3 adds explicit Scalar, NEON, and AVX2 lexer-test modes and CTest entries.
+The native CI matrix requires Scalar execution on every runner, AVX2 execution
+on capable Linux x86_64, NEON execution on Linux/macOS ARM64, and direct
+Scalar plus available-AVX2 execution on Windows MSVC. Remote execution of the
+new matrix is pending.
+
+An optional validation-only benchmark links externally provisioned Slang at
+pinned commit `7ddf4059f79eff508dd486eb42fd650cdf320d52`. It compares identical
+in-memory bytes, excludes parsing and I/O, consumes token metadata, and checks
+spelling/position parity before timing. Local Apple M1 results for 70,664
+bytes (median of three invocation medians) were 51.36 MB/s Scalar, 72.54 MB/s
+NEON, and 26.84 MB/s Slang 11.0.0.
+Native comments are standalone tokens while Slang uses trivia, so token counts
+and retention are not directly comparable. AVX2 runtime measurements remain
+pending suitable x86_64 CI hardware.
+
+L4 adds deterministic randomized classifier and full-token parity coverage,
+including boundary lengths through 4 KiB and every unaligned start modulo 32.
+The AppleClang x86_64 cross-target now retains portable x86 tuning rather than
+incorrectly inheriting Apple-M1 flags. Local compile/link inspection produced
+x86_64 objects and an x86_64 lexer-test executable; only the dedicated AVX2
+translation unit received `-mavx2` and contained YMM instructions.
+
+The informational lexer-performance matrix provisions pinned external Slang
+on macOS ARM64, Linux ARM64, Linux x86_64, and Windows x86_64 MSVC. Each job
+requires architecture-appropriate lexer correctness, emits raw and structured
+JSON results, and a dependent job produces consolidated Markdown/JSON. Remote
+matrix execution remains pending; local cross-compilation is not AVX2 runtime
+validation.
+
 ## Project identity
 
 LabNeura is a C++ numerical-computing and Tensor library with Python bindings.

@@ -577,7 +577,9 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     # No extra flags needed
   endif()
 
-  if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64" AND APPLE)
+  if(APPLE AND (CMAKE_OSX_ARCHITECTURES STREQUAL "arm64"
+                OR (NOT CMAKE_OSX_ARCHITECTURES
+                    AND CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")))
     # Apple M1/M2 optimizations (APPLE-only)
     foreach(target IN LISTS LABNEURA_OBJECT_TARGETS)
       target_compile_options(${target} PRIVATE
@@ -586,13 +588,14 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
       )
     endforeach()
     message(STATUS "M1 optimization flags enabled: -mcpu=apple-m1 -mtune=native")
-  elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
+  elseif(NOT APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
     # Generic ARM64 optimizations for Linux/other platforms
     foreach(target IN LISTS LABNEURA_OBJECT_TARGETS)
       target_compile_options(${target} PRIVATE -mtune=generic)
     endforeach()
     message(STATUS "ARM64 optimization flags enabled: -mtune=generic")
-  elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+  elseif((APPLE AND CMAKE_OSX_ARCHITECTURES STREQUAL "x86_64")
+         OR CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
     # Intel/AMD optimizations
     # Note: Using -mtune=generic for PyPI wheel compatibility (not -march=native)
     # Runtime CPU detection selects optimal backend (AVX2, SSE4.1, or Generic)
@@ -998,6 +1001,20 @@ if(LABNEURA_BUILD_EDA AND NOT SKBUILD)
     )
     add_test(NAME eda_verilog_lexer COMMAND labneura_eda_verilog_lexer_test)
     add_test(
+      NAME eda_verilog_lexer_scalar
+      COMMAND labneura_eda_verilog_lexer_test SCALAR
+    )
+    if(LABNEURA_VERILOG_LEXER_HAS_NEON)
+      add_test(
+        NAME eda_verilog_lexer_neon
+        COMMAND labneura_eda_verilog_lexer_test NEON
+      )
+      set_tests_properties(
+        eda_verilog_lexer_neon
+        PROPERTIES SKIP_RETURN_CODE 77
+      )
+    endif()
+    add_test(
       NAME eda_verilog_lexer_avx2
       COMMAND labneura_eda_verilog_lexer_test AVX2
     )
@@ -1390,6 +1407,21 @@ if(LABNEURA_BUILD_EDA AND NOT SKBUILD)
   target_link_libraries(labneura_native_frontend_profile PRIVATE labneura_eda)
 
   if(LABNEURA_ENABLE_SLANG_VALIDATION)
+    add_executable(labneura_lexer_slang_benchmark EXCLUDE_FROM_ALL
+      benchmarks/eda/verilog_lexer_benchmark.cpp
+    )
+    target_compile_definitions(labneura_lexer_slang_benchmark PRIVATE
+      LABNEURA_LEXER_BUILD_TYPE="${CMAKE_BUILD_TYPE}"
+      LABNEURA_ENABLE_SLANG_LEXER_BENCHMARK=1
+    )
+    target_link_libraries(labneura_lexer_slang_benchmark PRIVATE
+      labneura_eda
+      slang::slang
+    )
+    target_include_directories(labneura_lexer_slang_benchmark PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+
     add_executable(labneura_slang_frontend_profile EXCLUDE_FROM_ALL
       benchmarks/eda/slang_frontend_profile.cpp
     )

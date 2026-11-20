@@ -44,6 +44,93 @@ NEON results are reported as unavailable on builds without compiled ARM64
 support. Results describe the current host and compiler configuration; they are
 not performance claims against another frontend.
 
+### Monotonic source-location lookup result
+
+On Apple M1/ARM64 with Apple Clang 21.0.0, replacing the per-token binary
+search of source line starts with a monotonic line-index hint improved the
+identical 69,727-byte, 13,256-token aggregate workload as follows (Release,
+two warmups, nine samples): scalar median 6.781 ms to 6.517 ms (10.28 to
+10.70 MB/s, about 1.04x), and NEON median 6.397 ms to 6.100 ms (10.90 to
+11.43 MB/s, about 1.05x). Retained token/error capacity stayed 819,200 bytes.
+AVX2 was unavailable on this host and remains execution-unverified here.
+
+### Keyword and operator dispatch result
+
+On the same Apple M1 host, sampling the complete lexer identified the
+space-delimited keyword search and linear longest-operator search as the
+dominant `memchr`/`memcmp` callers. Compile-time, allocation-free keyword hash
+tables and first-byte operator dispatch improved the identical 70,664-byte,
+13,421-token corpus from 10.67 to 59.59 MB/s scalar (5.58x) and from 11.35 to
+90.70 MB/s NEON (7.99x). These are medians of nine samples after two warmups;
+representative final-run IQRs were 0.012 ms scalar and 0.013 ms NEON. Retained
+token/error capacity remained 829,440 bytes. The keyword tables add only static
+read-only storage and perform no runtime allocation. AVX2 compiled in an
+x86_64 cross-build but could not be executed on this ARM64 host.
+
+### Optional native versus Slang lexer comparison
+
+`labneura_lexer_slang_benchmark` is available only when
+`LABNEURA_ENABLE_SLANG_VALIDATION=ON` and an external Slang installation is
+found. It links Slang only into this validation benchmark; the production EDA
+library and normal native benchmark remain Slang-free.
+
+Both paths receive the same in-memory source bytes, with file loading and
+source-buffer construction outside the timed region. Each performs two
+warmups and nine measured passes in a Release build. Measured passes construct
+fresh token/diagnostic storage and consume token kind, spelling, byte offset,
+line, and column into a checksum. Before timing, the harness verifies native
+and Slang spelling, offset, line, and column parity over every input, combining
+contiguous Slang tokens where Slang splits one native literal.
+
+The comparison is lexer-only: neither path preprocesses, parses, nor
+elaborates. Representation is not identical. LabNeura materializes comments
+as standalone tokens, whereas Slang associates whitespace and comments as
+trivia; Slang can also split a based literal that LabNeura returns as one
+token. Token counts and retained-capacity values therefore must not be
+compared directly. Slang allocator retention is reported as unavailable.
+
+On Apple M1, three invocations over the 70,664-byte corpus produced
+median-of-invocation medians of 51.36 MB/s Scalar, 72.54 MB/s NEON, and
+26.84 MB/s Slang 11.0.0. This comparison includes metadata/spelling
+consumption and is therefore intentionally distinct from the L2 native-only
+timing above. AVX2 was unavailable on this host.
+
+CI converts each raw benchmark log to schema-versioned JSON with
+`scripts/lexer_benchmark_report.py`. Each workload row contains median, IQR,
+p95, decimal MB/s, token throughput, retained native capacity, speedup versus
+Scalar, and ratio versus Slang where available. The cross-platform summary
+preserves CPU, compiler, architecture, OS, and build metadata and uses `N/A`
+for architecture-inapplicable backends. Failed jobs do not produce an `N/A`
+result: they fail the matrix and prevent consolidated-report generation.
+
+Expected artifact names are:
+
+- `lexer-performance-macos-arm64`
+- `lexer-performance-linux-arm64`
+- `lexer-performance-linux-x86_64`
+- `lexer-performance-windows-x86_64-msvc`
+- `lexer-performance-summary`
+
+The first four contain raw logs and workload-level JSON. The summary artifact
+contains consolidated JSON and Markdown. Timings are informational and have no
+shared-runner threshold; backend correctness remains mandatory.
+
+```sh
+cmake -S . -B "$TMPDIR/labneura-lexer-slang" \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_PREFIX_PATH=/path/to/slang/install \
+  -DLABNEURA_BUILD_TENSOR=OFF \
+  -DLABNEURA_BUILD_ACCEL_CORE=OFF \
+  -DLABNEURA_BUILD_COMPAT=OFF \
+  -DLABNEURA_ENABLE_SLANG_VALIDATION=ON
+cmake --build "$TMPDIR/labneura-lexer-slang" \
+  --target labneura_lexer_slang_benchmark
+"$TMPDIR/labneura-lexer-slang/labneura_lexer_slang_benchmark" \
+  tests/data/verilog/lexer_corpus.sv \
+  examples/verilog/ibex/ibex_alu.sv \
+  examples/verilog/8080_core/i8080.v
+```
+
 The experimental C++ selector reads `LABNEURA_VERILOG_LEXER` (`slang` by
 default, or `scalar`; other values are rejected). Existing `parse_verilog`
 calls remain Slang-backed regardless of this setting; the selector is
