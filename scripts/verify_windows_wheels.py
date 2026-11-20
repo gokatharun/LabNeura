@@ -71,7 +71,7 @@ def validate(dist: Path, expected_version: str, extract_dir: Path) -> Path:
         metadata = _metadata(archive, eda)
         if canonicalize_name(metadata["Name"]) != "labneura-eda":
             raise AssertionError(f"{eda.name}: incorrect Name metadata")
-        if _requirements(metadata) != {"labneura-core<0.5,>=0.4.2"}:
+        if _requirements(metadata) != {"labneura-core<0.6,>=0.5"}:
             raise AssertionError(
                 f"{eda.name}: unexpected dependencies {_requirements(metadata)}"
             )

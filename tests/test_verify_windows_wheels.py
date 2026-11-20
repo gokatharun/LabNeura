@@ -41,7 +41,7 @@ def test_validates_exact_cp311_windows_core_eda_pair(tmp_path):
     _wheel(
         dist / "labneura_eda-0.4.9-cp311-cp311-win_amd64.whl",
         "labneura-eda",
-        requires=("labneura-core>=0.4.2,<0.5",),
+        requires=("labneura-core>=0.5,<0.6",),
         payload=(("labneura/_eda.cp311-win_amd64.pyd", b"PE fixture"),),
     )
 
@@ -65,7 +65,7 @@ def test_rejects_slang_or_bundled_dlls(tmp_path, payload):
     _wheel(
         dist / "labneura_eda-0.4.9-cp311-cp311-win_amd64.whl",
         "labneura-eda",
-        requires=("labneura-core>=0.4.2,<0.5",),
+        requires=("labneura-core>=0.5,<0.6",),
         payload=payload,
     )
 

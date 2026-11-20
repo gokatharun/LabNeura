@@ -23,17 +23,17 @@ NATIVE_COMPONENTS = ("labneura-tensor", "labneura-eda")
 METADISTRIBUTIONS = ("labneura", "labneura-all")
 EXPECTED_DEPENDENCIES = {
     "labneura-core": (),
-    "labneura-tensor": ("labneura-core>=0.4.2,<0.5",),
-    "labneura-eda": ("labneura-core>=0.4.2,<0.5",),
+    "labneura-tensor": ("labneura-core>=0.5,<0.6",),
+    "labneura-eda": ("labneura-core>=0.5,<0.6",),
     "labneura": (
-        "labneura-core>=0.4.2,<0.5",
-        "labneura-tensor>=0.4.2,<0.5",
-        "labneura-eda>=0.4.2,<0.5",
+        "labneura-core>=0.5,<0.6",
+        "labneura-tensor>=0.5,<0.6",
+        "labneura-eda>=0.5,<0.6",
     ),
     "labneura-all": (
-        "labneura-core>=0.4.2,<0.5",
-        "labneura-tensor>=0.4.2,<0.5",
-        "labneura-eda>=0.4.2,<0.5",
+        "labneura-core>=0.5,<0.6",
+        "labneura-tensor>=0.5,<0.6",
+        "labneura-eda>=0.5,<0.6",
     ),
 }
 

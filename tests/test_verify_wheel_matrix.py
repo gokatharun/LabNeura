@@ -11,17 +11,17 @@ from scripts.verify_wheel_matrix import (
 
 
 def test_dependency_bound_order_is_ignored():
-    expected = ("labneura-core>=0.4.2,<0.5",)
-    wheel_metadata = ("labneura-core<0.5,>=0.4.2",)
+    expected = ("labneura-core>=0.5,<0.6",)
+    wheel_metadata = ("labneura-core<0.6,>=0.5",)
 
     assert normalized_dependencies(wheel_metadata) == normalized_dependencies(expected)
 
 
 def test_dependency_name_and_bounds_are_still_checked():
-    expected = ("labneura-core>=0.4.2,<0.5",)
+    expected = ("labneura-core>=0.5,<0.6",)
 
-    assert normalized_dependencies(("labneura-core>=0.4.2,<0.6",)) != normalized_dependencies(expected)
-    assert normalized_dependencies(("labneura-tensor>=0.4.2,<0.5",)) != normalized_dependencies(expected)
+    assert normalized_dependencies(("labneura-core>=0.5,<0.7",)) != normalized_dependencies(expected)
+    assert normalized_dependencies(("labneura-tensor>=0.5,<0.6",)) != normalized_dependencies(expected)
 
 
 def test_core_wheel_accepts_pure_python_tag():

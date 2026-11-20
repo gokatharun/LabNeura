@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.8"
 license = { text = "MIT" }
 authors = [{ name = "LabNeura Authors" }]
-dependencies = ["labneura-core>=0.4.2,<0.5"]
+dependencies = ["labneura-core>=0.5,<0.6"]
 
 [tool.scikit-build]
 cmake.source-dir = "../.."
