@@ -595,6 +595,15 @@ jobs:
             $wheelPair `
             --version $version `
             --extract-dir "$env:RUNNER_TEMP\windows-eda-inspect"
+          $extension = Get-ChildItem "$env:RUNNER_TEMP\windows-eda-inspect" `
+            -Recurse -File -Filter "*_eda*.pyd" | Select-Object -First 1
+          if (-not $extension) { throw "Extracted EDA extension was not found" }
+          $dependencies = & dumpbin /dependents $extension.FullName
+          if ($LASTEXITCODE -ne 0) { throw "dumpbin failed for $($extension.FullName)" }
+          $dependencies
+          if ($dependencies -match "(?i)slang") {
+            throw "EDA extension links Slang"
+          }
           $venvPython = (Get-ChildItem "$env:RUNNER_TEMP\labneura-release-wheel-matrix\W3\Scripts\python.exe").FullName
           $qualification = "$env:RUNNER_TEMP\windows-eda-contract"
           New-Item -ItemType Directory -Force $qualification | Out-Null
