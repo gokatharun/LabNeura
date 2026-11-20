@@ -246,7 +246,11 @@ jobs:
             --version $version `
             --extract-dir "$env:RUNNER_TEMP\eda-unpacked" `
             --github-output $env:GITHUB_OUTPUT
-          $dependencies = dumpbin /dependents "${{ steps.windows-wheel-audit.outputs.extension }}"
+          $extension = Get-ChildItem "$env:RUNNER_TEMP\eda-unpacked" `
+            -Recurse -File -Filter "*_eda*.pyd" | Select-Object -First 1
+          if (-not $extension) { throw "Extracted EDA extension was not found" }
+          $dependencies = & dumpbin /dependents $extension.FullName
+          if ($LASTEXITCODE -ne 0) { throw "dumpbin failed for $($extension.FullName)" }
           $dependencies
           if ($dependencies -match "(?i)slang") { throw "EDA extension links Slang" }
           if ($dependencies -match "(?i)Error opening file") {
