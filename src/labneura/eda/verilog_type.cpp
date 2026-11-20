@@ -1423,8 +1423,12 @@ VerilogIntegralType infer_verilog_declared_type(
              (declared_type.empty() || contains_word(declared_type, "signed") ||
               contains_word(declared_type, "unsigned")))
         assign_integral(1, false, true);
-    else if (declared_type.empty() && inferred_type)
-        type = *inferred_type;
+    else if (declared_type.empty()) {
+        if (inferred_type)
+            type = *inferred_type;
+        else
+            assign_integral(1, false, true);
+    }
 
     if (type.category == VerilogTypeCategory::Integral) {
         if (contains_word(declared_type, "signed"))

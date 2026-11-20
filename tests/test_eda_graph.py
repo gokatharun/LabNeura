@@ -271,6 +271,10 @@ def liberty_function(expression):
 
 def cell_output(instance, values):
     """Evaluate a cell's single output from a {pin: 0/1} dict."""
+    if instance.cell_type == "TIEHI":
+        return 1
+    if instance.cell_type == "TIELO":
+        return 0
     if instance.cell is None:
         wide = re.fullmatch(r"(AND|OR|XOR|XNOR|MAJ)(\d+)", instance.cell_type)
         if wide:
@@ -287,6 +291,11 @@ def cell_output(instance, values):
             return parity if kind == "XOR" else 1 - parity
         return GENERIC_FUNCTIONS[instance.cell_type](values)
     outputs = [p for p in instance.cell.pins if p.direction == "output"]
+    connected_outputs = {
+        connection.pin for connection in instance.connections
+        if pin_is_output(instance, connection.pin)
+    }
+    outputs = [pin for pin in outputs if pin.name in connected_outputs]
     assert len(outputs) == 1
     scope = {k: bool(v) for k, v in values.items()}
     return int(bool(eval(liberty_function(outputs[0].function), {}, scope)))
@@ -379,6 +388,12 @@ def test_counter_graph_alone_computes_next_state(tmp_path, mode, library):
     for src, dst, net, _ in edges:
         if src in flops and dst == "port:count":
             bit_of[src] = int(re.fullmatch(r"count\[(\d)\]", net).group(1))
+        elif src in flops and dst in instances:
+            for buffer_src, buffer_dst, buffer_net, _ in edges:
+                if buffer_src == dst and buffer_dst == "port:count":
+                    bit_of[src] = int(
+                        re.fullmatch(r"count\[(\d)\]", buffer_net).group(1)
+                    )
     assert sorted(bit_of.values()) == [0, 1, 2, 3]
 
     incoming = {}
@@ -387,6 +402,10 @@ def test_counter_graph_alone_computes_next_state(tmp_path, mode, library):
 
     def next_state(count, rst):
         net_value = {f"count[{i}]": (count >> i) & 1 for i in range(4)}
+        for flop, bit in bit_of.items():
+            output = next(c.net for c in flops[flop].connections
+                          if pin_is_output(flops[flop], c.pin))
+            net_value[output] = (count >> bit) & 1
         net_value["rst"] = rst
         logic = [n for n in instances if n not in flops]
         pending = list(logic)

@@ -321,7 +321,7 @@ struct GenericMapper {
         if (expression_width == 0 || output_width == 0 ||
             expression_width < output_width) {
             throw std::runtime_error(
-                "generic mapping does not support mismatched vector assignment widths");
+                "generic mapping does not support vector sign or zero extension");
         }
 
         const auto bits = output_width;
@@ -676,6 +676,19 @@ struct GenericMapper {
 }  // namespace
 
 Module generic_map(const Module& rtl_module) {
+    if (rtl_module.native_context_ && rtl_module.is_behavioral()) {
+        const auto& context = *rtl_module.native_context_;
+        const auto lowered = lower_verilog_native(
+            context.parsed.syntax, *context.elaboration, *context.types,
+            *context.eligibility, rtl_module.get_name());
+        if (lowered.succeeded())
+            return *lowered.module;
+        std::string message = "native generic_map cannot lower module '" +
+                              rtl_module.get_name() + "'";
+        for (const auto& diagnostic : lowered.diagnostics)
+            message += "\n[" + diagnostic.code + "] " + diagnostic.message;
+        throw std::runtime_error(message);
+    }
     const auto map_module =
         [&](const auto& self, const Module& source) -> Module {
         std::vector<Module> child_modules;
@@ -896,7 +909,10 @@ Module generic_map(const Module& rtl_module) {
 
 Module generic_map(const Project& project, const std::string& top,
                    const std::map<std::string, std::string>& parameters) {
-    if (project.native_context_) {
+    const bool native_behavioral = project.native_context_ &&
+        std::any_of(project.get_modules().begin(), project.get_modules().end(),
+                    [](const Module& module) { return module.is_behavioral(); });
+    if (native_behavioral) {
         if (!parameters.empty()) {
             throw std::runtime_error(
                 "native generic_map does not yet accept mapping-time parameter "

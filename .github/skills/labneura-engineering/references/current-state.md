@@ -1417,6 +1417,24 @@ Fresh Apple Silicon M1/arm64 Release validation on 2026-11-19:
 - `git diff --check` and new-file whitespace checks passed. Existing dirty and
   untracked worktree changes were preserved; no commit or push was made.
 
+### Native production parser/mapper contract (M7.20)
+
+Production parsing and generic mapping use the retained native project context.
+Portable contract tests cover ordered ports, multi-module hierarchy, supported
+parameter specialization, exhaustive two-input Boolean truth tables, supported
+resettable sequential mapping, and explicit rejection of simulation-only
+processes. Tests assert observable connectivity and behavior instead of legacy
+Slang AST shapes or exact internal optimization cell counts.
+
+The native CI matrix executes the contract with GCC and Clang on Linux x86_64,
+GCC on a real Linux ARM64 runner, AppleClang on native macOS ARM64, and MSVC on
+Windows x86_64. Linux AVX2 and ARM64/macOS NEON jobs verify runtime CPU features
+before executing backend-specific tests. The Windows job also builds an
+EDA-only CMake configuration and a clean Slang-free wheel, inspects PE
+dependencies, installs it in a new virtual environment, and runs the public
+contract and split-extension tests. Remote results remain unverified until the
+updated workflow executes.
+
 ### Indexed semantic reference resolution (M7.18.2)
 
 Semantic analysis now builds one stable-sorted ordinal index over the public

@@ -111,20 +111,28 @@ jobs:
             -DFETCHCONTENT_FULLY_DISCONNECTED=ON
         run: |
           mkdir -p "$RUNNER_TEMP/eda-dist"
+          python -m build --wheel --no-isolation --outdir "$RUNNER_TEMP/eda-dist" packaging/core
           python -m build --wheel --sdist --outdir "$RUNNER_TEMP/eda-dist" packaging/eda
       - name: Reject bundled Slang and inspect extension linkage
         run: |
           python - "$RUNNER_TEMP/eda-dist" <<'PY'
-          import sys, zipfile
+          import sys, tarfile, zipfile
           from pathlib import Path
           dist = Path(sys.argv[1])
           for artifact in dist.iterdir():
-              if artifact.suffix not in {'.whl', '.gz'}: continue
-              with zipfile.ZipFile(artifact) as z:
-                  bad = [n for n in z.namelist() if 'slang' in n.lower()]
-                  if bad: raise SystemExit(f'Slang bundled in {artifact}: {bad}')
+              if artifact.suffix == '.whl':
+                  with zipfile.ZipFile(artifact) as archive:
+                      names = archive.namelist()
+              elif artifact.name.endswith('.tar.gz'):
+                  with tarfile.open(artifact, 'r:gz') as archive:
+                      names = archive.getnames()
+              else:
+                  continue
+              bad = [name for name in names if 'slang' in name.lower()]
+              if bad:
+                  raise SystemExit(f'Slang bundled in {artifact}: {bad}')
           PY
-          WHEEL=$(find "$RUNNER_TEMP/eda-dist" -name '*.whl' -print -quit)
+          WHEEL=$(find "$RUNNER_TEMP/eda-dist" -name 'labneura_eda-*.whl' -print -quit)
           unzip -q "$WHEEL" -d "$RUNNER_TEMP/eda-unpacked"
           EXT=$(find "$RUNNER_TEMP/eda-unpacked" -name '*_eda*.so' -print -quit)
           test -n "$EXT"
@@ -161,6 +169,79 @@ jobs:
           else:
               raise AssertionError("unsupported native Verilog was accepted")
           PY
+
+  native-eda-windows:
+    name: Native EDA correctness and wheel (Windows x86_64, MSVC)
+    runs-on: windows-2022
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Install native EDA build tools
+        run: python -m pip install build scikit-build-core pybind11 wheel "setuptools>=61" pytest
+      - name: Configure and test EDA-only MSVC build
+        shell: pwsh
+        run: |
+          cmake -S . -B build/eda-windows `
+            -A x64 `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DBUILD_TESTING=ON `
+            -DLABNEURA_BUILD_ACCEL_CORE=OFF `
+            -DLABNEURA_BUILD_TENSOR=OFF `
+            -DLABNEURA_BUILD_COMPAT=OFF `
+            -DLABNEURA_BUILD_EDA=ON `
+            -DLABNEURA_ENABLE_SLANG_VALIDATION=OFF `
+            -DFETCHCONTENT_FULLY_DISCONNECTED=ON
+          cmake --build build/eda-windows --config Release --parallel 2
+          ctest --test-dir build/eda-windows -C Release --output-on-failure --no-tests=error
+      - name: Build Slang-free EDA wheel
+        shell: pwsh
+        env:
+          CMAKE_BUILD_PARALLEL_LEVEL: '2'
+          CMAKE_ARGS: >-
+            -DLABNEURA_ENABLE_SLANG_VALIDATION=OFF
+            -DFETCHCONTENT_FULLY_DISCONNECTED=ON
+        run: |
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\eda-dist" | Out-Null
+          python -m build --wheel --no-isolation --outdir "$env:RUNNER_TEMP\eda-dist" packaging/core
+          python -m build --wheel --no-isolation --outdir "$env:RUNNER_TEMP\eda-dist" packaging/eda
+      - name: Inspect wheel and extension dependencies
+        shell: pwsh
+        run: |
+          @'
+          import os, zipfile
+          from pathlib import Path
+          dist = Path(os.environ["RUNNER_TEMP"]) / "eda-dist"
+          wheel, = dist.glob("labneura_eda-*.whl")
+          with zipfile.ZipFile(wheel) as archive:
+              bad = [name for name in archive.namelist() if "slang" in name.lower()]
+              if bad:
+                  raise SystemExit(f"Slang bundled in {wheel}: {bad}")
+              archive.extractall(Path(os.environ["RUNNER_TEMP"]) / "eda-unpacked")
+          '@ | python -
+          $extension = Get-ChildItem "$env:RUNNER_TEMP\eda-unpacked" -Recurse -Filter "*_eda*.pyd" | Select-Object -First 1
+          if (-not $extension) { throw "EDA extension was not found in wheel" }
+          $dependencies = dumpbin /dependents $extension.FullName
+          $dependencies
+          if ($dependencies -match "(?i)slang") { throw "EDA extension links Slang" }
+      - name: Clean wheel install and native contract tests
+        shell: pwsh
+        run: |
+          python -m venv "$env:RUNNER_TEMP\eda-venv"
+          & "$env:RUNNER_TEMP\eda-venv\Scripts\python.exe" -m pip install --no-index (Get-ChildItem "$env:RUNNER_TEMP\eda-dist\*.whl").FullName
+          & "$env:RUNNER_TEMP\eda-venv\Scripts\python.exe" -m pip install pytest
+          $sitePackages = & "$env:RUNNER_TEMP\eda-venv\Scripts\python.exe" -c "import site; print(site.getsitepackages()[0])"
+          $extension = Get-ChildItem $sitePackages -Recurse -Filter "*_eda*.pyd" | Select-Object -First 1
+          if (-not $extension) { throw "Installed EDA extension was not found" }
+          $env:LABNEURA_EDA_EXTENSION = $extension.FullName
+          & "$env:RUNNER_TEMP\eda-venv\Scripts\python.exe" -m pytest -q -o addopts= tests/test_eda_native_contract.py tests/python_packaging/test_eda_extension.py
 
   gcc-source-build:
     name: Source build (GCC 13)
@@ -808,6 +889,7 @@ jobs:
             tests/test_eda_graph.py \
             tests/test_eda_equivalence.py \
             tests/test_eda_fpga.py \
+            tests/test_eda_native_contract.py \
             2>&1 | tee "python-eda-${{ matrix.architecture }}-${{ matrix.compiler }}.log"
 
       - name: Run full Python suite on native backend

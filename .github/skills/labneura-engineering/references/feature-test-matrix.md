@@ -6,7 +6,9 @@ Use this checklist for every feature and every backend implementation.
 
 - [x] Production EDA builds without Slang, Tensor, or Acceleration Core.
 - [x] Native parse/project/lowering paths are production defaults.
-- [ ] CI wheel/sdist artifact audit and clean install without Slang.
+- [x] CI wheel/sdist artifact audit and clean install without Slang are
+  implemented for Linux, with Windows x86_64 wheel inspection and clean-install
+  validation added in M7.20; remote execution remains pending.
 - Unsupported SystemVerilog, AST JSON parity, instance arrays, and unsupported
   lowering forms diagnose explicitly; external Slang is validation-only.
 
@@ -346,10 +348,16 @@ A feature is complete only when its semantics are documented, implementation exi
 - [x] Prescribed EDA Python regressions: 216 passed. Full Python suite:
   1,212 passed, with 225 skips classified as unavailable AVX2 cases,
   Generic-only broadcast coverage, or absent optional extension variables.
-- [ ] Ubuntu x86-64 GCC and Clang full native and EDA-only builds.
-- [ ] Native Ubuntu ARM64 build and strict NEON execution.
-- [ ] Hosted macOS ARM64 native and EDA-only builds.
-- [ ] Linux AVX2 job executes all ten AVX2 CTests without skips.
+- [ ] Ubuntu x86-64 GCC and Clang full native and EDA-only workflow execution
+  for the M7.20 native parser/mapper contract (configured; remote run pending).
+- [ ] Native Ubuntu ARM64 build and strict NEON execution for the M7.20 native
+  parser/mapper contract (configured on `ubuntu-24.04-arm`; remote run pending).
+- [ ] Hosted macOS ARM64 native and EDA-only workflow execution for the M7.20
+  native parser/mapper contract (configured; remote run pending).
+- [ ] Windows x86_64 MSVC EDA-only build, Slang-free wheel linkage audit, clean
+  install, and native contract execution (configured; remote run pending).
+- [ ] Linux AVX2 job executes all ten AVX2 CTests and the portable native EDA
+  contract without skips (configured; remote run pending).
 - [ ] EDA AddressSanitizer/UndefinedBehaviorSanitizer job passes.
 
 ### Comparative frontend profiling (M7.18.1)

@@ -265,6 +265,7 @@ private:
     std::string hierarchy_instance_name_;
     std::vector<Module> child_modules_;
     std::shared_ptr<detail::ParsedVerilogContext> parsed_context_;
+    std::shared_ptr<const detail::NativeVerilogProjectContext> native_context_;
 
     friend class detail::NativeVerilogProjectProjector;
     friend Module parse_verilog(const std::string& path);

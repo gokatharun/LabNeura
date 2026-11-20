@@ -410,6 +410,8 @@ std::optional<VerilogNativeLoweringValue> add_values(
         const std::string propagate = session.emit_binary(
             "XOR2", left->bits[index], right->bits[index]);
         result.bits.push_back(session.emit_binary("XOR2", propagate, carry));
+        if (index + 1 == width)
+            continue;
         const std::string generated = session.emit_binary(
             "AND2", left->bits[index], right->bits[index]);
         const std::string propagated = session.emit_binary(

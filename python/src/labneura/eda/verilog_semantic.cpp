@@ -18,6 +18,15 @@ bool is_net_type(std::string_view type) {
            type == "wand" || type == "wor" || type == "uwire";
 }
 
+bool is_builtin_primitive(std::string_view name) {
+    static constexpr std::string_view names[] = {
+        "and", "nand", "or", "nor", "xor", "xnor", "buf", "not",
+        "bufif0", "bufif1", "notif0", "notif1", "pullup", "pulldown",
+        "cmos", "rcmos", "nmos", "pmos", "rnmos", "rpmos", "tran",
+        "rtran", "tranif0", "tranif1", "rtranif0", "rtranif1"};
+    return std::find(std::begin(names), std::end(names), name) != std::end(names);
+}
+
 bool is_builtin_identifier(std::string_view name) {
     if (name.empty() || name.front() == '$')
         return true;
@@ -773,9 +782,10 @@ private:
                            : nullptr;
         if (!target || target->kind != VerilogSemanticSymbolKind::Module ||
             !target->member_scope) {
-            diagnose("UnresolvedModuleType",
-                     "module type '" + instantiation.module_type + "' is not declared",
-                     instantiation.location);
+            if (!is_builtin_primitive(instantiation.module_type))
+                diagnose("UnresolvedModuleType",
+                         "module type '" + instantiation.module_type + "' is not declared",
+                         instantiation.location);
             for (const auto& parameter : instantiation.parameter_overrides)
                 resolve_expression(parameter.value.get(), scope);
             for (const auto& instance : instantiation.instances)

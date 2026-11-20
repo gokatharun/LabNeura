@@ -98,6 +98,21 @@ public:
     VerilogSyntaxParseResult run() {
         result_.syntax.location = peek_location();
         while (!at_end()) {
+            // Attributes decorate the following design unit and do not affect
+            // the retained native project representation yet.  Accept them
+            // here so netlists emitted by LabNeura (notably black-box cell
+            // declarations) round-trip through the native parser.
+            if (is("(") && spelling(peek(1)) == "*") {
+                advance();
+                advance();
+                while (!at_end() && !(is("*") && spelling(peek(1)) == ")"))
+                    advance();
+                if (!at_end()) {
+                    advance();
+                    advance();
+                }
+                continue;
+            }
             if (consume_word("module")) {
                 if (auto module = parse_module(previous_location()))
                     result_.syntax.modules.push_back(std::move(*module));
@@ -508,6 +523,13 @@ private:
         construct->kind = VerilogGenerateKind::Region;
         construct->location = peek_location();
         advance();
+        if (is("begin")) {
+            construct->region_body = parse_generate_scope();
+            if (!consume("endgenerate"))
+                error("ExpectedEndgenerate", "missing 'endgenerate' for generate region",
+                      peek_location());
+            return construct;
+        }
         construct->region_body = std::make_unique<VerilogGenerateScope>();
         construct->region_body->location = construct->location;
         while (!at_end() && !is("endgenerate")) {
@@ -2297,10 +2319,12 @@ private:
     std::optional<VerilogModuleInstantiation> parse_instantiation() {
         VerilogModuleInstantiation instantiation;
         instantiation.location = peek_location();
-        auto type = take_name();
-        if (!type)
+        if (!is_identifier(peek()) && peek().kind != VerilogTokenKind::Keyword) {
+            error("ExpectedIdentifier", "expected an identifier", peek_location());
             return std::nullopt;
-        instantiation.module_type = std::move(*type);
+        }
+        instantiation.module_type = std::string(spelling(peek()));
+        advance();
         if (consume("#")) {
             if (!expect("("))
                 return std::nullopt;

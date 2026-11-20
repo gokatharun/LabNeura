@@ -13,6 +13,36 @@
 namespace labneura::eda::detail {
 namespace {
 
+bool is_builtin_primitive(std::string_view name) {
+    static constexpr std::string_view names[] = {
+        "and", "nand", "or", "nor", "xor", "xnor", "buf", "not",
+        "bufif0", "bufif1", "notif0", "notif1", "pullup", "pulldown",
+        "cmos", "rcmos", "nmos", "pmos", "rnmos", "rpmos", "tran",
+        "rtran", "tranif0", "tranif1", "rtranif0", "rtranif1"};
+    return std::find(std::begin(names), std::end(names), name) != std::end(names);
+}
+
+std::string decoded_cell_type(std::string_view name) {
+    constexpr std::string_view prefix = "__labneura_cell__";
+    if (!name.starts_with(prefix) || (name.size() - prefix.size()) % 2 != 0)
+        return std::string(name);
+    std::string result;
+    result.reserve((name.size() - prefix.size()) / 2);
+    const auto nibble = [](char value) -> int {
+        if (value >= '0' && value <= '9') return value - '0';
+        if (value >= 'a' && value <= 'f') return value - 'a' + 10;
+        if (value >= 'A' && value <= 'F') return value - 'A' + 10;
+        return -1;
+    };
+    for (size_t index = prefix.size(); index < name.size(); index += 2) {
+        const int high = nibble(name[index]);
+        const int low = nibble(name[index + 1]);
+        if (high < 0 || low < 0) return std::string(name);
+        result.push_back(static_cast<char>((high << 4) | low));
+    }
+    return result;
+}
+
 struct DeclaredShape {
     std::size_t width = 0;
     std::size_t packed_width = 0;
@@ -328,6 +358,14 @@ private:
     VerilogConstantEnvironment module_parameters(
         const VerilogModuleDeclaration& module) const {
         VerilogConstantEnvironment result;
+        // Package constants are visible through qualified names such as
+        // pkg::VALUE.  The constant evaluator normalizes that syntax to
+        // pkg.VALUE, so retain those values alongside module parameters.
+        for (const auto& [symbol, value] : context_->types->symbol_constants) {
+            if (symbol && symbol->scope &&
+                symbol->scope->kind == VerilogSemanticScopeKind::Package)
+                result.emplace(symbol->scope->name + "." + symbol->name, value);
+        }
         if (const auto* scope = semantic_scope(module.name)) {
             for (const auto& parameter : module.parameters) {
                 const auto* symbol =
@@ -361,6 +399,13 @@ private:
         }
         shape.type = infer_verilog_declared_type(
             declared_type, packed_dimensions, parameters, inferred);
+        if (shape.type.category == VerilogTypeCategory::Unknown &&
+            declared_type.empty() && packed_dimensions.empty()) {
+            shape.type.category = VerilogTypeCategory::Integral;
+            shape.type.bit_width = 1;
+            shape.type.is_signed = false;
+            shape.type.four_state = true;
+        }
         if (shape.type.category == VerilogTypeCategory::Unknown && inferred)
             shape.type = *inferred;
         if (!shape.type.bit_width || *shape.type.bit_width == 0) {
@@ -373,8 +418,16 @@ private:
 
         shape.packed_width = *shape.type.bit_width;
         if (!shape.type.packed_dimensions.empty()) {
-            shape.packed_left = shape.type.packed_dimensions.front().left;
-            shape.packed_right = shape.type.packed_dimensions.front().right;
+            if (shape.type.packed_dimensions.size() == 1) {
+                shape.packed_left = shape.type.packed_dimensions.front().left;
+                shape.packed_right = shape.type.packed_dimensions.front().right;
+            } else {
+                // The public netlist model has one packed range. Preserve the
+                // complete packed width by projecting multi-dimensional packed
+                // arrays onto the canonical flattened [width-1:0] range.
+                shape.packed_left = static_cast<int64_t>(shape.packed_width - 1);
+                shape.packed_right = 0;
+            }
         }
         shape.width = shape.packed_width;
         if (unpacked_dimensions.size() > 1) {
@@ -476,6 +529,40 @@ private:
                     if (value.value) {
                         if (const auto integer = value.value->to_int64())
                             return std::to_string(*integer);
+                    }
+                    if (index->kind == VerilogExpressionKind::MemberAccess &&
+                        index->first &&
+                        index->first->kind == VerilogExpressionKind::Identifier) {
+                        for (const auto& [symbol, constant] :
+                             context_->types->symbol_constants) {
+                            if (symbol && symbol->scope &&
+                                symbol->scope->kind ==
+                                    VerilogSemanticScopeKind::Package &&
+                                symbol->scope->name == index->first->text &&
+                                symbol->name == index->text) {
+                                if (const auto integer = constant.to_int64())
+                                    return std::to_string(*integer);
+                            }
+                        }
+                        for (const auto& package : context_->parsed.syntax.packages) {
+                            if (package.name != index->first->text)
+                                continue;
+                            VerilogConstantEnvironment package_values;
+                            for (const auto& parameter : package.parameters) {
+                                if (!parameter.value)
+                                    continue;
+                                const auto evaluated = evaluate_verilog_constant(
+                                    *parameter.value, package_values);
+                                if (!evaluated.value)
+                                    continue;
+                                package_values[parameter.name] = *evaluated.value;
+                                if (parameter.name == index->text) {
+                                    if (const auto integer =
+                                            evaluated.value->to_int64())
+                                        return std::to_string(*integer);
+                                }
+                            }
+                        }
                     }
                     return render_expression(*index, parameters,
                                              generated_scope, module_path,
@@ -672,11 +759,19 @@ private:
         std::string_view module_path, const VerilogModuleDeclaration& module) {
         if (!assignment.left || !assignment.right)
             return;
-        target.assignments_.emplace_back(
-            lower_expression(*assignment.left, parameters, types,
-                             generated_scope, module_path, module),
-            lower_expression(*assignment.right, parameters, types,
-                             generated_scope, module_path, module));
+        auto lhs = lower_expression(*assignment.left, parameters, types,
+                                    generated_scope, module_path, module);
+        auto rhs = lower_expression(*assignment.right, parameters, types,
+                                    generated_scope, module_path, module);
+        if ((rhs.get_kind() == ExpressionKind::Binary ||
+             rhs.get_kind() == ExpressionKind::Conditional) &&
+            rhs.get_source().size() >= 2 && rhs.get_source().front() == '(' &&
+            rhs.get_source().back() == ')') {
+            rhs = Expression(rhs.get_kind(), rhs.get_value(),
+                             rhs.get_source().substr(1, rhs.get_source().size() - 2),
+                             rhs.get_operands(), rhs.get_width());
+        }
+        target.assignments_.emplace_back(std::move(lhs), std::move(rhs));
     }
 
     std::map<std::string, std::string> parameter_overrides(
@@ -725,6 +820,11 @@ private:
                 pin = *connection.name;
             } else if (target && positional_index < target->ports.size()) {
                 pin = target->ports[positional_index++].name;
+            } else if (!target) {
+                pin = positional_index == 0
+                          ? "Y"
+                          : std::string(1, static_cast<char>('A' + positional_index - 1));
+                ++positional_index;
             } else {
                 diagnose("UnsupportedNativePositionalConnection",
                          "native projection cannot resolve positional port connection "
@@ -775,16 +875,19 @@ private:
             return;
         }
         const auto* child_definition = child.module_definition;
-        const auto instance_name = relative_hierarchy_path(
-            module_path, child.hierarchy_path);
+        const auto instance_name =
+            generated_scope && generated_scope->name.find('[') != std::string::npos
+                ? relative_hierarchy_path(module_path, child.hierarchy_path)
+                : child.instance_name;
         target.instances_.emplace_back(
-            instance_name, instantiation->module_type,
+            instance_name, decoded_cell_type(instantiation->module_type),
             connections(*instance, child_definition, environment,
                         generated_scope, module_path, owner),
             std::nullopt,
             parameter_overrides(*instantiation, child_definition, environment,
                                 generated_scope, module_path, owner));
-        if (child_definition)
+        if (child_definition &&
+            !instantiation->module_type.starts_with("__labneura_cell__"))
             target.child_modules_.push_back(
                 project_elaborated_module(child, instance_name));
     }
@@ -831,6 +934,14 @@ private:
         const auto* definition = instance.module_definition;
         if (!definition)
             return {};
+        for (const auto& block : definition->procedural_blocks) {
+            if (block.kind == VerilogProceduralBlockKind::Initial) {
+                diagnose("UnsupportedSimulationOnlyProcess",
+                         "procedural block 'initial' is simulation-only and is not "
+                         "retained by the native production project",
+                         block.location);
+            }
+        }
         Module result(definition->name, {}, {}, {}, {}, false,
                       std::move(hierarchy_name));
         auto types = type_environment(*definition, instance.parameters);
@@ -839,6 +950,16 @@ private:
         for (const auto& assignment : definition->assignments)
             add_assignment(result, assignment, instance.parameters, types,
                            nullptr, instance.hierarchy_path, *definition);
+        for (const auto& instantiation : definition->instantiations) {
+            if (!is_builtin_primitive(instantiation.module_type))
+                continue;
+            for (const auto& primitive : instantiation.instances) {
+                result.instances_.emplace_back(
+                    primitive.name, instantiation.module_type,
+                    connections(primitive, nullptr, instance.parameters, nullptr,
+                                instance.hierarchy_path, *definition));
+            }
+        }
         for (const auto* assignment : instance.generated_assignments) {
             if (assignment)
                 add_assignment(result, *assignment, instance.parameters, types,
@@ -875,10 +996,19 @@ private:
             definition->procedural_blocks.end(), [](const auto& block) {
                 return block.kind != VerilogProceduralBlockKind::Initial;
             });
+        result.native_context_ = context_;
         return result;
     }
 
     Module project_definition(const VerilogModuleDeclaration& definition) {
+        for (const auto& block : definition.procedural_blocks) {
+            if (block.kind == VerilogProceduralBlockKind::Initial) {
+                diagnose("UnsupportedSimulationOnlyProcess",
+                         "procedural block 'initial' is simulation-only and is not "
+                         "retained by the native production project",
+                         block.location);
+            }
+        }
         const auto parameters = module_parameters(definition);
         Module result(definition.name, {}, {}, {}, {}, false);
         auto types = type_environment(definition, parameters);
@@ -899,7 +1029,7 @@ private:
                     continue;
                 }
                 result.instances_.emplace_back(
-                    instance.name, instantiation.module_type,
+                    instance.name, decoded_cell_type(instantiation.module_type),
                     connections(instance, child_definition,
                                 parameters, nullptr, definition.name,
                                 definition),
@@ -914,6 +1044,7 @@ private:
             definition.procedural_blocks.end(), [](const auto& block) {
                 return block.kind != VerilogProceduralBlockKind::Initial;
             });
+        result.native_context_ = context_;
         return result;
     }
 

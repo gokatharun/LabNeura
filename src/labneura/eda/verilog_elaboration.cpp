@@ -13,6 +13,15 @@
 namespace labneura::eda {
 namespace {
 
+bool is_builtin_primitive(std::string_view name) {
+    static constexpr std::string_view names[] = {
+        "and", "nand", "or", "nor", "xor", "xnor", "buf", "not",
+        "bufif0", "bufif1", "notif0", "notif1", "pullup", "pulldown",
+        "cmos", "rcmos", "nmos", "pmos", "rnmos", "rpmos", "tran",
+        "rtran", "tranif0", "tranif1", "rtranif0", "rtranif1"};
+    return std::find(std::begin(names), std::end(names), name) != std::end(names);
+}
+
 struct ParameterGroup {
     std::string scope_name;
     std::vector<const VerilogParameterDeclaration*> parameters;
@@ -714,10 +723,20 @@ private:
         const VerilogConstantEnvironment& environment, std::vector<std::string>& hierarchy,
         std::unordered_set<std::string>& sibling_names) {
         if (construct.kind == VerilogGenerateKind::Region) {
-            if (construct.region_body)
-                elaborate_inline_generate_scope(*construct.region_body, parent_instance,
-                                                parent_scope, environment, hierarchy,
-                                                sibling_names);
+            if (construct.region_body) {
+                if (construct.region_body->explicitly_named) {
+                    if (reserve_generated_name(construct.region_body->name, sibling_names,
+                                               construct.region_body->location))
+                        create_generate_scope(*construct.region_body,
+                                              construct.region_body->name,
+                                              parent_instance, parent_scope,
+                                              environment, hierarchy);
+                } else {
+                    elaborate_inline_generate_scope(*construct.region_body, parent_instance,
+                                                    parent_scope, environment, hierarchy,
+                                                    sibling_names);
+                }
+            }
             return;
         }
         if (construct.kind == VerilogGenerateKind::If) {
@@ -871,6 +890,8 @@ private:
         const VerilogConstantEnvironment& environment, std::vector<std::string>& hierarchy) {
         const auto target = modules_.find(instantiation.module_type);
         if (target == modules_.end()) {
+            if (is_builtin_primitive(instantiation.module_type))
+                return;
             diagnose("MissingModuleDefinition",
                      "module definition for '" + instantiation.module_type +
                          "' is not available",

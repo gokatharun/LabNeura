@@ -182,12 +182,12 @@ void test_multiple_sources_projection_and_slang_parity() {
     try {
         (void)generic_map(projection.project, "top", {{"WIDTH", "9"}});
     } catch (const std::runtime_error& error) {
-        generic_mapping_rejected =
-            std::string_view(error.what()).find("native Project projections") !=
+        generic_mapping_rejected = std::string_view(error.what()).find(
+            "generic_map requires a native parsed Project") !=
             std::string_view::npos;
     }
     require(generic_mapping_rejected,
-            "native hierarchy was silently sent to the Slang behavioral mapper");
+            "native parameterized project was not explicitly rejected");
 
     std::weak_ptr<NativeVerilogProjectContext> retained = context;
     context.reset();
@@ -269,16 +269,9 @@ void test_behavioral_projection_is_not_sent_to_generic_synthesis() {
     require(projection.succeeded() &&
                 projection.project.get_modules().front().is_behavioral(),
             "native projection did not preserve the behavioral marker");
-    bool rejected = false;
-    try {
-        (void)generic_map(projection.project, "top");
-    } catch (const std::runtime_error& error) {
-        rejected = std::string_view(error.what()).find(
-                       "behavioral native Project projections") !=
-                   std::string_view::npos;
-    }
-    require(rejected,
-            "behavioral native RTL was silently treated as a gate-level netlist");
+    const auto mapped = generic_map(projection.project, "top");
+    require(!mapped.is_behavioral() && !mapped.get_instances().empty(),
+            "supported behavioral native RTL was not lowered to generic cells");
 }
 
 } // namespace
