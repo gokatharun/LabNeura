@@ -1,10 +1,12 @@
 #include "labneura/eda/verilog_lexer.h"
 
-#include <slang/diagnostics/Diagnostics.h>
-#include <slang/parsing/Lexer.h>
-#include <slang/parsing/LexerFacts.h>
-#include <slang/text/SourceManager.h>
-#include <slang/util/BumpAllocator.h>
+#if defined(LABNEURA_ENABLE_SLANG_LEXER_ORACLE)
+#    include <slang/diagnostics/Diagnostics.h>
+#    include <slang/parsing/Lexer.h>
+#    include <slang/parsing/LexerFacts.h>
+#    include <slang/text/SourceManager.h>
+#    include <slang/util/BumpAllocator.h>
+#endif
 
 #include "labneura/eda/verilog_byte_classifier.h"
 
@@ -655,6 +657,7 @@ void test_backend_environment_selection() {
     restore();
 }
 
+#if defined(LABNEURA_ENABLE_SLANG_LEXER_ORACLE)
 void test_differential_against_slang() {
     const std::string source = read_corpus();
     auto scalar = labneura::eda::lex_verilog(
@@ -758,6 +761,7 @@ void test_keyword_tables_against_slang() {
         }
     }
 }
+#endif
 
 } // namespace
 
@@ -788,8 +792,10 @@ int main(int argc, char** argv) {
         test_classification_scanner();
         test_lexer_backend_equivalence();
         test_backend_environment_selection();
+#if defined(LABNEURA_ENABLE_SLANG_LEXER_ORACLE)
         test_differential_against_slang();
         test_keyword_tables_against_slang();
+#endif
         std::cout << "Verilog lexer tests passed\n";
         return 0;
     }

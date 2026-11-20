@@ -131,6 +131,12 @@ jobs:
             linux_arch: ""
             python_group: cp312-cp313
             cibw_build: cp312-* cp313-*
+          - os: windows-2022
+            platform: windows-amd64
+            arch: AMD64
+            linux_arch: ""
+            python_group: cp311
+            cibw_build: cp311-*
 
     steps:
       - name: Checkout repository
@@ -140,6 +146,12 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
+      - name: Enable MSVC Release toolchain
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
 
       - name: Set package version from release tag
         if: github.event_name == 'release'
@@ -155,10 +167,12 @@ jobs:
           python -m pip install build cibuildwheel==2.22.0 scikit-build-core pybind11 wheel 'setuptools>=61' pytest packaging
 
       - name: Build Tensor wheels for supported CPython versions
+        shell: bash
         env:
           CIBW_BUILD: ${{ matrix.cibw_build }}
           CIBW_ARCHS_LINUX: ${{ matrix.linux_arch }}
           CIBW_ARCHS_MACOS: ${{ matrix.arch }}
+          CIBW_ARCHS_WINDOWS: ${{ matrix.arch }}
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
           CIBW_MANYLINUX_AARCH64_IMAGE: manylinux_2_28
           CIBW_ENVIRONMENT_MACOS: MACOSX_DEPLOYMENT_TARGET=11.0
@@ -169,10 +183,12 @@ jobs:
           python -m cibuildwheel packaging/tensor --output-dir "$WHEELHOUSE/tensor"
 
       - name: Build EDA wheels for supported CPython versions
+        shell: bash
         env:
           CIBW_BUILD: ${{ matrix.cibw_build }}
           CIBW_ARCHS_LINUX: ${{ matrix.linux_arch }}
           CIBW_ARCHS_MACOS: ${{ matrix.arch }}
+          CIBW_ARCHS_WINDOWS: ${{ matrix.arch }}
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
           CIBW_MANYLINUX_AARCH64_IMAGE: manylinux_2_28
           CIBW_ENVIRONMENT_MACOS: MACOSX_DEPLOYMENT_TARGET=11.0
@@ -183,6 +199,7 @@ jobs:
           python -m cibuildwheel packaging/eda --output-dir "$WHEELHOUSE/eda"
 
       - name: Validate native wheel versions
+        shell: bash
         env:
           WHEELHOUSE: ${{ runner.temp }}/wheelhouse
         run: |
@@ -302,6 +319,138 @@ jobs:
           path: ${{ runner.temp }}/pure-wheelhouse/
           if-no-files-found: error
 
+  build-source-distribution:
+    name: Build and qualify native EDA source distribution
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Set package version from release tag
+        if: github.event_name == 'release'
+        run: python scripts/update_version.py --version "${GITHUB_REF_NAME#v}"
+
+      - name: Validate package version declarations
+        if: github.event_name == 'workflow_dispatch'
+        run: python scripts/update_version.py --check
+
+      - name: Install source build tools
+        run: python -m pip install --upgrade pip build scikit-build-core pybind11 wheel twine
+
+      - name: Build self-contained EDA sdist
+        run: python scripts/build_eda_sdist.py --outdir "$RUNNER_TEMP/sdist"
+
+      - name: Audit and rebuild EDA sdist
+        env:
+          CMAKE_BUILD_PARALLEL_LEVEL: '2'
+          CMAKE_ARGS: >-
+            -DLABNEURA_ENABLE_SLANG_VALIDATION=OFF
+            -DFETCHCONTENT_FULLY_DISCONNECTED=ON
+        run: |
+          python - "$RUNNER_TEMP/sdist" <<'PY'
+          import sys, tarfile
+          from pathlib import Path
+
+          dist = Path(sys.argv[1])
+          archives = list(dist.glob("labneura_eda-*.tar.gz"))
+          if len(archives) != 1:
+              raise SystemExit(f"expected one EDA sdist, found {archives}")
+          with tarfile.open(archives[0], "r:gz") as archive:
+              names = archive.getnames()
+          required = ("/CMakeLists.txt", "/python/eda_module.cpp", "/src/labneura/eda/")
+          missing = [item for item in required if not any(item in name for name in names)]
+          if missing:
+              raise SystemExit(f"EDA sdist is incomplete; missing {missing}")
+          slang = [name for name in names if "slang" in name.lower()]
+          if slang:
+              raise SystemExit(f"EDA sdist bundles Slang content: {slang}")
+          binaries = [
+              name for name in names
+              if Path(name).suffix.lower() in {".so", ".dylib", ".dll", ".pyd", ".a", ".o"}
+          ]
+          if binaries:
+              raise SystemExit(f"EDA sdist bundles compiled binaries: {binaries}")
+          PY
+          mkdir -p "$RUNNER_TEMP/sdist-source" "$RUNNER_TEMP/sdist-rebuilt"
+          tar -xzf "$RUNNER_TEMP"/sdist/labneura_eda-*.tar.gz -C "$RUNNER_TEMP/sdist-source"
+          SDIST_ROOT=$(find "$RUNNER_TEMP/sdist-source" -mindepth 1 -maxdepth 1 -type d -print -quit)
+          python -m build --wheel --no-isolation --outdir "$RUNNER_TEMP/sdist-rebuilt" "$SDIST_ROOT"
+          python -m twine check "$RUNNER_TEMP"/sdist/labneura_eda-*.tar.gz
+          test "$(find "$RUNNER_TEMP/sdist-rebuilt" -name 'labneura_eda-*.whl' | wc -l)" -eq 1
+
+      - name: Upload qualified EDA sdist
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-distributions
+          path: ${{ runner.temp }}/sdist/labneura_eda-*.tar.gz
+          if-no-files-found: error
+          retention-days: 30
+
+  native-release-tests:
+    name: Native EDA release tests (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: linux-x86_64
+          - os: macos-latest
+            platform: macos-arm64
+          - os: windows-2022
+            platform: windows-amd64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Enable MSVC Release toolchain
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Configure, build, and test EDA-only on Linux and macOS
+        if: runner.os != 'Windows'
+        run: |
+          cmake -S . -B build/eda-release-native \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTING=ON \
+            -DLABNEURA_BUILD_ACCEL_CORE=OFF \
+            -DLABNEURA_BUILD_TENSOR=OFF \
+            -DLABNEURA_BUILD_COMPAT=OFF \
+            -DLABNEURA_BUILD_EDA=ON \
+            -DLABNEURA_ENABLE_SLANG_VALIDATION=OFF \
+            -DFETCHCONTENT_FULLY_DISCONNECTED=ON
+          cmake --build build/eda-release-native --parallel 2
+          ctest --test-dir build/eda-release-native --output-on-failure --no-tests=error
+
+      - name: Configure, build, and strictly test EDA-only on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cmake -S . -B build/eda-release-native `
+            -A x64 `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DBUILD_TESTING=ON `
+            -DLABNEURA_BUILD_ACCEL_CORE=OFF `
+            -DLABNEURA_BUILD_TENSOR=OFF `
+            -DLABNEURA_BUILD_COMPAT=OFF `
+            -DLABNEURA_BUILD_EDA=ON `
+            -DLABNEURA_ENABLE_SLANG_VALIDATION=OFF `
+            -DFETCHCONTENT_FULLY_DISCONNECTED=ON
+          cmake --build build/eda-release-native --config Release --parallel 2
+          $ctestOutput = ctest --test-dir build/eda-release-native -C Release `
+            --output-on-failure --no-tests=error 2>&1
+          $ctestOutput | Write-Host
+          if ($LASTEXITCODE -ne 0) { throw "Windows EDA-only CTest failed" }
+          if ($ctestOutput -match "(?im)Not Run|\*\*\*Skipped") {
+            throw "Windows EDA-only CTest contains a missing executable or skip"
+          }
+
   verify-platform-wheels:
     name: Verify wheels (${{ matrix.platform }})
     runs-on: ${{ matrix.os }}
@@ -318,6 +467,8 @@ jobs:
             platform: macos-intel
           - os: macos-latest
             platform: macos-arm64
+          - os: windows-2022
+            platform: windows-amd64
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -338,6 +489,12 @@ jobs:
       - name: Install wheel verification dependency
         run: python -m pip install packaging
 
+      - name: Enable MSVC dependency inspection
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
       - name: Download platform wheels
         uses: actions/download-artifact@v4
         with:
@@ -352,6 +509,7 @@ jobs:
           path: ${{ runner.temp }}/verify-wheelhouse
 
       - name: Verify complete platform wheel set
+        shell: bash
         env:
           WHEELHOUSE: ${{ runner.temp }}/wheelhouse
           VERIFY_WHEELHOUSE: ${{ runner.temp }}/verify-wheelhouse
@@ -423,6 +581,35 @@ jobs:
           python scripts/verify_wheel_matrix.py "$VERIFY_WHEELHOUSE" \
             --version "$version" --workdir "$MATRIX_WORKDIR"
 
+      - name: Run installed native EDA contract on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $wheelhouse = "$env:RUNNER_TEMP\verify-wheelhouse"
+          $wheelPair = "$env:RUNNER_TEMP\windows-core-eda-pair"
+          New-Item -ItemType Directory -Force $wheelPair | Out-Null
+          Copy-Item "$wheelhouse\labneura_core-*.whl" $wheelPair
+          Copy-Item "$wheelhouse\labneura_eda-*.whl" $wheelPair
+          $version = python scripts/update_version.py --get-version
+          python scripts/verify_windows_wheels.py `
+            $wheelPair `
+            --version $version `
+            --extract-dir "$env:RUNNER_TEMP\windows-eda-inspect"
+          $venvPython = (Get-ChildItem "$env:RUNNER_TEMP\labneura-release-wheel-matrix\W3\Scripts\python.exe").FullName
+          $qualification = "$env:RUNNER_TEMP\windows-eda-contract"
+          New-Item -ItemType Directory -Force $qualification | Out-Null
+          Copy-Item tests/test_eda_native_contract.py "$qualification\test_eda_native_contract.py"
+          & $venvPython -m pip install pytest
+          $env:PYTHONNOUSERSITE = "1"
+          Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue
+          Push-Location $qualification
+          try {
+            & $venvPython -m pytest -q -o addopts= test_eda_native_contract.py
+            if ($LASTEXITCODE -ne 0) { throw "Windows installed EDA contract failed" }
+          } finally {
+            Pop-Location
+          }
+
       - name: Upload verified packages
         uses: actions/upload-artifact@v4
         with:
@@ -430,12 +617,12 @@ jobs:
           path: ${{ runner.temp }}/wheelhouse/
           if-no-files-found: error
 
-  publish:
-    name: Publish distributions
+  release-qualification:
+    name: Assemble qualified release artifacts
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    needs: verify-platform-wheels
+    needs: [verify-platform-wheels, build-source-distribution, native-release-tests]
     steps:
       - name: Checkout default branch
         uses: actions/checkout@v4
@@ -449,6 +636,12 @@ jobs:
           path: ${{ runner.temp }}/labneura-release-dist
           merge-multiple: true
           if-no-artifact-found: ignore
+
+      - name: Download qualified source distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: source-distributions
+          path: ${{ runner.temp }}/labneura-release-dist
 
       - name: Install publishing tools
         run: python -m pip install --upgrade twine
@@ -536,22 +729,26 @@ jobs:
 
           python_tags = {f"cp{version}" for version in (38, 39, 310, 311, 312, 313)}
           platform_families = {
-              "linux-x86_64": lambda platform: platform.endswith("_x86_64") and
-                  (platform.startswith("manylinux") or platform.startswith("musllinux")),
-              "linux-aarch64": lambda platform: platform.endswith("_aarch64") and
-                  (platform.startswith("manylinux") or platform.startswith("musllinux")),
-              "macos-x86_64": lambda platform: platform.startswith("macosx_") and
-                  platform.endswith("_x86_64"),
-              "macos-arm64": lambda platform: platform.startswith("macosx_") and
-                  platform.endswith("_arm64"),
+              "linux-x86_64": (python_tags, lambda platform:
+                  platform.endswith("_x86_64") and
+                  (platform.startswith("manylinux") or platform.startswith("musllinux"))),
+              "linux-aarch64": (python_tags, lambda platform:
+                  platform.endswith("_aarch64") and
+                  (platform.startswith("manylinux") or platform.startswith("musllinux"))),
+              "macos-x86_64": (python_tags, lambda platform:
+                  platform.startswith("macosx_") and platform.endswith("_x86_64")),
+              "macos-arm64": (python_tags, lambda platform:
+                  platform.startswith("macosx_") and platform.endswith("_arm64")),
+              "windows-amd64": ({"cp311"}, lambda platform:
+                  platform == "win_amd64"),
           }
           for name in ("labneura-tensor", "labneura-eda"):
               tags = {
                   tag for _, _, wheel_tags in distributions[name]
                   for tag in wheel_tags
               }
-              for python_tag in python_tags:
-                  for family, matches in platform_families.items():
+              for family, (required_python_tags, matches) in platform_families.items():
+                  for python_tag in required_python_tags:
                       if not any(
                           tag.interpreter == python_tag and matches(tag.platform)
                           for tag in tags
@@ -565,7 +762,7 @@ jobs:
           print(f"Collected {sum(map(len, distributions.values()))} wheels")
           PY
           python -m pip install --upgrade twine
-          python -m twine check "$WHEEL_DIST"/*.whl
+          python -m twine check "$WHEEL_DIST"/*.whl "$WHEEL_DIST"/*.tar.gz
           {
             echo "### Distributions queued for publishing"
             for distribution in "$WHEEL_DIST"/*.whl; do
@@ -573,60 +770,10 @@ jobs:
             done
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Commit wheels to the repository
-        if: github.event_name == 'release'
-        env:
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-          WHEEL_DIST: ${{ runner.temp }}/labneura-release-dist
-        shell: bash
-        run: |
-          destination="release-artifacts/$LABNEURA_WHEEL_VERSION/dist"
-          mkdir -p "$destination"
-          for wheel in "$WHEEL_DIST"/*.whl; do
-            target="$destination/$(basename "$wheel")"
-            if [[ -e "$target" ]]; then
-              if ! cmp -s "$wheel" "$target"; then
-                echo "Refusing to replace different archived wheel: $target" >&2
-                exit 1
-              fi
-            else
-              cp "$wheel" "$target"
-            fi
-          done
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add "$destination"
-          if ! git diff --cached --quiet; then
-            git commit -m "chore: archive wheels for $LABNEURA_WHEEL_VERSION"
-            git push origin "HEAD:$DEFAULT_BRANCH"
-          fi
-
-      - name: Attach wheels to the GitHub Release
-        if: github.event_name == 'release'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          WHEEL_DIST: ${{ runner.temp }}/labneura-release-dist
-        run: gh release upload "$GITHUB_REF_NAME" "$WHEEL_DIST"/*.whl --clobber
-
-      - name: Publish to PyPI
-        if: github.event_name == 'release'
-        env:
-          TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
-          WHEEL_DIST: ${{ runner.temp }}/labneura-release-dist
-        run: |
-          if [[ -z "$TWINE_PASSWORD" ]]; then
-            echo "PYPI_API_TOKEN is not configured for this repository." >&2
-            exit 1
-          fi
-          python -m twine upload --non-interactive --skip-existing "$WHEEL_DIST"/*
-
-      - name: Publish to TestPyPI (manual dispatch)
-        if: github.event_name == 'workflow_dispatch'
-        env:
-          TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.TEST_PYPI_API_TOKEN }}
-          WHEEL_DIST: ${{ runner.temp }}/labneura-release-dist
-        run: |
-          python -m twine upload --repository testpypi --non-interactive "$WHEEL_DIST"/*
+      - name: Retain exact qualified release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: qualified-release-artifacts
+          path: ${{ runner.temp }}/labneura-release-dist/*
+          if-no-files-found: error
+          retention-days: 30

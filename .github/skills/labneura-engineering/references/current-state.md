@@ -1,8 +1,23 @@
 # LabNeura Current Project State
 
-Last verified: 2026-11-19. Treat this as a continuity reference, not a
+Last verified: 2026-11-20. Treat this as a continuity reference, not a
 substitute for inspecting the current source, tests, worktree, and benchmark
 artifacts.
+
+## Windows release qualification (M7.20.2)
+
+CI and release workflows now define a CPython 3.11 Windows AMD64 wheel lane for
+the split native Tensor and EDA distributions, paired with the platform-neutral
+core wheel. Qualification installs the exact wheels into isolated environments,
+runs the native EDA contract and split-extension tests outside the checkout,
+checks wheel tags, versions, dependencies and PE imports, and rejects Slang or
+bundled DLLs. Windows EDA-only CTest treats missing tests and skips as failures.
+The release gate also requires Linux, macOS and Windows native EDA tests, all
+platform wheel matrices, and a self-contained EDA sdist that successfully
+rebuilds a wheel. Qualified artifacts are retained without PyPI publication.
+Local macOS validation proved that the staged EDA sdist rebuilds a native wheel;
+actual Windows wheel filenames, MSVC runtime results and PE dependencies remain
+pending the first GitHub Actions execution of these workflow changes.
 
 ## Native-first production frontend (M7.19)
 

@@ -143,46 +143,16 @@ if(LABNEURA_BUILD_EDA)
   set(LABNEURA_EDA_DEFAULT_LIBERTY
     "${CMAKE_SOURCE_DIR}/assets/sky130_fd_sc_hd__tt_025C_1v80.lib"
   )
-  file(READ "${LABNEURA_EDA_DEFAULT_LIBERTY}" LABNEURA_EDA_LIBERTY_SOURCE)
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${LABNEURA_EDA_DEFAULT_LIBERTY}"
     "${CMAKE_SOURCE_DIR}/src/labneura/eda/parser/liberty/default_cell_library.h.in"
+    "${CMAKE_SOURCE_DIR}/cmake/GenerateEmbeddedLiberty.cmake"
   )
-
-  # Keep each C++ string literal below the minimum supported compiler limit.
-  string(LENGTH "${LABNEURA_EDA_LIBERTY_SOURCE}" LABNEURA_EDA_LIBERTY_LENGTH)
-  set(LABNEURA_EDA_LIBERTY_CHUNKS "")
-  set(LABNEURA_EDA_LIBERTY_OFFSET 0)
-  set(LABNEURA_EDA_LIBERTY_CHUNK_SIZE 60000)
-  while(LABNEURA_EDA_LIBERTY_OFFSET LESS LABNEURA_EDA_LIBERTY_LENGTH)
-    math(EXPR LABNEURA_EDA_LIBERTY_REMAINING
-      "${LABNEURA_EDA_LIBERTY_LENGTH} - ${LABNEURA_EDA_LIBERTY_OFFSET}"
-    )
-    if(LABNEURA_EDA_LIBERTY_REMAINING LESS LABNEURA_EDA_LIBERTY_CHUNK_SIZE)
-      set(LABNEURA_EDA_LIBERTY_CHUNK_SIZE
-        "${LABNEURA_EDA_LIBERTY_REMAINING}"
-      )
-    endif()
-    string(SUBSTRING "${LABNEURA_EDA_LIBERTY_SOURCE}"
-      "${LABNEURA_EDA_LIBERTY_OFFSET}"
-      "${LABNEURA_EDA_LIBERTY_CHUNK_SIZE}"
-      LABNEURA_EDA_LIBERTY_CHUNK
-    )
-    string(APPEND LABNEURA_EDA_LIBERTY_CHUNKS
-      "    R\"LABNEURA_CHUNK(${LABNEURA_EDA_LIBERTY_CHUNK})LABNEURA_CHUNK\",\n"
-    )
-    math(EXPR LABNEURA_EDA_LIBERTY_OFFSET
-      "${LABNEURA_EDA_LIBERTY_OFFSET} + ${LABNEURA_EDA_LIBERTY_CHUNK_SIZE}"
-    )
-    set(LABNEURA_EDA_LIBERTY_CHUNK_SIZE 60000)
-  endwhile()
-
-  file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/generated/labneura/eda")
-  configure_file(
+  include("${CMAKE_SOURCE_DIR}/cmake/GenerateEmbeddedLiberty.cmake")
+  labneura_generate_embedded_liberty(
+    "${LABNEURA_EDA_DEFAULT_LIBERTY}"
     "${CMAKE_SOURCE_DIR}/src/labneura/eda/parser/liberty/default_cell_library.h.in"
-    "${CMAKE_CURRENT_BINARY_DIR}/generated/labneura/eda/default_cell_library.h"
-    @ONLY
-  )
+    "${CMAKE_CURRENT_BINARY_DIR}/generated/labneura/eda/default_cell_library.h")
 endif()
 
 # ======================================
@@ -1005,7 +975,7 @@ if(NOT SKBUILD AND LABNEURA_BUILD_COMPAT)
 endif()
 
 if(LABNEURA_BUILD_EDA AND NOT SKBUILD)
-  if(BUILD_TESTING AND LABNEURA_ENABLE_SLANG_VALIDATION)
+  if(BUILD_TESTING)
     add_executable(labneura_eda_verilog_lexer_test
       tests/eda_verilog_lexer_test.cpp
     )
@@ -1014,8 +984,15 @@ if(LABNEURA_BUILD_EDA AND NOT SKBUILD)
     )
     target_link_libraries(labneura_eda_verilog_lexer_test PRIVATE
       labneura_eda
-      slang::slang
     )
+    if(LABNEURA_ENABLE_SLANG_VALIDATION)
+      target_compile_definitions(labneura_eda_verilog_lexer_test PRIVATE
+        LABNEURA_ENABLE_SLANG_LEXER_ORACLE=1
+      )
+      target_link_libraries(labneura_eda_verilog_lexer_test PRIVATE
+        slang::slang
+      )
+    endif()
     target_include_directories(labneura_eda_verilog_lexer_test PRIVATE
       ${CMAKE_CURRENT_SOURCE_DIR}/src
     )
@@ -1028,6 +1005,10 @@ if(LABNEURA_BUILD_EDA AND NOT SKBUILD)
       eda_verilog_lexer_avx2
       PROPERTIES SKIP_RETURN_CODE 77
     )
+
+  endif()
+
+  if(BUILD_TESTING AND LABNEURA_ENABLE_SLANG_VALIDATION)
 
     add_executable(labneura_eda_verilog_preprocessor_test
       tests/eda_verilog_preprocessor_test.cpp

@@ -112,7 +112,25 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/eda-dist"
           python -m build --wheel --no-isolation --outdir "$RUNNER_TEMP/eda-dist" packaging/core
-          python -m build --wheel --sdist --outdir "$RUNNER_TEMP/eda-dist" packaging/eda
+          python -m build --wheel --no-isolation --outdir "$RUNNER_TEMP/eda-dist" packaging/eda
+          python scripts/build_eda_sdist.py --outdir "$RUNNER_TEMP/eda-dist"
+      - name: Prove EDA sdist is self-contained and buildable
+        env:
+          CMAKE_BUILD_PARALLEL_LEVEL: '2'
+          CMAKE_ARGS: >-
+            -DLABNEURA_ENABLE_SLANG_VALIDATION=OFF
+            -DFETCHCONTENT_FULLY_DISCONNECTED=ON
+        run: |
+          mkdir -p "$RUNNER_TEMP/eda-sdist-source" "$RUNNER_TEMP/eda-sdist-wheel"
+          tar -xzf "$RUNNER_TEMP"/eda-dist/labneura_eda-*.tar.gz \
+            -C "$RUNNER_TEMP/eda-sdist-source"
+          SDIST_ROOT=$(find "$RUNNER_TEMP/eda-sdist-source" -mindepth 1 -maxdepth 1 -type d -print -quit)
+          test -f "$SDIST_ROOT/CMakeLists.txt"
+          test -f "$SDIST_ROOT/python/eda_module.cpp"
+          test -d "$SDIST_ROOT/src/labneura/eda"
+          python -m build --wheel --no-isolation \
+            --outdir "$RUNNER_TEMP/eda-sdist-wheel" "$SDIST_ROOT"
+          test "$(find "$RUNNER_TEMP/eda-sdist-wheel" -name 'labneura_eda-*.whl' | wc -l)" -eq 1
       - name: Reject bundled Slang and inspect extension linkage
         run: |
           python - "$RUNNER_TEMP/eda-dist" <<'PY'
@@ -200,8 +218,14 @@ jobs:
             -DLABNEURA_ENABLE_SLANG_VALIDATION=OFF `
             -DFETCHCONTENT_FULLY_DISCONNECTED=ON
           cmake --build build/eda-windows --config Release --parallel 2
-          ctest --test-dir build/eda-windows -C Release --output-on-failure --no-tests=error
-      - name: Build Slang-free EDA wheel
+          $ctestOutput = ctest --test-dir build/eda-windows -C Release `
+            --output-on-failure --no-tests=error 2>&1
+          $ctestOutput | Write-Host
+          if ($LASTEXITCODE -ne 0) { throw "Windows EDA-only CTest failed" }
+          if ($ctestOutput -match "(?im)Not Run|\*\*\*Skipped") {
+            throw "Windows EDA-only CTest contains a missing executable or skip"
+          }
+      - name: Build Slang-free core and EDA wheels
         shell: pwsh
         env:
           CMAKE_BUILD_PARALLEL_LEVEL: '2'
@@ -212,36 +236,63 @@ jobs:
           New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\eda-dist" | Out-Null
           python -m build --wheel --no-isolation --outdir "$env:RUNNER_TEMP\eda-dist" packaging/core
           python -m build --wheel --no-isolation --outdir "$env:RUNNER_TEMP\eda-dist" packaging/eda
-      - name: Inspect wheel and extension dependencies
+      - name: Validate wheel tags, metadata, contents, and extension dependencies
+        id: windows-wheel-audit
         shell: pwsh
         run: |
-          @'
-          import os, zipfile
-          from pathlib import Path
-          dist = Path(os.environ["RUNNER_TEMP"]) / "eda-dist"
-          wheel, = dist.glob("labneura_eda-*.whl")
-          with zipfile.ZipFile(wheel) as archive:
-              bad = [name for name in archive.namelist() if "slang" in name.lower()]
-              if bad:
-                  raise SystemExit(f"Slang bundled in {wheel}: {bad}")
-              archive.extractall(Path(os.environ["RUNNER_TEMP"]) / "eda-unpacked")
-          '@ | python -
-          $extension = Get-ChildItem "$env:RUNNER_TEMP\eda-unpacked" -Recurse -Filter "*_eda*.pyd" | Select-Object -First 1
-          if (-not $extension) { throw "EDA extension was not found in wheel" }
-          $dependencies = dumpbin /dependents $extension.FullName
+          $version = python scripts/update_version.py --get-version
+          python scripts/verify_windows_wheels.py `
+            "$env:RUNNER_TEMP\eda-dist" `
+            --version $version `
+            --extract-dir "$env:RUNNER_TEMP\eda-unpacked" `
+            --github-output $env:GITHUB_OUTPUT
+          $dependencies = dumpbin /dependents "${{ steps.windows-wheel-audit.outputs.extension }}"
           $dependencies
           if ($dependencies -match "(?i)slang") { throw "EDA extension links Slang" }
+          if ($dependencies -match "(?i)Error opening file") {
+            throw "dumpbin could not resolve an EDA extension dependency"
+          }
       - name: Clean wheel install and native contract tests
         shell: pwsh
         run: |
           python -m venv "$env:RUNNER_TEMP\eda-venv"
-          & "$env:RUNNER_TEMP\eda-venv\Scripts\python.exe" -m pip install --no-index (Get-ChildItem "$env:RUNNER_TEMP\eda-dist\*.whl").FullName
-          & "$env:RUNNER_TEMP\eda-venv\Scripts\python.exe" -m pip install pytest
+          $venvPython = "$env:RUNNER_TEMP\eda-venv\Scripts\python.exe"
+          $coreWheel = (Get-ChildItem "$env:RUNNER_TEMP\eda-dist\labneura_core-*.whl").FullName
+          $edaWheel = (Get-ChildItem "$env:RUNNER_TEMP\eda-dist\labneura_eda-*.whl").FullName
+          & $venvPython -m pip install --no-index --no-deps $coreWheel $edaWheel
+          if ($LASTEXITCODE -ne 0) { throw "Exact Windows wheel installation failed" }
+          & $venvPython -m pip check
+          if ($LASTEXITCODE -ne 0) { throw "Installed Windows wheel metadata is inconsistent" }
+          & $venvPython -m pip install pytest
+          $qualification = "$env:RUNNER_TEMP\eda-qualification"
+          New-Item -ItemType Directory -Force "$qualification\tests\python_packaging" | Out-Null
+          New-Item -ItemType Directory -Force "$qualification\packaging\core\src\labneura" | Out-Null
+          Copy-Item tests/test_eda_native_contract.py "$qualification\tests\test_eda_native_contract.py"
+          Copy-Item tests/python_packaging/test_eda_extension.py "$qualification\tests\python_packaging\test_eda_extension.py"
+          Copy-Item packaging/core/src/labneura/__init__.py "$qualification\packaging\core\src\labneura\__init__.py"
           $sitePackages = & "$env:RUNNER_TEMP\eda-venv\Scripts\python.exe" -c "import site; print(site.getsitepackages()[0])"
           $extension = Get-ChildItem $sitePackages -Recurse -Filter "*_eda*.pyd" | Select-Object -First 1
           if (-not $extension) { throw "Installed EDA extension was not found" }
           $env:LABNEURA_EDA_EXTENSION = $extension.FullName
-          & "$env:RUNNER_TEMP\eda-venv\Scripts\python.exe" -m pytest -q -o addopts= tests/test_eda_native_contract.py tests/python_packaging/test_eda_extension.py
+          $env:PYTHONNOUSERSITE = "1"
+          Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue
+          Push-Location $qualification
+          try {
+            & $venvPython -m pytest -q -o addopts= `
+              tests/test_eda_native_contract.py `
+              tests/python_packaging/test_eda_extension.py
+            if ($LASTEXITCODE -ne 0) { throw "Installed Windows EDA contract tests failed" }
+          } finally {
+            Pop-Location
+          }
+      - name: Upload qualified Windows AMD64 wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: qualified-windows-amd64-cp311-wheels
+          path: ${{ runner.temp }}/eda-dist/*.whl
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
 
   gcc-source-build:
     name: Source build (GCC 13)

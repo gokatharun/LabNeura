@@ -7,8 +7,11 @@ Use this checklist for every feature and every backend implementation.
 - [x] Production EDA builds without Slang, Tensor, or Acceleration Core.
 - [x] Native parse/project/lowering paths are production defaults.
 - [x] CI wheel/sdist artifact audit and clean install without Slang are
-  implemented for Linux, with Windows x86_64 wheel inspection and clean-install
-  validation added in M7.20; remote execution remains pending.
+  implemented for Linux. CPython 3.11 Windows AMD64 core/EDA wheel generation,
+  exact-wheel runtime qualification, PE inspection, strict MSVC CTest, immutable
+  artifacts and release gates are implemented in M7.20.2; Windows execution
+  remains pending. The EDA sdist is staged with native sources and must rebuild
+  a wheel before release qualification.
 - Unsupported SystemVerilog, AST JSON parity, instance arrays, and unsupported
   lowering forms diagnose explicitly; external Slang is validation-only.
 

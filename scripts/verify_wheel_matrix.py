@@ -231,6 +231,14 @@ def inspect_native_dependencies(name, wheel, archive_path, wheelhouse):
         dynamic = run(["readelf", "-d", binary]).stdout
         if any(token in dynamic for token in ("/home/runner/work", str(Path.cwd()), "/tmp/")):
             raise AssertionError(f"{name} contains a build-machine RPATH/RUNPATH")
+    elif sys.platform == "win32":
+        dependencies = run(["dumpbin", "/dependents", binary]).stdout
+        if "slang" in dependencies.lower():
+            raise AssertionError(f"{name} links Slang:\n{dependencies}")
+        if "error opening file" in dependencies.lower():
+            raise AssertionError(
+                f"{name} has an unavailable Windows runtime dependency:\n{dependencies}"
+            )
     print(f"RUNTIME PASS {name}: native dependencies resolved on {platform.platform()}")
 
 

@@ -1,12 +1,14 @@
 #ifndef LABNEURA_EDA_DEFAULT_CELL_LIBRARY_H
 #define LABNEURA_EDA_DEFAULT_CELL_LIBRARY_H
 
+#include <array>
 #include <string>
 #include <string_view>
 
 namespace labneura::eda::detail {
 
-inline const std::string_view bundled_liberty_chunks[] = {
+inline constexpr std::array<std::string_view, @LABNEURA_EDA_LIBERTY_CHUNK_COUNT@>
+    bundled_liberty_chunks = {
 @LABNEURA_EDA_LIBERTY_CHUNKS@};
 
 inline std::string get_bundled_liberty() {
