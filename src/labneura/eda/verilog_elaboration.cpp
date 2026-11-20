@@ -48,13 +48,47 @@ public:
                      syntax_.location);
             return std::move(result_);
         }
+        prepare_top_parameter_overrides();
+        if (!result_.diagnostics.empty())
+            return std::move(result_);
         std::vector<std::string> hierarchy;
         result_.top = elaborate_instance(top_name, found->second, found->second->location, nullptr,
-                                         {}, nullptr, hierarchy, top_name);
+                                         {}, &top_parameter_overrides_, hierarchy, top_name);
         return std::move(result_);
     }
 
 private:
+    void prepare_top_parameter_overrides() {
+        for (const auto& [name, expression] : options_.top_parameter_overrides) {
+            const std::string source =
+                "module __labneura_top_override; parameter " + name + " = (" +
+                expression + "); endmodule";
+            auto parsed = parse_verilog_syntax(
+                source, {}, {}, "<top-parameter-override>");
+            if (parsed.has_errors() || parsed.syntax.modules.size() != 1 ||
+                parsed.syntax.modules.front().parameters.size() != 1) {
+                for (const auto& diagnostic : parsed.diagnostics) {
+                    if (diagnostic.severity ==
+                        VerilogSyntaxDiagnosticSeverity::Error) {
+                        diagnose("InvalidTopParameterOverride",
+                                 "invalid top parameter override '" + name +
+                                     "': " + diagnostic.message,
+                                 diagnostic.location);
+                    }
+                }
+                if (!parsed.has_errors())
+                    diagnose("InvalidTopParameterOverride",
+                             "top parameter override must contain one constant expression",
+                             syntax_.location);
+                continue;
+            }
+            auto override =
+                std::move(parsed.syntax.modules.front().parameters.front());
+            override.named_override = true;
+            top_parameter_overrides_.push_back(std::move(override));
+        }
+    }
+
     void diagnose(std::string code, std::string message, const VerilogSyntaxLocation& location,
                   std::optional<VerilogSyntaxLocation> related = std::nullopt) {
         result_.diagnostics.push_back(
@@ -915,6 +949,7 @@ private:
     std::unordered_map<std::string, const VerilogModuleDeclaration*> modules_;
     std::unordered_map<std::string, const VerilogPackageDeclaration*> packages_;
     VerilogConstantEnvironment package_values_;
+    std::vector<VerilogParameterDeclaration> top_parameter_overrides_;
 };
 
 } // namespace

@@ -6,18 +6,17 @@ imply that every production-EDA optimization is implemented.
 
 ## A. Parsing and elaboration
 
-### Full Verilog parser
+### Native Verilog parser
 
-The full parser delegates language grammar, type checking, hierarchy, and
-elaboration to slang rather than trying to parse Verilog with regular
-expressions.
+Production parsing uses the native lexer, preprocessor, syntax, semantic, type,
+elaboration, and project-projection pipeline. Unsupported constructs diagnose
+explicitly; Slang is optional differential-validation infrastructure only.
 
 ```text
 parse_verilog(file):
     choose language mode from file extension (.v or .sv)
-    configure slang with file and include directory
-    parse syntax trees; report errors
-    elaborate and type-check compilation; report errors
+    preprocess and parse native syntax; report errors
+    elaborate and type-check native compilation; report errors
     find the unique non-library top module
     summarize top ports, nets, instances, assignments, and process presence
     return Module summary

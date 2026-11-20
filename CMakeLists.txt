@@ -27,8 +27,14 @@ option(
 
 option(
   LABNEURA_BUILD_EDA
-  "Build the EDA component and its Slang dependency"
+  "Build the native EDA component"
   ON
+)
+
+option(
+  LABNEURA_ENABLE_SLANG_VALIDATION
+  "Enable externally provisioned Slang differential-validation targets"
+  OFF
 )
 
 option(
@@ -121,7 +127,7 @@ endif()
 
 # Reuse compiled objects across rebuilds when ccache is installed.
 find_program(LABNEURA_CCACHE ccache)
-if(LABNEURA_CCACHE)
+if(LABNEURA_CCACHE AND NOT DEFINED CMAKE_CXX_COMPILER_LAUNCHER)
   set(CMAKE_CXX_COMPILER_LAUNCHER "${LABNEURA_CCACHE}")
   message(STATUS "ccache enabled: ${LABNEURA_CCACHE}")
 endif()
@@ -242,9 +248,8 @@ if(LABNEURA_BUILD_EDA)
     endif()
   endif()
 
-  # ======================================
-  # Verilog frontend
-  # ======================================
+if(LABNEURA_BUILD_EDA AND LABNEURA_ENABLE_SLANG_VALIDATION)
+  # Optional external differential-validation frontend.
   set(SLANG_INCLUDE_TESTS OFF CACHE BOOL "" FORCE)
   set(SLANG_INCLUDE_TOOLS OFF CACHE BOOL "" FORCE)
   # EDA's installed CMake target exports slang::slang. Keep Slang's C++
@@ -260,13 +265,8 @@ if(LABNEURA_BUILD_EDA)
   set(SLANG_INCLUDE_PYLIB OFF CACHE BOOL "" FORCE)
   set(SLANG_INCLUDE_DOCS OFF CACHE BOOL "" FORCE)
 
-  FetchContent_Declare(
-    slang
-    GIT_REPOSITORY https://github.com/MikePopoloski/slang.git
-    GIT_TAG 7ddf4059f79eff508dd486eb42fd650cdf320d52
-    GIT_PROGRESS TRUE
-  )
-  FetchContent_MakeAvailable(slang)
+  find_package(slang CONFIG REQUIRED)
+endif()
 endif()
 
 # ======================================
@@ -379,7 +379,7 @@ endif()
 
 if(LABNEURA_BUILD_EDA)
   add_library(labneura_eda_objects OBJECT
-    src/labneura/eda/parser/verilog_parser.cpp
+    src/labneura/eda/parser/native_verilog_parser.cpp
     src/labneura/eda/verilog_lexer.cpp
     src/labneura/eda/verilog_preprocessor.cpp
     src/labneura/eda/verilog_syntax.cpp
@@ -405,6 +405,8 @@ if(LABNEURA_BUILD_EDA)
     src/labneura/eda/verilog_combinational_lowering.cpp
     src/labneura/eda/verilog_sequential_lowering.cpp
     src/labneura/eda/verilog_module_lowering.cpp
+    src/labneura/eda/native_verilog_project_context.cpp
+    src/labneura/eda/native_verilog_project_projection.cpp
     src/labneura/eda/verilog_byte_classifier.cpp
     src/labneura/eda/parser/liberty_parser.cpp
     src/labneura/eda/netlist/netlist_json.cpp
@@ -412,7 +414,6 @@ if(LABNEURA_BUILD_EDA)
     src/labneura/eda/netlist/netlist_graph.cpp
     src/labneura/eda/netlist/netlist_blif.cpp
     src/labneura/eda/mapping/generic/generic_mapping.cpp
-    src/labneura/eda/mapping/generic/behavioral_synthesis.cpp
     src/labneura/eda/mapping/technology/technology_mapping.cpp
     src/labneura/eda/mapping/fpga/fpga_mapping.cpp
     src/labneura/eda/mapping/fpga/fpga_library.cpp
@@ -437,7 +438,6 @@ if(LABNEURA_BUILD_EDA)
       ${CMAKE_CURRENT_SOURCE_DIR}/src
       ${CMAKE_CURRENT_BINARY_DIR}/generated
   )
-  target_link_libraries(labneura_eda_objects PRIVATE slang::slang)
   if(LABNEURA_VERILOG_LEXER_HAS_NEON)
     target_compile_definitions(labneura_eda_objects
       PRIVATE LABNEURA_VERILOG_LEXER_HAS_NEON=1
@@ -468,7 +468,6 @@ if(LABNEURA_BUILD_EDA)
       $<INSTALL_INTERFACE:include>
   )
   target_compile_features(labneura_eda PUBLIC cxx_std_20)
-  target_link_libraries(labneura_eda PRIVATE slang::slang)
   list(APPEND LABNEURA_OBJECT_TARGETS labneura_eda_objects)
 endif()
 
@@ -491,7 +490,6 @@ if(LABNEURA_BUILD_COMPAT)
       ${CMAKE_CURRENT_BINARY_DIR}/generated
   )
   target_compile_features(labneura PUBLIC cxx_std_20)
-  target_link_libraries(labneura PRIVATE slang::slang)
 endif()
 
 if(LABNEURA_ENABLE_COVERAGE OR "$ENV{LABNEURA_COVERAGE}" STREQUAL "1")
@@ -1007,7 +1005,7 @@ if(NOT SKBUILD AND LABNEURA_BUILD_COMPAT)
 endif()
 
 if(LABNEURA_BUILD_EDA AND NOT SKBUILD)
-  if(BUILD_TESTING)
+  if(BUILD_TESTING AND LABNEURA_ENABLE_SLANG_VALIDATION)
     add_executable(labneura_eda_verilog_lexer_test
       tests/eda_verilog_lexer_test.cpp
     )
@@ -1313,6 +1311,24 @@ if(LABNEURA_BUILD_EDA AND NOT SKBUILD)
     add_test(NAME eda_verilog_native_lowering
       COMMAND labneura_eda_verilog_native_lowering_test)
 
+    add_executable(labneura_eda_native_verilog_project_context_test
+      tests/eda_native_verilog_project_context_test.cpp)
+    target_include_directories(labneura_eda_native_verilog_project_context_test
+      PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(labneura_eda_native_verilog_project_context_test
+      PRIVATE labneura_eda)
+    add_test(NAME eda_native_verilog_project_context
+      COMMAND labneura_eda_native_verilog_project_context_test)
+
+    add_executable(labneura_eda_native_verilog_project_projection_test
+      tests/eda_native_verilog_project_projection_test.cpp)
+    target_include_directories(labneura_eda_native_verilog_project_projection_test
+      PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(labneura_eda_native_verilog_project_projection_test
+      PRIVATE labneura_eda)
+    add_test(NAME eda_native_verilog_project_projection
+      COMMAND labneura_eda_native_verilog_project_projection_test)
+
     add_executable(labneura_eda_verilog_native_lowering_differential_test
       tests/eda_verilog_native_lowering_differential_test.cpp)
     target_link_libraries(labneura_eda_verilog_native_lowering_differential_test
@@ -1394,13 +1410,15 @@ if(LABNEURA_BUILD_EDA AND NOT SKBUILD)
   )
   target_link_libraries(labneura_native_frontend_profile PRIVATE labneura_eda)
 
-  add_executable(labneura_slang_frontend_profile EXCLUDE_FROM_ALL
-    benchmarks/eda/slang_frontend_profile.cpp
-  )
-  target_link_libraries(labneura_slang_frontend_profile PRIVATE
-    labneura_eda
-    slang::slang
-  )
+  if(LABNEURA_ENABLE_SLANG_VALIDATION)
+    add_executable(labneura_slang_frontend_profile EXCLUDE_FROM_ALL
+      benchmarks/eda/slang_frontend_profile.cpp
+    )
+    target_link_libraries(labneura_slang_frontend_profile PRIVATE
+      labneura_eda
+      slang::slang
+    )
+  endif()
 
   add_executable(labneura_semantic_reference_index_benchmark EXCLUDE_FROM_ALL
     benchmarks/eda/semantic_reference_index_benchmark.cpp
@@ -1432,6 +1450,27 @@ if(LABNEURA_BUILD_EDA AND NOT SKBUILD)
     add_test(NAME eda_semantic_reference_index
       COMMAND labneura_eda_semantic_reference_index_test)
   endif()
+endif()
+
+if(LABNEURA_BUILD_EDA AND NOT SKBUILD AND BUILD_TESTING AND
+   NOT LABNEURA_ENABLE_SLANG_VALIDATION)
+  add_executable(labneura_eda_native_verilog_project_context_test
+    tests/eda_native_verilog_project_context_test.cpp)
+  target_include_directories(labneura_eda_native_verilog_project_context_test
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+  target_link_libraries(labneura_eda_native_verilog_project_context_test
+    PRIVATE labneura_eda)
+  add_test(NAME eda_native_verilog_project_context
+    COMMAND labneura_eda_native_verilog_project_context_test)
+
+  add_executable(labneura_eda_native_verilog_project_projection_test
+    tests/eda_native_verilog_project_projection_test.cpp)
+  target_include_directories(labneura_eda_native_verilog_project_projection_test
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+  target_link_libraries(labneura_eda_native_verilog_project_projection_test
+    PRIVATE labneura_eda)
+  add_test(NAME eda_native_verilog_project_projection
+    COMMAND labneura_eda_native_verilog_project_projection_test)
 endif()
 
 if(SKBUILD)

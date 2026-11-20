@@ -155,7 +155,7 @@ import labneura  # Import statement
 - CMake >= 3.20
 - C++20 compatible compiler
 - Python >= 3.8 (for Python bindings)
-- Network access to fetch the pinned slang frontend
+- No external Verilog frontend dependency is required for production EDA builds.
 
 #### C++ Library
 ```bash
@@ -223,7 +223,7 @@ t_fp16 = labneura.Tensor([1.5, 2.5, 3.5], labneura.QuantizationMode.FP16)
 ### EDA Netlist Parsing
 
 LabNeura's EDA submodule parses individual structural examples into netlist
-objects and reads complete Verilog projects with slang's Verilog-2005 parser
+objects and reads the supported native Verilog/SystemVerilog subset
 and elaborator:
 
 ```python
@@ -320,7 +320,8 @@ Unsupported constructs (e.g. `initial` blocks, inout ports) fail explicitly rath
 being silently dropped. The bundled SKY130 file is available as a convenient
 library input; the educational library remains at `assets/cells.lib`.
 
-Verilog parsing requires CMake 3.20+, a C++20 compiler, and the pinned slang
+Verilog parsing requires CMake 3.20+ and a C++20 compiler. Production uses the
+native frontend; Slang is optional differential-validation infrastructure only.
 frontend, which is fetched during the build.
 
 EDA implementation sources are grouped by pipeline stage: Verilog and Liberty

@@ -17,6 +17,8 @@ namespace labneura::eda {
 
 namespace detail {
 struct ParsedVerilogContext;
+struct NativeVerilogProjectContext;
+class NativeVerilogProjectProjector;
 }
 
 enum class PortDirection {
@@ -264,6 +266,7 @@ private:
     std::vector<Module> child_modules_;
     std::shared_ptr<detail::ParsedVerilogContext> parsed_context_;
 
+    friend class detail::NativeVerilogProjectProjector;
     friend Module parse_verilog(const std::string& path);
     friend Module read_verilog(const std::string& path);
     friend Project parse_verilog_directory(const std::string& directory);
@@ -304,7 +307,9 @@ private:
     std::string ast_json_;
     std::vector<std::string> source_files_;
     std::shared_ptr<detail::ParsedVerilogContext> parsed_context_;
+    std::shared_ptr<const detail::NativeVerilogProjectContext> native_context_;
 
+    friend class detail::NativeVerilogProjectProjector;
     friend Project parse_verilog_directory(const std::string& directory);
     friend Module generic_map(
         const Project& project, const std::string& top,

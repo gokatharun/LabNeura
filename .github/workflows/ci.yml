@@ -91,6 +91,77 @@ jobs:
           --version "$(python scripts/update_version.py --get-version)"
           --workdir "$RUNNER_TEMP/labneura-wheel-matrix"
 
+  native-eda-package:
+    name: Native EDA wheel and sdist without Slang
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install EDA packaging tools
+        run: python -m pip install build scikit-build-core pybind11 wheel 'setuptools>=61'
+      - name: Build native-only artifacts
+        env:
+          CMAKE_BUILD_PARALLEL_LEVEL: '2'
+          CMAKE_ARGS: >-
+            -DLABNEURA_ENABLE_SLANG_VALIDATION=OFF
+            -DFETCHCONTENT_FULLY_DISCONNECTED=ON
+        run: |
+          mkdir -p "$RUNNER_TEMP/eda-dist"
+          python -m build --wheel --sdist --outdir "$RUNNER_TEMP/eda-dist" packaging/eda
+      - name: Reject bundled Slang and inspect extension linkage
+        run: |
+          python - "$RUNNER_TEMP/eda-dist" <<'PY'
+          import sys, zipfile
+          from pathlib import Path
+          dist = Path(sys.argv[1])
+          for artifact in dist.iterdir():
+              if artifact.suffix not in {'.whl', '.gz'}: continue
+              with zipfile.ZipFile(artifact) as z:
+                  bad = [n for n in z.namelist() if 'slang' in n.lower()]
+                  if bad: raise SystemExit(f'Slang bundled in {artifact}: {bad}')
+          PY
+          WHEEL=$(find "$RUNNER_TEMP/eda-dist" -name '*.whl' -print -quit)
+          unzip -q "$WHEEL" -d "$RUNNER_TEMP/eda-unpacked"
+          EXT=$(find "$RUNNER_TEMP/eda-unpacked" -name '*_eda*.so' -print -quit)
+          test -n "$EXT"
+          ! ldd "$EXT" | grep -i slang
+      - name: Clean install and native smoke test
+        run: |
+          python -m venv "$RUNNER_TEMP/eda-venv"
+          "$RUNNER_TEMP/eda-venv/bin/pip" install --no-index "$RUNNER_TEMP/eda-dist"/*.whl
+          "$RUNNER_TEMP/eda-venv/bin/python" - "$RUNNER_TEMP/eda-smoke" <<'PY'
+          import sys
+          from pathlib import Path
+          import labneura.eda as eda
+
+          root = Path(sys.argv[1]); root.mkdir()
+          (root / "top.v").write_text(
+              "module top(input wire a, output wire y); assign y = a; endmodule\n",
+              encoding="utf-8")
+          module = eda.parse_verilog(str(root / "top.v"))
+          assert module.name == "top"
+          assert [p.name for p in module.ports] == ["a", "y"]
+          assert eda.read_verilog(str(root / "top.v")).name == "top"
+          project = eda.parse_verilog(str(root))
+          assert project.module_count == 1 and project.modules[0].name == "top"
+          mapped = eda.generic_map(project, "top")
+          assert mapped.name == "top" and mapped.nets
+
+          (root / "unsupported.v").write_text(
+              "module unsupported(input wire a, output wire y); function f; input x; f=x; endfunction assign y=f(a); endmodule\n",
+              encoding="utf-8")
+          try:
+              eda.parse_verilog(str(root / "unsupported.v"))
+          except RuntimeError as error:
+              assert "native" in str(error).lower() or "unsupported" in str(error).lower()
+          else:
+              raise AssertionError("unsupported native Verilog was accepted")
+          PY
+
   gcc-source-build:
     name: Source build (GCC 13)
     runs-on: ubuntu-latest

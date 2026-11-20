@@ -155,7 +155,7 @@ import labneura  # Import statement
 - CMake >= 3.20
 - C++20 compatible compiler
 - Python >= 3.8 (for Python bindings)
-- Network access to fetch the pinned slang frontend
+- No external Verilog frontend dependency is required for production EDA builds.
 
 #### C++ Library
 ```bash

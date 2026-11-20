@@ -1,6 +1,7 @@
 #include "labneura/eda/netlist.h"
+#include "labneura/eda/verilog_native_lowering.h"
 
-#include "behavioral_synthesis.h"
+#include "labneura/eda/native_verilog_project_context.h"
 
 #include <algorithm>
 #include <cctype>
@@ -693,13 +694,9 @@ Module generic_map(const Module& rtl_module) {
                                 assignment.get_lhs_expression());
                         });
         if (requires_behavioral_lowering) {
-            mapped = detail::lower_behavioral_rtl(
-                source.parsed_context_, source.get_name(), {}, true);
-            mapped = Module(mapped.get_name(), mapped.get_ports(),
-                            mapped.get_nets(), mapped.get_instances(),
-                            mapped.get_assignments(), mapped.is_behavioral(),
-                            source.get_hierarchy_instance_name(),
-                            mapped.get_child_modules());
+            throw std::runtime_error(
+                "generic_map requires native lowering for behavioral RTL or "
+                "non-identifier continuous-assignment targets");
         } else {
             GenericMapper mapper(source);
             std::vector<ContinuousAssignment> remaining_assignments;
@@ -899,6 +896,29 @@ Module generic_map(const Module& rtl_module) {
 
 Module generic_map(const Project& project, const std::string& top,
                    const std::map<std::string, std::string>& parameters) {
+    if (project.native_context_) {
+        if (!parameters.empty()) {
+            throw std::runtime_error(
+                "native generic_map does not yet accept mapping-time parameter "
+                "overrides; elaborate the native project with top parameter overrides");
+        }
+        const auto& context = *project.native_context_;
+        const std::string selected_top =
+            top.empty() && context.elaboration && context.elaboration->top &&
+                    context.elaboration->top->module_definition
+                ? context.elaboration->top->module_definition->name
+                : top;
+        const auto result = lower_verilog_native(
+            context.parsed.syntax, *context.elaboration, *context.types,
+            *context.eligibility, selected_top);
+        if (result.succeeded())
+            return *result.module;
+        std::string message = "native generic_map cannot lower the requested design";
+        for (const auto& diagnostic : result.diagnostics)
+            message += "\n[" + diagnostic.code + "] " + diagnostic.message;
+        throw std::runtime_error(message);
+    }
+
     std::unordered_map<std::string, const Module*> by_name;
     std::unordered_set<std::string> instantiated;
     for (const auto& module : project.get_modules()) by_name[module.get_name()] = &module;
@@ -979,8 +999,9 @@ Module generic_map(const Project& project, const std::string& top,
         }
     }
     if (!needs_lowering) return generic_map(*top_module->second);
-    return detail::lower_behavioral_rtl(project.parsed_context_, top_name,
-                                        parameters, true);
+    throw std::runtime_error(
+        "generic_map requires a native parsed Project for behavioral, hierarchical, "
+        "or parameter-specialized RTL");
 }
 
 }  // namespace labneura::eda

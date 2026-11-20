@@ -2,6 +2,14 @@
 
 Use this checklist for every feature and every backend implementation.
 
+## Native-first production frontend (M7.19)
+
+- [x] Production EDA builds without Slang, Tensor, or Acceleration Core.
+- [x] Native parse/project/lowering paths are production defaults.
+- [ ] CI wheel/sdist artifact audit and clean install without Slang.
+- Unsupported SystemVerilog, AST JSON parity, instance arrays, and unsupported
+  lowering forms diagnose explicitly; external Slang is validation-only.
+
 ## Feature contract
 - [ ] API/signature and Python binding.
 - [ ] Input/output shape and rank.

@@ -5,6 +5,7 @@
 #include "labneura/eda/verilog_type.h"
 
 #include <memory>
+#include <map>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -14,6 +15,7 @@ namespace labneura::eda {
 
 struct VerilogElaborationOptions {
     std::optional<std::string> top_module;
+    std::map<std::string, std::string> top_parameter_overrides;
     VerilogConstantEvaluationOptions constant_options;
     size_t maximum_generate_iterations = 1024;
 };

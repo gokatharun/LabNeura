@@ -4,6 +4,16 @@ Last verified: 2026-11-19. Treat this as a continuity reference, not a
 substitute for inspecting the current source, tests, worktree, and benchmark
 artifacts.
 
+## Native-first production frontend (M7.19)
+
+Production `parse_verilog()`, `read_verilog()`, directory projection, and
+supported generic mapping use the native frontend. EDA-only production builds
+do not fetch, compile, link, or export Slang and remain independent of Tensor
+and Acceleration Core. `LABNEURA_ENABLE_SLANG_VALIDATION` is off by default and
+is reserved for externally provisioned differential validation. Unsupported
+native constructs must diagnose rather than fall back. Native AST JSON parity,
+instance arrays, and unsupported lowering forms remain breaking limitations.
+
 ## Project identity
 
 LabNeura is a C++ numerical-computing and Tensor library with Python bindings.
@@ -1463,6 +1473,73 @@ Fresh local validation: full Release CTest registered 70 tests, with 60 passed,
 40 tests, with 39 passed, one expected AVX2 lexer skip, and no failures. The
 prescribed Python EDA suites passed all 216 tests. Twelve new Python profiling,
 workload, and aggregation tests passed, as did the native schema CTest.
+
+### Native retained project context foundation (M7.19.1)
+
+The internal `NativeVerilogProjectContext` constructs and retains native syntax,
+elaboration, type analysis, synthesis eligibility, and source-file order from
+one or more source units or files. It reuses existing frontend results rather
+than creating another AST or type model. Source buffers are retained through
+syntax locations; elaboration owns semantic symbol identities and borrows
+syntax declarations; type and eligibility results borrow syntax/semantic
+objects. The context is non-copyable and its member order ensures dependent
+results are destroyed before their owners. `ready()` means frontend analyses
+completed without errors, not that every process is synthesis-eligible.
+Production `parse_verilog()` and Slang behavioral lowering remain unchanged.
+
+The M7.19.1 context regression covers multi-source construction and source-text
+lifetime, parameterized port types, semantic symbol identity, retained
+parameter values, native-lowering access, and early termination on syntax
+errors. Its target built and passed in the full and EDA-only Release builds.
+
+### Native Project/Module projection and hierarchy (M7.19.2)
+
+An internal projector now maps the retained native context into the existing
+`Project`/`Module` values without reparsing or producing a second AST. It
+preserves source-file and module ordering, ports and internal nets, supported
+packed ranges, continuous assignments, instance connections and explicit
+instance parameter overrides. It materializes the selected top's elaborated
+children, parameter-specialized widths, active generated scopes and generated
+connections. Top-level parameter overrides are accepted by native elaboration
+options and applied during the same elaboration pass. The projected `Project`
+owns a shared reference to its native context; netlist fields themselves own
+their copied strings and values. Existing Slang-backed `parse_verilog()` and
+behavioral lowering are unchanged. `generic_map(Project)` explicitly rejects
+native projects when behavioral or parameter-specialized hierarchy lowering
+would require the Slang context; this milestone does not synthesize behavior.
+
+The focused projection test compares module order, ports, nets, instances and
+connections with Slang's directory API on a multi-file fixture, checks
+instance and top-level parameter specialization, verifies generated scope
+hierarchy/local-net connectivity, and checks context lifetime. Native AST JSON
+is not emitted; `Project::get_ast_json()` remains empty and the projection
+result lists that compatibility gap.
+
+| Existing consumer | Native capability now | Remaining compatibility gap |
+|---|---|---|
+| `parse_verilog()` -> public `Module` | Internal `Project`/`Module` projection and selected-top hierarchy | Production API is not switched; single-file parser and Slang ownership remain |
+| `generic_map(Project)` | Native hierarchy metadata and an explicit refusal when Slang behavioral/parameter-specialized lowering is required | No native behavioral-synthesis adapter; generic-map compatibility remains a separate milestone |
+| `Project::get_ast_json()` | Native syntax, source maps and elaboration are retained | Compatible definitions/elaborated-root JSON serializer/schema is deferred |
+| Parameter semantics | Top-level overrides, declaration defaults and child overrides specialize widths/hierarchy | No public module parameter table; parameter-dependent typedefs and multi-dimensional unpacked arrays are not fully represented |
+| Hierarchy and connectivity | Active selected-top generate scopes, instance names, and named/positional connections | Other top-level roots are definition projections; instance arrays are diagnosed as unsupported |
+
+Focused validation on the existing Release builds passed:
+
+```sh
+cmake --build /tmp/labneura-m7182-full \
+  --target labneura_eda_native_verilog_project_projection_test --parallel 2
+ctest --test-dir /tmp/labneura-m7182-full --output-on-failure \
+  -R '^(eda_native_verilog_project_context|eda_native_verilog_project_projection|eda_verilog_elaboration)$'
+cmake --build /tmp/labneura-m717-eda \
+  --target labneura_eda_native_verilog_project_projection_test --parallel 2
+ctest --test-dir /tmp/labneura-m717-eda --output-on-failure \
+  -R '^(eda_native_verilog_project_context|eda_native_verilog_project_projection|eda_verilog_elaboration)$'
+```
+
+Each build's focused CTest selection passed 3/3 tests (context, projection and
+elaboration). Full-suite validation was not run. Next migration task: define
+and test the compatible native AST JSON contract, then plan production
+`parse_verilog()` migration separately; do not remove Slang dependencies yet.
 
 ### Cross-platform stabilization and Linux AVX2 verification (M7.17.1)
 

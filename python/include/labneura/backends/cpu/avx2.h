@@ -6,6 +6,8 @@ namespace labneura {
 
 class AVX2Backend : public TensorBackend {
 public:
+    // Checks CPU/OS AVX2 support before allocating; prefer the factory for
+    // normal runtime dispatch.
     explicit AVX2Backend(std::size_t size, QuantizationMode mode);
 
     std::size_t size() const override;

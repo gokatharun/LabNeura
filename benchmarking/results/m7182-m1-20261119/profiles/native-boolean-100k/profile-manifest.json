@@ -1,0 +1,116 @@
+{
+  "benchmark_command": [
+    "/tmp/labneura-m7182/labneura_native_frontend_profile",
+    "benchmarking/results/m7181-m1-20261119/workloads/boolean_100kib.sv",
+    "frontend_boolean_1003",
+    "scalar",
+    "boolean_102400"
+  ],
+  "hardware_counters": {
+    "reason": "portable unprivileged hardware counters are not exposed by this script on macOS",
+    "status": "unavailable",
+    "value": null
+  },
+  "peak_rss": {
+    "metric": {
+      "reason": "macOS time output did not contain maximum resident set size",
+      "status": "unavailable",
+      "value": null
+    },
+    "run": {
+      "command": [
+        "/usr/bin/time",
+        "-l",
+        "/tmp/labneura-m7182/labneura_native_frontend_profile",
+        "benchmarking/results/m7181-m1-20261119/workloads/boolean_100kib.sv",
+        "frontend_boolean_1003",
+        "scalar",
+        "boolean_102400"
+      ],
+      "returncode": 1,
+      "stderr": "benchmarking/results/m7182-m1-20261119/profiles/native-boolean-100k/rss.stderr.txt",
+      "stdout": "benchmarking/results/m7182-m1-20261119/profiles/native-boolean-100k/rss.stdout.txt",
+      "wall_time_ns": 1870825875
+    }
+  },
+  "platform": {
+    "machine": "arm64",
+    "system": "Darwin"
+  },
+  "sampling_profile": {
+    "sample": {
+      "artifact": null,
+      "sampler_returncode": 255,
+      "sampler_stderr": "sample[54382]: sample cannot examine process 54381 (labneura_native_frontend_profile) for unknown reasons, even though it appears to exist; try running with `sudo`.\n",
+      "status": "unavailable",
+      "target_returncode": 0
+    },
+    "xctrace_allocations": {
+      "artifact": null,
+      "run": {
+        "command": [
+          "xcrun",
+          "xctrace",
+          "record",
+          "--template",
+          "Allocations",
+          "--output",
+          "benchmarking/results/m7182-m1-20261119/profiles/native-boolean-100k/allocations.trace",
+          "--launch",
+          "--",
+          "/tmp/labneura-m7182/labneura_native_frontend_profile",
+          "benchmarking/results/m7181-m1-20261119/workloads/boolean_100kib.sv",
+          "frontend_boolean_1003",
+          "scalar",
+          "boolean_102400"
+        ],
+        "returncode": 72,
+        "stderr": "benchmarking/results/m7182-m1-20261119/profiles/native-boolean-100k/allocations.stderr.txt",
+        "stdout": "benchmarking/results/m7182-m1-20261119/profiles/native-boolean-100k/allocations.stdout.txt",
+        "wall_time_ns": 6399833
+      },
+      "status": "unavailable"
+    },
+    "xctrace_time_profiler": {
+      "artifact": null,
+      "run": {
+        "command": [
+          "xcrun",
+          "xctrace",
+          "record",
+          "--template",
+          "Time Profiler",
+          "--output",
+          "benchmarking/results/m7182-m1-20261119/profiles/native-boolean-100k/time-profile.trace",
+          "--launch",
+          "--",
+          "/tmp/labneura-m7182/labneura_native_frontend_profile",
+          "benchmarking/results/m7181-m1-20261119/workloads/boolean_100kib.sv",
+          "frontend_boolean_1003",
+          "scalar",
+          "boolean_102400"
+        ],
+        "returncode": 72,
+        "stderr": "benchmarking/results/m7182-m1-20261119/profiles/native-boolean-100k/xctrace.stderr.txt",
+        "stdout": "benchmarking/results/m7182-m1-20261119/profiles/native-boolean-100k/xctrace.stdout.txt",
+        "wall_time_ns": 8460750
+      },
+      "status": "unavailable"
+    }
+  },
+  "schema_version": 1,
+  "separate_runs": true,
+  "timing": {
+    "command": [
+      "/tmp/labneura-m7182/labneura_native_frontend_profile",
+      "benchmarking/results/m7181-m1-20261119/workloads/boolean_100kib.sv",
+      "frontend_boolean_1003",
+      "scalar",
+      "boolean_102400"
+    ],
+    "returncode": 0,
+    "stderr": "benchmarking/results/m7182-m1-20261119/profiles/native-boolean-100k/timing.stderr.txt",
+    "stdout": "benchmarking/results/m7182-m1-20261119/profiles/native-boolean-100k/timing.stdout.jsonl",
+    "wall_time_ns": 1934007000
+  }
+}

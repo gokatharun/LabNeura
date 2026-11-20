@@ -9,43 +9,6 @@
 
 namespace labneura {
 
-namespace {
-
-std::shared_ptr<TensorStorage> make_avx2_storage(
-    std::size_t size, QuantizationMode mode) {
-    return TensorStorage::allocate(
-        size, util::checked_round_up(size, 8), mode, util::AVX2_ALIGN);
-}
-
-}  // namespace
-
-// =======================
-// Constructor
-// =======================
-
-AVX2Backend::AVX2Backend(std::size_t size, QuantizationMode mode)
-    : TensorBackend(make_avx2_storage(size, mode)),
-      size_(size),
-      aligned_size_(storage_->allocation_capacity),
-      quantization_mode_(mode) {
-    if (mode == QuantizationMode::FP32) {
-        data_fp32_ = static_cast<float*>(storage_->data());
-        std::fill(data_fp32_ + size_, data_fp32_ + aligned_size_, 0.0f);
-    } else if (mode == QuantizationMode::FP16) {
-        data_fp16_ = static_cast<int16_t*>(storage_->data());
-        std::fill(data_fp16_ + size_, data_fp16_ + aligned_size_, static_cast<int16_t>(0));
-    } else if (mode == QuantizationMode::INT16) {
-        data_int16_ = static_cast<int16_t*>(storage_->data());
-        std::fill(data_int16_ + size_, data_int16_ + aligned_size_, static_cast<int16_t>(0));
-    } else if (mode == QuantizationMode::BOOL) {
-        data_bool_ = static_cast<std::uint8_t*>(storage_->data());
-        std::fill(data_bool_, data_bool_ + aligned_size_, std::uint8_t{0});
-    } else {
-        data_int8_ = static_cast<int8_t*>(storage_->data());
-        std::fill(data_int8_ + size_, data_int8_ + aligned_size_, 0);
-    }
-}
-
 AVX2Backend::AVX2Backend(std::shared_ptr<TensorStorage> storage,
                          std::size_t logical_size,
                          std::size_t storage_offset)
