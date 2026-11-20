@@ -241,6 +241,7 @@ int main() {
         const std::filesystem::path fixtures(LABNEURA_NATIVE_FORMAL_FIXTURE_DIR);
         prove_fixture(fixtures / "boolean_cells.sv", directory / "boolean_cells");
         prove_fixture(fixtures / "conditional_mux.sv", directory / "conditional_mux");
+        prove_fixture(fixtures / "dynamic_bit_select.sv", directory / "dynamic_bit_select");
         prove_fixture(fixtures / "two_bit_add.sv", directory / "two_bit_add");
         test_incorrect_native_candidate_fails_proof(
             fixtures / "boolean_cells.sv", directory / "negative");

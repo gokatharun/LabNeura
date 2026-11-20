@@ -1,6 +1,8 @@
 #include "labneura/eda/verilog_native_lowering.h"
+#include "support/eda_netlist_evaluator.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -8,6 +10,7 @@
 
 namespace {
 using namespace labneura::eda;
+using namespace labneura::eda::test;
 
 void require(bool condition, std::string_view message) {
     if (!condition)
@@ -49,6 +52,45 @@ bool has_diagnostic(const VerilogNativeLoweringResult& result,
                        [&](const auto& diagnostic) {
                            return diagnostic.code == code;
                        });
+}
+
+VerificationBits bits(std::uint32_t value, size_t width) {
+    VerificationBits result(width);
+    for (size_t bit = 0; bit < width; ++bit)
+        result[bit] = static_cast<std::uint8_t>((value >> bit) & 1U);
+    return result;
+}
+
+bool evaluate_select(const Module& module, std::uint32_t data,
+                     size_t data_width, std::uint32_t index,
+                     size_t index_width) {
+    const auto result = evaluate_combinational_netlist(
+        module, {{"data", bits(data, data_width)},
+                 {"index", bits(index, index_width)}});
+    require(result.succeeded(), "mapped dynamic-select netlist did not evaluate");
+    const auto output = result.outputs.find("y");
+    require(output != result.outputs.end() && output->second.size() == 1,
+            "mapped dynamic-select output is missing or not scalar");
+    return output->second.front() != 0;
+}
+
+void exhaustively_check_dynamic_select(const std::string& source,
+                                       size_t data_width, size_t index_width,
+                                       bool ascending) {
+    Fixture fixture(source);
+    require(fixture.lowered.succeeded(), "bounded dynamic bit-select did not lower");
+    const auto& module = *fixture.lowered.module;
+    const std::uint32_t data_patterns = std::uint32_t{1} << data_width;
+    const std::uint32_t indices = std::uint32_t{1} << index_width;
+    for (std::uint32_t data = 0; data < data_patterns; ++data) {
+        for (std::uint32_t index = 0; index < indices; ++index) {
+            const size_t position = ascending ? data_width - 1 - index : index;
+            const bool expected = ((data >> position) & 1U) != 0;
+            require(evaluate_select(module, data, data_width, index, index_width) ==
+                        expected,
+                    "mapped dynamic bit-select differs from independent truth table");
+        }
+    }
 }
 
 void test_wire_logic_and_constant_output_structure() {
@@ -108,6 +150,108 @@ void test_unresolved_driver_and_hierarchy_are_not_silently_lowered() {
                 has_diagnostic(hierarchy.lowered, "UnsupportedNativeHierarchy"),
             "unsupported hierarchy was not explicitly rejected");
 }
+
+void test_bounded_dynamic_select_and_range_rejection() {
+    exhaustively_check_dynamic_select(
+        "module m(input logic [1:0] data, input logic index, output logic y);\n"
+        " assign y = data[index];\nendmodule\n", 2, 1, false);
+    exhaustively_check_dynamic_select(
+        "module m(input logic [3:0] data, input logic [1:0] index, output logic y);\n"
+        " assign y = data[index];\nendmodule\n", 4, 2, false);
+    exhaustively_check_dynamic_select(
+        "module m(input logic [7:0] data, input logic [2:0] index, output logic y);\n"
+        " assign y = data[index];\nendmodule\n", 8, 3, false);
+    exhaustively_check_dynamic_select(
+        "module m(input logic [0:3] data, input logic [1:0] index, output logic y);\n"
+        " assign y = data[index];\nendmodule\n", 4, 2, true);
+
+    Fixture sixteen(
+        "module m(input logic [15:0] data, input logic [3:0] index, output logic y);\n"
+        " assign y = data[index];\nendmodule\n");
+    require(sixteen.lowered.succeeded(), "16-way dynamic select did not lower");
+    for (std::uint32_t hot_bit = 0; hot_bit < 16; ++hot_bit) {
+        const auto data = std::uint32_t{1} << hot_bit;
+        for (std::uint32_t index = 0; index < 16; ++index)
+            require(evaluate_select(*sixteen.lowered.module, data, 16, index, 4) ==
+                        (index == hot_bit),
+                    "16-way one-hot dynamic select differs from independent expectation");
+    }
+    for (const auto data : {std::uint32_t{0x0000}, std::uint32_t{0xffff},
+                            std::uint32_t{0xaaaa}, std::uint32_t{0x5555},
+                            std::uint32_t{0x8001}, std::uint32_t{0x1248},
+                            std::uint32_t{0x9e37}}) {
+        for (std::uint32_t index = 0; index < 16; ++index)
+            require(evaluate_select(*sixteen.lowered.module, data, 16, index, 4) ==
+                        (((data >> index) & 1U) != 0),
+                    "16-way dynamic select differs from independent expectation");
+    }
+
+    Fixture computed(
+        "module m(input logic [3:0] data, input logic [1:0] index, output logic y);\n"
+        " assign y = data[index ^ 2'b01];\nendmodule\n");
+    require(computed.lowered.succeeded(), "computed bounded index did not lower");
+    for (std::uint32_t data = 0; data < 16; ++data)
+        for (std::uint32_t index = 0; index < 4; ++index)
+            require(evaluate_select(*computed.lowered.module, data, 4, index, 2) ==
+                        (((data >> (index ^ 1U)) & 1U) != 0),
+                    "computed dynamic index differs from independent expectation");
+
+    Fixture nonzero(
+        "module m(input logic [7:4] data, input logic [1:0] index, output logic y);\n"
+        " assign y = data[index];\n"
+        "endmodule\n");
+    require(!nonzero.lowered.succeeded() &&
+                has_diagnostic(nonzero.lowered, "DynamicNativeSelectRangeUnproven"),
+            "nonzero range was incorrectly treated as zero-based");
+
+    Fixture too_wide(
+        "module m(input logic [3:0] data, input logic [2:0] index, output logic y);\n"
+        " assign y = data[index];\n"
+        "endmodule\n");
+    require(!too_wide.lowered.succeeded() &&
+                has_diagnostic(too_wide.lowered, "DynamicNativeSelectRangeUnproven"),
+            "potentially out-of-range index was accepted");
+
+    Fixture signed_index(
+        "module m(input logic [3:0] data, input logic signed [1:0] index, output logic y);\n"
+        " assign y = data[index];\nendmodule\n");
+    require(!signed_index.lowered.succeeded() &&
+                has_diagnostic(signed_index.lowered, "DynamicNativeSelectUnsupported"),
+            "signed dynamic index was accepted");
+
+    Fixture x_index(
+        "module m(input logic [3:0] data, input logic [1:0] index, output logic y);\n"
+        " assign y = data[index ^ 2'bx0];\nendmodule\n");
+    require(!x_index.lowered.succeeded() &&
+                has_diagnostic(x_index.lowered, "FourStateConstantUnsupported"),
+            "explicit X index expression was accepted");
+
+    Fixture z_index(
+        "module m(input logic [3:0] data, input logic [1:0] index, output logic y);\n"
+        " assign y = data[index ^ 2'bz0];\nendmodule\n");
+    require(!z_index.lowered.succeeded() &&
+                has_diagnostic(z_index.lowered, "FourStateConstantUnsupported"),
+            "explicit Z index expression was accepted");
+
+    Fixture dynamic_part(
+        "module m(input logic [7:0] data, input logic [2:0] index, output logic [1:0] y);\n"
+        " assign y = data[index +: 2];\nendmodule\n");
+    require(!dynamic_part.lowered.succeeded() &&
+                has_diagnostic(dynamic_part.lowered, "DynamicNativeSelectUnsupported"),
+            "dynamic part select was accepted");
+
+    Fixture dynamic_write(
+        "module m(input logic a, input logic index, output logic [1:0] y);\n"
+        " always_comb y[index] = a;\nendmodule\n");
+    require(!dynamic_write.lowered.succeeded() && !dynamic_write.lowered.module,
+            "dynamic procedural write was accepted");
+
+    Fixture static_selects(
+        "module m(input logic [3:0] data, output logic [1:0] y);\n"
+        " assign y = data[3:2];\nendmodule\n");
+    require(static_selects.lowered.succeeded(),
+            "existing static part-select lowering regressed");
+}
 } // namespace
 
 int main() {
@@ -115,6 +259,7 @@ int main() {
         test_wire_logic_and_constant_output_structure();
         test_deterministic_lowering_and_failed_result_atomicity();
         test_unresolved_driver_and_hierarchy_are_not_silently_lowered();
+        test_bounded_dynamic_select_and_range_rejection();
     } catch (const std::exception& error) {
         std::cerr << "EDA Verilog native lowering test failed: " << error.what()
                   << '\n';

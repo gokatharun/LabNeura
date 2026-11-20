@@ -314,8 +314,12 @@ A feature is complete only when its semantics are documented, implementation exi
 - [x] Structural tests, failure atomicity, hierarchy/undriven diagnostics,
   native-vs-Slang AND truth-table differential, optional Yosys AND
   equivalence proof, and sequential structure tests.
+- [x] Dynamic packed bit-select reads with known unsigned indices whose full
+  two-state range fits the declared one-dimensional packed range; MUX2-tree
+  lowering, ascending/descending range tests, exhaustive 2/4/8-way checks,
+  sampled 16-way checks, and Yosys equivalence coverage.
 - [ ] General arithmetic including multiply/divide, X/Z hardware semantics,
-  dynamic selects, local procedural storage, latches, hierarchy, inout,
+  dynamic writes/part-selects, local procedural storage, latches, hierarchy, inout,
   arbitrary resets, technology mapping, and general/sequential equivalence.
 
 ### Native RTL verification and differential validation (M7.17)

@@ -199,20 +199,81 @@ std::optional<VerilogNativeLoweringValue> lower_select(
     if (expression.select_kind == VerilogSelectKind::Bit) {
         const auto index = constant_integer(session, *expression.second);
         if (!index) {
-            session.diagnose("DynamicNativeSelectUnsupported",
-                             "dynamic bit selects cannot be represented by the current native lowering subset",
-                             expression.second->location);
-            return std::nullopt;
+            const auto* index_type = expression_type(session, *expression.second);
+            if (!index_type || !index_type->bit_width || index_type->is_signed ||
+                *index_type->bit_width >= 63) {
+                session.diagnose("DynamicNativeSelectUnsupported",
+                                 "dynamic bit-select index must have a known unsigned width",
+                                 expression.second->location);
+                return std::nullopt;
+            }
+            const auto* base_type = expression_type(session, *expression.first);
+            if (!base_type || base_type->packed_dimensions.size() != 1 ||
+                !base_type->packed_dimensions.front().left ||
+                !base_type->packed_dimensions.front().right) {
+                session.diagnose("DynamicNativeSelectRangeUnproven",
+                                 "dynamic bit-select requires one statically ranged packed dimension",
+                                 expression.first->location);
+                return std::nullopt;
+            }
+            const auto& range = base_type->packed_dimensions.front();
+            const uint64_t maximum_index =
+                (uint64_t{1} << *index_type->bit_width) - 1;
+            const int64_t minimum_bound = std::min(*range.left, *range.right);
+            const int64_t maximum_bound = std::max(*range.left, *range.right);
+            if (minimum_bound > 0 || maximum_bound < 0 ||
+                maximum_index > static_cast<uint64_t>(maximum_bound)) {
+                session.diagnose("DynamicNativeSelectRangeUnproven",
+                                 "some representable dynamic bit-select indices are outside the declared packed range",
+                                 expression.second->location);
+                return std::nullopt;
+            }
+            auto lowered_index = lower(session, *expression.second, resolver);
+            if (!lowered_index)
+                return std::nullopt;
+            std::vector<std::string> mux_level;
+            mux_level.reserve(static_cast<size_t>(maximum_index + 1));
+            for (uint64_t value = 0; value <= maximum_index; ++value) {
+                const auto position = declared_index_to_position(
+                    session, *expression.first, static_cast<int64_t>(value),
+                    base_bits->size());
+                if (!position) {
+                    session.diagnose("DynamicNativeSelectRangeUnproven",
+                                     "dynamic bit-select index is outside the declared packed range",
+                                     expression.location);
+                    return std::nullopt;
+                }
+                mux_level.push_back((*base_bits)[*position]);
+            }
+            for (size_t selector_bit = 0;
+                 mux_level.size() > 1; ++selector_bit) {
+                if (mux_level.size() % 2 != 0 ||
+                    selector_bit >= lowered_index->bits.size()) {
+                    session.diagnose("DynamicNativeSelectRangeUnproven",
+                                     "dynamic bit-select index width does not cover its proven range",
+                                     expression.second->location);
+                    return std::nullopt;
+                }
+                std::vector<std::string> next_level;
+                next_level.reserve(mux_level.size() / 2);
+                for (size_t bit = 0; bit < mux_level.size(); bit += 2)
+                    next_level.push_back(session.emit_mux(
+                        mux_level[bit], mux_level[bit + 1],
+                        lowered_index->bits[selector_bit]));
+                mux_level = std::move(next_level);
+            }
+            selected.push_back(mux_level.front());
+        } else {
+            const auto position = declared_index_to_position(
+                session, *expression.first, *index, base_bits->size());
+            if (!position) {
+                session.diagnose("OutOfRangeNativeSelect",
+                                 "out-of-range bit selects cannot be represented as a hardware bit",
+                                 expression.location);
+                return std::nullopt;
+            }
+            selected.push_back((*base_bits)[*position]);
         }
-        const auto position = declared_index_to_position(
-            session, *expression.first, *index, base_bits->size());
-        if (!position) {
-            session.diagnose("OutOfRangeNativeSelect",
-                             "out-of-range bit selects cannot be represented as a hardware bit",
-                             expression.location);
-            return std::nullopt;
-        }
-        selected.push_back((*base_bits)[*position]);
     } else {
         if (!expression.third) {
             session.diagnose("MalformedNativeSelect",

@@ -1273,13 +1273,6 @@ if(LABNEURA_BUILD_EDA AND NOT SKBUILD)
         COMMAND labneura_eda_verilog_${lowering_test}_lowering_test)
     endforeach()
 
-    add_executable(labneura_eda_verilog_native_lowering_test
-      tests/eda_verilog_native_lowering_test.cpp)
-    target_link_libraries(labneura_eda_verilog_native_lowering_test
-      PRIVATE labneura_eda)
-    add_test(NAME eda_verilog_native_lowering
-      COMMAND labneura_eda_verilog_native_lowering_test)
-
     add_executable(labneura_eda_native_verilog_project_context_test
       tests/eda_native_verilog_project_context_test.cpp)
     target_include_directories(labneura_eda_native_verilog_project_context_test
@@ -1436,6 +1429,18 @@ if(LABNEURA_BUILD_EDA AND NOT SKBUILD)
     add_test(NAME eda_semantic_reference_index
       COMMAND labneura_eda_semantic_reference_index_test)
   endif()
+endif()
+
+if(LABNEURA_BUILD_EDA AND NOT SKBUILD AND BUILD_TESTING)
+  add_executable(labneura_eda_verilog_native_lowering_test
+    tests/eda_verilog_native_lowering_test.cpp
+    tests/support/eda_netlist_evaluator.cpp)
+  target_include_directories(labneura_eda_verilog_native_lowering_test
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests)
+  target_link_libraries(labneura_eda_verilog_native_lowering_test
+    PRIVATE labneura_eda)
+  add_test(NAME eda_verilog_native_lowering
+    COMMAND labneura_eda_verilog_native_lowering_test)
 endif()
 
 if(LABNEURA_BUILD_EDA AND NOT SKBUILD AND BUILD_TESTING AND
