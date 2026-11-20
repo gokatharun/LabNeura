@@ -375,6 +375,16 @@ int main(int argc, char** argv) {
         print_slang_measurements(input.source->text().size(), input.tokens,
                                  measure_slang_lexer(single_input), input.name);
     }
+#endif
+
+    std::string cpu_model = "unknown";
+#if defined(__APPLE__)
+    char cpu_model_buffer[256] = {};
+    size_t cpu_model_size = sizeof(cpu_model_buffer);
+    if (sysctlbyname("machdep.cpu.brand_string", cpu_model_buffer, &cpu_model_size, nullptr, 0) ==
+        0) {
+        cpu_model = cpu_model_buffer;
+    }
 #elif defined(__linux__)
     std::ifstream cpu_info("/proc/cpuinfo");
     for (std::string line; std::getline(cpu_info, line);) {
@@ -392,16 +402,6 @@ int main(int argc, char** argv) {
 #elif defined(_WIN32)
     if (const char* identifier = std::getenv("PROCESSOR_IDENTIFIER"))
         cpu_model = identifier;
-#endif
-
-    std::string cpu_model = "unknown";
-#if defined(__APPLE__)
-    char cpu_model_buffer[256] = {};
-    size_t cpu_model_size = sizeof(cpu_model_buffer);
-    if (sysctlbyname("machdep.cpu.brand_string", cpu_model_buffer, &cpu_model_size, nullptr, 0) ==
-        0) {
-        cpu_model = cpu_model_buffer;
-    }
 #endif
 
 #if defined(__aarch64__) || defined(__arm64__)

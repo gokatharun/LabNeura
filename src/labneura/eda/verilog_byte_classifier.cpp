@@ -15,6 +15,8 @@
 namespace labneura::eda::detail::verilog_lexer {
 #if defined(LABNEURA_VERILOG_LEXER_HAS_AVX2)
 ClassificationBlock classify_avx2(const unsigned char* input);
+uint32_t matching_lanes_avx2(const ClassificationBlock& block,
+                             ByteClassMask classes);
 #endif
 
 namespace {
@@ -117,7 +119,12 @@ uint8x16_t add_flag(uint8x16_t current, uint8x16_t predicate, uint8_t flag) {
     return vorrq_u8(current, vandq_u8(predicate, vdupq_n_u8(flag)));
 }
 
-ClassificationBlock classify_neon_16(const unsigned char* input) {
+struct NeonClassification {
+    uint8x16_t low;
+    uint8x16_t high;
+};
+
+NeonClassification classify_neon_16(const unsigned char* input) {
     const uint8x16_t bytes = vld1q_u8(input);
     const uint8x16_t zero = vdupq_n_u8(0);
     const uint8x16_t digit =
@@ -144,16 +151,25 @@ ClassificationBlock classify_neon_16(const unsigned char* input) {
     high = add_flag(high, delimiter, 1u << 2);
     high = add_flag(high, op, 1u << 3);
 
+    return {low, high};
+}
+
+ClassificationBlock classify_neon_32(const unsigned char* input) {
+    const auto first = classify_neon_16(input);
+    const auto second = classify_neon_16(input + 16);
     ClassificationBlock result;
-    result.size = 16;
-    vst1q_u8(result.low_flags.data(), low);
-    vst1q_u8(result.high_flags.data(), high);
-    result.any_low = reduce_or(low);
-    result.any_high = reduce_or(high);
-    result.all_low = reduce_and(low);
-    result.all_high = reduce_and(high);
+    result.size = classification_block_width;
+    vst1q_u8(result.low_flags.data(), first.low);
+    vst1q_u8(result.low_flags.data() + 16, second.low);
+    vst1q_u8(result.high_flags.data(), first.high);
+    vst1q_u8(result.high_flags.data() + 16, second.high);
+    result.any_low = reduce_or(vorrq_u8(first.low, second.low));
+    result.any_high = reduce_or(vorrq_u8(first.high, second.high));
+    result.all_low = reduce_and(vandq_u8(first.low, second.low));
+    result.all_high = reduce_and(vandq_u8(first.high, second.high));
     return result;
 }
+
 #endif
 
 #if defined(LABNEURA_VERILOG_LEXER_HAS_AVX2)
@@ -176,37 +192,6 @@ bool detect_avx2_runtime_support() noexcept {
 }
 #endif
 
-#if defined(LABNEURA_VERILOG_LEXER_HAS_NEON)
-ClassificationBlock merge_blocks(const ClassificationBlock& first,
-                                 const ClassificationBlock& second) {
-    ClassificationBlock result;
-    result.size = first.size + second.size;
-    for (size_t i = 0; i < first.size; ++i) {
-        result.low_flags[i] = first.low_flags[i];
-        result.high_flags[i] = first.high_flags[i];
-    }
-    for (size_t i = 0; i < second.size; ++i) {
-        result.low_flags[first.size + i] = second.low_flags[i];
-        result.high_flags[first.size + i] = second.high_flags[i];
-    }
-    result.any_low = first.any_low | second.any_low;
-    result.any_high = first.any_high | second.any_high;
-    if (first.size == 0) {
-        result.all_low = second.all_low;
-        result.all_high = second.all_high;
-    }
-    else if (second.size == 0) {
-        result.all_low = first.all_low;
-        result.all_high = first.all_high;
-    }
-    else {
-        result.all_low = first.all_low & second.all_low;
-        result.all_high = first.all_high & second.all_high;
-    }
-    return result;
-}
-#endif
-
 void validate_range(std::string_view text, size_t start, size_t end) {
     if (start > end || end > text.size())
         throw std::out_of_range("Verilog classification range is outside the source buffer");
@@ -224,6 +209,18 @@ void validate_backend(VerilogLexerBackend backend) {
         throw std::invalid_argument("unknown Verilog byte-classification backend");
 }
 
+#if defined(LABNEURA_VERILOG_LEXER_HAS_AVX2)
+uint32_t lanes_before(size_t count) noexcept {
+    return count >= classification_block_width
+               ? UINT32_MAX
+               : (uint32_t{1} << count) - 1;
+}
+
+uint32_t lanes_between(size_t start, size_t end) noexcept {
+    return lanes_before(end) & ~lanes_before(start);
+}
+#endif
+
 ClassificationBlock classify_block_unchecked(const unsigned char* input, size_t size,
                                              VerilogLexerBackend backend) {
 #if defined(LABNEURA_VERILOG_LEXER_HAS_AVX2)
@@ -231,10 +228,8 @@ ClassificationBlock classify_block_unchecked(const unsigned char* input, size_t 
         return classify_avx2(input);
 #endif
 #if defined(LABNEURA_VERILOG_LEXER_HAS_NEON)
-    if (backend == VerilogLexerBackend::Neon && size == classification_block_width) {
-        return merge_blocks(classify_neon_16(input),
-                            classify_neon_16(input + classification_block_width / 2));
-    }
+    if (backend == VerilogLexerBackend::Neon && size == classification_block_width)
+        return classify_neon_32(input);
 #endif
     return classify_scalar(input, size);
 }
@@ -316,9 +311,24 @@ size_t ClassificationScanner::find_first(size_t start, size_t end,
         const auto& block = block_at(start);
         const size_t local_start = start - cached_block_start_;
         const size_t local_end = std::min(block.size, end - cached_block_start_);
+#if defined(LABNEURA_VERILOG_LEXER_HAS_AVX2)
+        if (backend_ == VerilogLexerBackend::Avx2 &&
+            block.size == classification_block_width) {
+            const uint32_t candidates =
+                matching_lanes_avx2(block, classes) &
+                lanes_between(local_start, local_end);
+            if (candidates != 0)
+                return cached_block_start_ + std::countr_zero(candidates);
+            start = cached_block_start_ + block.size;
+            continue;
+        }
+#endif
         if (block.has_any(classes)) {
+            const auto low = static_cast<uint8_t>(classes);
+            const auto high = static_cast<uint8_t>(classes >> 8);
             for (size_t i = local_start; i < local_end; ++i) {
-                if ((block.flags_at(i) & classes) != 0)
+                if ((block.low_flags[i] & low) != 0 ||
+                    (block.high_flags[i] & high) != 0)
                     return cached_block_start_ + i;
             }
         }
@@ -337,9 +347,24 @@ size_t ClassificationScanner::find_first_not(size_t start, size_t end,
         const auto& block = block_at(start);
         const size_t local_start = start - cached_block_start_;
         const size_t local_end = std::min(block.size, end - cached_block_start_);
+#if defined(LABNEURA_VERILOG_LEXER_HAS_AVX2)
+        if (backend_ == VerilogLexerBackend::Avx2 &&
+            block.size == classification_block_width) {
+            const uint32_t candidates =
+                ~matching_lanes_avx2(block, classes) &
+                lanes_between(local_start, local_end);
+            if (candidates != 0)
+                return cached_block_start_ + std::countr_zero(candidates);
+            start = cached_block_start_ + block.size;
+            continue;
+        }
+#endif
         if (!block.every_has(byte_class)) {
+            const auto low = static_cast<uint8_t>(classes);
+            const auto high = static_cast<uint8_t>(classes >> 8);
             for (size_t i = local_start; i < local_end; ++i) {
-                if ((block.flags_at(i) & classes) == 0)
+                if ((block.low_flags[i] & low) == 0 &&
+                    (block.high_flags[i] & high) == 0)
                     return cached_block_start_ + i;
             }
         }

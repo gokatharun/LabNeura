@@ -67,6 +67,24 @@ JSON results, and a dependent job produces consolidated Markdown/JSON. Remote
 matrix execution remains pending; local cross-compilation is not AVX2 runtime
 validation.
 
+L5 replaces the AVX2 classifier's scalar per-lane flag reconstruction with
+vector flag assembly and horizontal aggregates. Full 32-byte AVX2 scanner
+blocks use movemask-based first-match selection; tails remain scalar. The
+x86_64 macOS cross-target compiles and links the lexer test and benchmark with
+`-mavx2` confined to the AVX2 translation unit. Runtime correctness and
+performance remain pending real x86_64 execution.
+
+L6 removes NEON's two temporary 16-byte `ClassificationBlock` objects and
+scalar merge by writing one 32-byte result directly. Shared scalar fallback
+scans compare low/high flag bytes without reconstructing a 16-bit flag per
+lane. On Apple M1, five Release benchmark invocations over 70,664 bytes and
+13,421 tokens measured median-of-invocation throughput changes of 255.11 to
+256.11 MB/s for scalar classification, 95.36 to 97.57 MB/s for the scalar
+full lexer, 1,262.78 to 1,363.30 MB/s for NEON classification, and 146.38 to
+150.84 MB/s for the NEON full lexer. Retained capacity stayed 829,440 bytes.
+Slang-free EDA CTest passed 10 tests with one expected AVX2 skip; Python EDA
+regressions passed 92 tests.
+
 ## Project identity
 
 LabNeura is a C++ numerical-computing and Tensor library with Python bindings.

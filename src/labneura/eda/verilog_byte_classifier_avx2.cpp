@@ -1,6 +1,5 @@
 #include "verilog_byte_classifier.h"
 
-#include <array>
 #include <cstring>
 #include <immintrin.h>
 
@@ -18,8 +17,30 @@ __m256i combine_equalities(__m256i bytes, std::string_view values) {
     return result;
 }
 
-uint32_t lane_mask(__m256i value) {
-    return static_cast<uint32_t>(_mm256_movemask_epi8(value));
+__m256i add_flag(__m256i current, __m256i predicate, unsigned char flag) {
+    return _mm256_or_si256(
+        current,
+        _mm256_and_si256(predicate, _mm256_set1_epi8(static_cast<char>(flag))));
+}
+
+uint8_t reduce_or(__m256i values) {
+    __m128i lanes = _mm_or_si128(_mm256_castsi256_si128(values),
+                                 _mm256_extracti128_si256(values, 1));
+    lanes = _mm_or_si128(lanes, _mm_srli_si128(lanes, 8));
+    lanes = _mm_or_si128(lanes, _mm_srli_si128(lanes, 4));
+    lanes = _mm_or_si128(lanes, _mm_srli_si128(lanes, 2));
+    lanes = _mm_or_si128(lanes, _mm_srli_si128(lanes, 1));
+    return static_cast<uint8_t>(_mm_cvtsi128_si32(lanes));
+}
+
+uint8_t reduce_and(__m256i values) {
+    __m128i lanes = _mm_and_si128(_mm256_castsi256_si128(values),
+                                  _mm256_extracti128_si256(values, 1));
+    lanes = _mm_and_si128(lanes, _mm_srli_si128(lanes, 8));
+    lanes = _mm_and_si128(lanes, _mm_srli_si128(lanes, 4));
+    lanes = _mm_and_si128(lanes, _mm_srli_si128(lanes, 2));
+    lanes = _mm_and_si128(lanes, _mm_srli_si128(lanes, 1));
+    return static_cast<uint8_t>(_mm_cvtsi128_si32(lanes));
 }
 
 } // namespace
@@ -41,55 +62,53 @@ ClassificationBlock classify_avx2(const unsigned char* input) {
     const __m256i whitespace = combine_equalities(bytes, " \t\n\r\f\v");
     const __m256i delimiter = combine_equalities(bytes, "()[]{}.,;:@#'");
     const __m256i op = combine_equalities(bytes, "+-*/%&|^~!<>=?");
+    const __m256i zero = _mm256_setzero_si256();
 
-    constexpr std::array<uint16_t, 12> flags = {
-        mask(ByteClass::Whitespace), mask(ByteClass::Newline),
-        mask(ByteClass::CarriageReturn), mask(ByteClass::DecimalDigit),
-        mask(ByteClass::IdentifierStart), mask(ByteClass::IdentifierContinue),
-        mask(ByteClass::DoubleQuote), mask(ByteClass::Backslash),
-        mask(ByteClass::Slash), mask(ByteClass::Asterisk),
-        mask(ByteClass::Delimiter), mask(ByteClass::Operator)
-    };
-    const std::array<uint32_t, 12> masks = {
-        lane_mask(whitespace),
-        lane_mask(equal_to(bytes, '\n')),
-        lane_mask(equal_to(bytes, '\r')),
-        lane_mask(digit),
-        lane_mask(identifier_start),
-        lane_mask(_mm256_or_si256(_mm256_or_si256(identifier_start, digit),
-                                  equal_to(bytes, '$'))),
-        lane_mask(equal_to(bytes, '"')),
-        lane_mask(equal_to(bytes, '\\')),
-        lane_mask(equal_to(bytes, '/')),
-        lane_mask(equal_to(bytes, '*')),
-        lane_mask(delimiter),
-        lane_mask(op)
-    };
+    __m256i low = zero;
+    low = add_flag(low, whitespace, 1u << 0);
+    low = add_flag(low, equal_to(bytes, '\n'), 1u << 1);
+    low = add_flag(low, equal_to(bytes, '\r'), 1u << 2);
+    low = add_flag(low, digit, 1u << 3);
+    low = add_flag(low, identifier_start, 1u << 4);
+    low = add_flag(low,
+                   _mm256_or_si256(_mm256_or_si256(identifier_start, digit),
+                                   equal_to(bytes, '$')),
+                   1u << 5);
+    low = add_flag(low, equal_to(bytes, '"'), 1u << 6);
+    low = add_flag(low, equal_to(bytes, '\\'), 1u << 7);
+
+    __m256i high = zero;
+    high = add_flag(high, equal_to(bytes, '/'), 1u << 0);
+    high = add_flag(high, equal_to(bytes, '*'), 1u << 1);
+    high = add_flag(high, delimiter, 1u << 2);
+    high = add_flag(high, op, 1u << 3);
 
     ClassificationBlock result;
     result.size = classification_block_width;
-    for (size_t i = 0; i < classification_block_width; ++i) {
-        uint16_t byte_flags = 0;
-        const uint32_t lane = uint32_t{1} << i;
-        for (size_t class_index = 0; class_index < masks.size(); ++class_index) {
-            if ((masks[class_index] & lane) != 0)
-                byte_flags |= flags[class_index];
-        }
-        result.low_flags[i] = static_cast<uint8_t>(byte_flags);
-        result.high_flags[i] = static_cast<uint8_t>(byte_flags >> 8);
-        result.any_low |= result.low_flags[i];
-        result.any_high |= result.high_flags[i];
-        if (i == 0) {
-            result.all_low = result.low_flags[i];
-            result.all_high = result.high_flags[i];
-        }
-        else {
-            result.all_low &= result.low_flags[i];
-            result.all_high &= result.high_flags[i];
-        }
-    }
+    std::memcpy(result.low_flags.data(), &low, sizeof(low));
+    std::memcpy(result.high_flags.data(), &high, sizeof(high));
+    result.any_low = reduce_or(low);
+    result.any_high = reduce_or(high);
+    result.all_low = reduce_and(low);
+    result.all_high = reduce_and(high);
 
     return result;
+}
+
+uint32_t matching_lanes_avx2(const ClassificationBlock& block,
+                             ByteClassMask classes) {
+    __m256i low;
+    __m256i high;
+    std::memcpy(&low, block.low_flags.data(), sizeof(low));
+    std::memcpy(&high, block.high_flags.data(), sizeof(high));
+    const __m256i zero = _mm256_setzero_si256();
+    const __m256i low_selected = _mm256_and_si256(
+        low, _mm256_set1_epi8(static_cast<char>(classes)));
+    const __m256i high_selected = _mm256_and_si256(
+        high, _mm256_set1_epi8(static_cast<char>(classes >> 8)));
+    const __m256i selected = _mm256_or_si256(low_selected, high_selected);
+    return ~static_cast<uint32_t>(
+        _mm256_movemask_epi8(_mm256_cmpeq_epi8(selected, zero)));
 }
 
 } // namespace labneura::eda::detail::verilog_lexer
