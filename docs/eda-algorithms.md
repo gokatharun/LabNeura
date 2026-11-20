@@ -408,6 +408,34 @@ from their sign bit and unsigned values from zero; truncation removes high
 bits, and packed vectors are connected least-significant bit first while
 retaining their declared port ranges.
 
+For native `+` and `-`, operands are first widened to the context-determined
+operation width. Extension follows the operation's resolved signedness: only
+an all-signed operation sign-extends its signed operands; a mixed
+signed/unsigned operation is unsigned and zero-extends both operands before
+the ripple adder/subtractor. This preserves carry in an explicitly widened
+assignment and modulo two's-complement borrow at the operation width. Signed
+and unsigned relational operators use the same resolved operand width and
+signedness rule.
+
+Native lowering implements bounded structural multiplication up to 64 result
+bits with shift-and-add partial products. It also supports unsigned division
+and remainder by a known nonzero constant through a restoring divider (up to
+64 bits). Variable divisors and signed division/remainder remain rejected so
+the two-state netlist never assigns an invented value to division by zero.
+Variable logical and arithmetic shifts lower to a barrel-MUX network and
+produce the specified zero or sign fill when the shift amount is oversized.
+
+The generic netlist also has a retained technology-independent synchronous
+`Memory` representation with word/depth/address metadata, one write enable,
+registered read data, and read-before-write semantics. Native inference accepts
+one static `[0:DEPTH-1]`, power-of-two-depth unpacked array of integral packed
+words when one positive-edge process contains an optional one-bit guarded
+whole-word nonblocking write followed by one whole-word registered read.
+Other arrays, partial writes, multiple ports/clocks, resets, and asynchronous
+reads remain explicit diagnostics. Generic mapping preserves the node;
+Verilog/BLIF export and ASIC/FPGA technology mapping reject it until dedicated
+memory serialization or macro mapping is implemented.
+
 The subset accepts dynamic packed bit-select reads only when a known unsigned
 index has a proven contiguous range within the declared one-dimensional packed
 range. The proof accepts unsigned constants and identifiers, concatenations

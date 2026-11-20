@@ -246,6 +246,13 @@ int main() {
                       directory / "computed_dynamic_bit_select");
         prove_fixture(fixtures / "nonzero_dynamic_bit_select.sv",
                       directory / "nonzero_dynamic_bit_select");
+        prove_fixture(fixtures / "arithmetic_mixed_sizing.sv",
+                      directory / "arithmetic_mixed_sizing");
+        prove_fixture(fixtures / "parameterized_add.sv",
+                      directory / "parameterized_add");
+        prove_fixture(fixtures / "multiplication.sv", directory / "multiplication");
+        prove_fixture(fixtures / "constant_divide_and_shift.sv",
+                      directory / "constant_divide_and_shift");
         prove_fixture(fixtures / "two_bit_add.sv", directory / "two_bit_add");
         test_incorrect_native_candidate_fails_proof(
             fixtures / "boolean_cells.sv", directory / "negative");

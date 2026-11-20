@@ -320,6 +320,23 @@ A feature is complete only when its semantics are documented, implementation exi
   continuous computed selectors, and overflow-safe constant offsets. MUX2-tree
   lowering covers ascending/descending nonzero ranges, exhaustive 2/4/8-way
   checks, sampled 16-way checks, and Yosys equivalence coverage.
+- [x] Native `+`/`-` operand widening follows the resolved binary-expression
+  signedness: all-signed operations sign-extend, while mixed signed/unsigned
+  operations zero-extend before arithmetic. Exhaustive mapped-netlist checks
+  cover mixed extension, signed widening, unsigned borrow, explicit carry,
+  parameter widths, and signed/unsigned comparisons; Yosys covers mixed and
+  parameterized arithmetic.
+- [x] Bounded native structural arithmetic: `*` through 64 result bits,
+  unsigned `/` and `%` by a known nonzero constant through 64 bits, and
+  two-state variable barrel shifts with deterministic oversized-fill behavior.
+  Variable divisors and signed division/remainder remain explicit diagnostics.
+- [x] Technology-independent `Memory` netlist representation retains
+  single-port synchronous metadata and read-before-write semantics without
+  decomposing storage into DFFs. Native inference covers one positive-edge,
+  optional-write-enable, whole-word write plus registered read over static
+  `[0:DEPTH-1]` power-of-two arrays; cycle tests retain unknown initialization
+  and read-before-write collisions. Export and technology mapping reject nodes
+  until memory-specific backends exist.
 - [ ] General arithmetic including multiply/divide, X/Z hardware semantics,
   dynamic writes/part-selects, local procedural storage, latches, hierarchy, inout,
   arbitrary resets, technology mapping, and general/sequential equivalence.

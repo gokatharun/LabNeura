@@ -11,6 +11,7 @@ namespace labneura::eda::detail {
 namespace {
 
 constexpr size_t kMaximumLoweredWidth = 4096;
+constexpr size_t kMaximumNativeMultiplyWidth = 64;
 
 const VerilogIntegralType* expression_type(
     const VerilogNativeLoweringSession& session,
@@ -317,7 +318,8 @@ std::optional<ProvenUnsignedRange> prove_unsigned_range(
 std::optional<VerilogNativeLoweringValue> lower(
     VerilogNativeLoweringSession& session, const VerilogExpression& expression,
     const VerilogNativeSymbolResolver& resolver,
-    std::optional<size_t> context_width = std::nullopt);
+    std::optional<size_t> context_width = std::nullopt,
+    std::optional<bool> context_is_signed = std::nullopt);
 
 std::string reduce_bits(VerilogNativeLoweringSession& session,
                         const std::vector<std::string>& bits,
@@ -713,6 +715,90 @@ std::optional<VerilogNativeLoweringValue> add_values(
     return result;
 }
 
+std::string less_than_unsigned(VerilogNativeLoweringSession& session,
+                               const VerilogNativeLoweringValue& lhs,
+                               const VerilogNativeLoweringValue& rhs,
+                               size_t width);
+
+std::optional<VerilogNativeLoweringValue> multiply_values(
+    VerilogNativeLoweringSession& session,
+    const VerilogNativeLoweringValue& lhs,
+    const VerilogNativeLoweringValue& rhs, size_t width, bool is_signed,
+    const VerilogSyntaxLocation& location) {
+    if (width == 0 || width > kMaximumNativeMultiplyWidth) {
+        session.diagnose("UnsupportedNativeMultiplyWidth",
+                         "native structural multiplication is limited to widths up to 64 bits",
+                         location);
+        return std::nullopt;
+    }
+
+    // Two's-complement multiplication and unsigned multiplication have the
+    // same low-width bit pattern. The operands have already been extended by
+    // lower_binary according to the resolved Verilog expression signedness.
+    VerilogNativeLoweringValue accumulated;
+    accumulated.is_signed = is_signed;
+    accumulated.bits.assign(width, session.constant(false));
+    for (size_t multiplier_bit = 0; multiplier_bit < width; ++multiplier_bit) {
+        VerilogNativeLoweringValue partial;
+        partial.is_signed = false;
+        partial.bits.assign(width, session.constant(false));
+        for (size_t multiplicand_bit = 0;
+             multiplicand_bit + multiplier_bit < width; ++multiplicand_bit) {
+            partial.bits[multiplicand_bit + multiplier_bit] = session.emit_binary(
+                "AND2", lhs.bits[multiplicand_bit], rhs.bits[multiplier_bit]);
+        }
+        auto sum = add_values(session, std::move(accumulated), std::move(partial),
+                              false, width, is_signed, location);
+        if (!sum)
+            return std::nullopt;
+        accumulated = std::move(*sum);
+    }
+    return accumulated;
+}
+
+std::optional<VerilogNativeLoweringValue> divide_by_constant_unsigned(
+    VerilogNativeLoweringSession& session, const VerilogNativeLoweringValue& dividend,
+    uint64_t divisor, size_t width, bool remainder,
+    const VerilogSyntaxLocation& location) {
+    if (divisor == 0 || width == 0 || width > kMaximumNativeMultiplyWidth) {
+        session.diagnose("UnsupportedNativeDivision",
+                         "native division requires a nonzero constant divisor and width up to 64 bits",
+                         location);
+        return std::nullopt;
+    }
+    VerilogNativeLoweringValue divisor_value;
+    divisor_value.bits.reserve(width + 1);
+    for (size_t bit = 0; bit <= width; ++bit)
+        divisor_value.bits.push_back(session.constant(
+            bit < 64 && ((divisor >> bit) & uint64_t{1}) != 0));
+
+    VerilogNativeLoweringValue partial_remainder;
+    partial_remainder.bits.assign(width + 1, session.constant(false));
+    VerilogNativeLoweringValue quotient;
+    quotient.bits.assign(width, session.constant(false));
+    for (size_t position = width; position != 0; --position) {
+        VerilogNativeLoweringValue shifted;
+        shifted.bits.resize(width + 1);
+        shifted.bits[0] = dividend.bits[position - 1];
+        for (size_t bit = 1; bit <= width; ++bit)
+            shifted.bits[bit] = partial_remainder.bits[bit - 1];
+        const std::string fits = session.emit_not(less_than_unsigned(
+            session, shifted, divisor_value, width + 1));
+        auto difference = add_values(session, shifted, divisor_value, true,
+                                     width + 1, false, location);
+        if (!difference)
+            return std::nullopt;
+        for (size_t bit = 0; bit <= width; ++bit)
+            partial_remainder.bits[bit] = session.emit_mux(
+                shifted.bits[bit], difference->bits[bit], fits);
+        quotient.bits[position - 1] = fits;
+    }
+    if (!remainder)
+        return quotient;
+    partial_remainder.bits.resize(width);
+    return partial_remainder;
+}
+
 std::string equality_value(VerilogNativeLoweringSession& session,
                            const VerilogNativeLoweringValue& lhs,
                            const VerilogNativeLoweringValue& rhs) {
@@ -763,15 +849,20 @@ std::optional<VerilogNativeLoweringValue> lower_binary(
                        op == ">>" || op == ">>>";
     const bool context_sized =
         op == "&" || op == "|" || op == "^" || op == "~^" ||
-        op == "^~" || op == "+" || op == "-" || shift;
+        op == "^~" || op == "+" || op == "-" || op == "*" ||
+        op == "/" || op == "%" || shift;
     const size_t operation_width = context_sized && context_width
         ? std::max(*result_type.bit_width, *context_width)
         : *result_type.bit_width;
     const auto operand_context = context_sized
         ? std::optional<size_t>(operation_width) : std::nullopt;
-    auto lhs = lower(session, *expression.first, resolver, operand_context);
+    const auto operand_signed_context = context_sized
+        ? std::optional<bool>(result_type.is_signed) : std::nullopt;
+    auto lhs = lower(session, *expression.first, resolver, operand_context,
+                     operand_signed_context);
     auto rhs = lower(session, *expression.second, resolver,
-                     shift ? std::nullopt : operand_context);
+                     shift ? std::nullopt : operand_context,
+                     shift ? std::nullopt : operand_signed_context);
     if (!lhs || !rhs)
         return std::nullopt;
 
@@ -842,35 +933,38 @@ std::optional<VerilogNativeLoweringValue> lower_binary(
     }
 
     if (shift) {
-        const auto shift = constant_integer(session, *expression.second);
-        if (!shift || *shift < 0 ||
-            static_cast<uint64_t>(*shift) > kMaximumLoweredWidth) {
-            session.diagnose("UnsupportedNativeShift",
-                             "native shifts require a nonnegative constant shift amount",
-                             expression.second->location);
-            return std::nullopt;
-        }
         auto left = resize_value(std::move(*lhs), operation_width,
                                  result_type.is_signed, expression.location,
                                  session);
         if (!left)
             return std::nullopt;
-        VerilogNativeLoweringValue shifted;
-        shifted.is_signed = result_type.is_signed;
-        shifted.bits.resize(operation_width, session.constant(false));
-        const size_t amount = static_cast<size_t>(*shift);
-        if (op == "<<" || op == "<<<") {
-            for (size_t bit = amount; bit < shifted.bits.size(); ++bit)
-                shifted.bits[bit] = left->bits[bit - amount];
-        } else {
-            const std::string fill = op == ">>>" && left->is_signed
-                ? left->bits.back()
-                : session.constant(false);
-            std::fill(shifted.bits.begin(), shifted.bits.end(), fill);
-            for (size_t bit = 0; bit + amount < shifted.bits.size(); ++bit)
-                shifted.bits[bit] = left->bits[bit + amount];
+        VerilogNativeLoweringValue current = *left;
+        const std::string fill = op == ">>>" && left->is_signed
+            ? left->bits.back() : session.constant(false);
+        std::string oversized = session.constant(false);
+        for (size_t level = 0; level < rhs->bits.size(); ++level) {
+            if (level >= 63 || (uint64_t{1} << level) >= operation_width) {
+                oversized = session.emit_binary("OR2", oversized, rhs->bits[level]);
+                continue;
+            }
+            const size_t amount = size_t{1} << level;
+            VerilogNativeLoweringValue shifted;
+            shifted.is_signed = result_type.is_signed;
+            shifted.bits.resize(operation_width, fill);
+            for (size_t bit = 0; bit < operation_width; ++bit) {
+                if (op == "<<" || op == "<<<") {
+                    if (bit >= amount) shifted.bits[bit] = current.bits[bit - amount];
+                } else if (bit + amount < operation_width) {
+                    shifted.bits[bit] = current.bits[bit + amount];
+                }
+            }
+            for (size_t bit = 0; bit < operation_width; ++bit)
+                current.bits[bit] = session.emit_mux(current.bits[bit], shifted.bits[bit],
+                                                     rhs->bits[level]);
         }
-        return shifted;
+        for (auto& bit : current.bits)
+            bit = session.emit_mux(bit, fill, oversized);
+        return current;
     }
 
     auto left = resize_value(std::move(*lhs), operation_width,
@@ -907,6 +1001,22 @@ std::optional<VerilogNativeLoweringValue> lower_binary(
         return add_values(session, std::move(*left), std::move(*right),
                           op == "-", operation_width,
                           result_type.is_signed, expression.location);
+    if (op == "*")
+        return multiply_values(session, *left, *right, operation_width,
+                               result_type.is_signed, expression.location);
+    if (op == "/" || op == "%") {
+        const auto divisor = constant_integer(session, *expression.second);
+        if (result_type.is_signed || !divisor || *divisor <= 0)
+            session.diagnose("UnsupportedNativeDivision",
+                             "native division and remainder require unsigned operands and a nonzero constant divisor",
+                             expression.location);
+        else
+            return divide_by_constant_unsigned(session, *left,
+                                               static_cast<uint64_t>(*divisor),
+                                               operation_width, op == "%",
+                                               expression.location);
+        return std::nullopt;
+    }
 
     session.diagnose("UnsupportedNativeBinaryOperator",
                      "native RTL lowering does not support operator '" + op + "'",
@@ -917,7 +1027,8 @@ std::optional<VerilogNativeLoweringValue> lower_binary(
 std::optional<VerilogNativeLoweringValue> lower(
     VerilogNativeLoweringSession& session, const VerilogExpression& expression,
     const VerilogNativeSymbolResolver& resolver,
-    std::optional<size_t> context_width) {
+    std::optional<size_t> context_width,
+    std::optional<bool> context_is_signed) {
     const VerilogIntegralType* type = nullptr;
     if (!valid_type(session, expression, type))
         return std::nullopt;
@@ -940,7 +1051,8 @@ std::optional<VerilogNativeLoweringValue> lower(
             if (context_width)
                 return resize_value(std::move(*constant),
                                     std::max(*type->bit_width, *context_width),
-                                    type->is_signed, expression.location, session);
+                                    context_is_signed.value_or(type->is_signed),
+                                    expression.location, session);
             return constant;
         }
     }
@@ -969,7 +1081,8 @@ std::optional<VerilogNativeLoweringValue> lower(
                                 context_width
                                     ? std::max(*type->bit_width, *context_width)
                                     : *type->bit_width,
-                                type->is_signed, expression.location, session);
+                                context_is_signed.value_or(type->is_signed),
+                                expression.location, session);
         }
         case VerilogExpressionKind::Literal:
             session.diagnose("UnsupportedNativeLiteral",

@@ -136,13 +136,13 @@ void test_unsupported_dynamic_select_and_four_state_literal_diagnose() {
             "X-valued expression was accepted or omitted its diagnostic");
 }
 
-void test_unsupported_arithmetic_operator_diagnoses() {
+void test_unsupported_division_diagnoses() {
     Fixture fixture(
         "module m(input logic [3:0] a, b, output logic [3:0] q);\n"
-        "  always_comb q = a * b;\n"
+        "  always_comb q = a / b;\n"
         "endmodule\n");
     require(!fixture.lowered.succeeded() && !fixture.lowered.diagnostics.empty(),
-            "unsupported nonconstant multiplication was accepted silently");
+            "unsupported nonconstant division was accepted silently");
 }
 
 } // namespace
@@ -153,7 +153,7 @@ int main() {
         test_static_select_concatenation_and_replication();
         test_identifier_select_range_direction_and_part_mapping();
         test_unsupported_dynamic_select_and_four_state_literal_diagnose();
-        test_unsupported_arithmetic_operator_diagnoses();
+        test_unsupported_division_diagnoses();
     } catch (const std::exception& exception) {
         std::cerr << "EDA Verilog expression lowering test failed: "
                   << exception.what() << '\n';

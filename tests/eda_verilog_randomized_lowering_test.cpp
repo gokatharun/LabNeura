@@ -306,9 +306,9 @@ void require_atomic_failure(std::string_view name, std::string source,
 }
 
 void test_negative_subset_and_failure_atomicity() {
-    require_atomic_failure("unsupported multiply",
+    require_atomic_failure("unsupported division",
         "module m(input logic [3:0] a, b, output logic [3:0] y); "
-        "assign y = a * b; endmodule\n", "UnsupportedNativeBinaryOperator");
+        "assign y = a / b; endmodule\n", "UnsupportedNativeBinaryOperator");
     require_atomic_failure("X constant",
         "module m(output logic y); assign y = 1'bx; endmodule\n",
         "FourStateConstantUnsupported");

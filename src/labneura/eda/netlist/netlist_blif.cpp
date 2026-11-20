@@ -44,6 +44,9 @@ int hex_digit(char character) {
 }  // namespace
 
 std::string to_blif(const Module& module) {
+    if (!module.get_memories().empty())
+        throw std::runtime_error(
+            "BLIF export does not support retained Memory nodes");
     std::ostringstream out;
     out << ".model " << module.get_name() << "\n";
     std::ostringstream inputs, outputs;

@@ -211,7 +211,7 @@ VerilogNativeLoweringSession::resolve_value(
 
 Module VerilogNativeLoweringSession::finalize() && {
     return Module(module.name, std::move(ports), std::move(nets),
-                  std::move(instances), {}, false);
+                  std::move(instances), {}, false, {}, {}, std::move(memories));
 }
 
 } // namespace labneura::eda::detail
@@ -319,20 +319,6 @@ VerilogNativeLoweringResult lower_verilog_native(
         // checked for drivers after declarations are initialized.
     }
 
-    for (const auto& process : process_result->processes) {
-        if (process.process.kind != VerilogProcessKind::ContinuousAssignment &&
-            process.synthesis_eligibility !=
-            VerilogSynthesisEligibility::Eligible) {
-            session.diagnose(
-                "ProcessNotEligibleForNativeLowering",
-                "M7.15 process eligibility is required before native lowering",
-                process.process.location);
-            for (const auto& diagnostic : process.diagnostics)
-                session.diagnostics.push_back(
-                    {diagnostic.code, diagnostic.message, diagnostic.location,
-                     diagnostic.related_location});
-        }
-    }
     if (!session.unsupported && !session.invalid) {
         (void)detail::initialize_verilog_native_module(session);
         if (!session.unsupported && !session.invalid)
@@ -342,6 +328,25 @@ VerilogNativeLoweringResult lower_verilog_native(
                 if (process.process.kind ==
                     VerilogProcessKind::ContinuousAssignment)
                     continue;
+                if (const auto memory =
+                        detail::lower_verilog_native_memory_process(session, process)) {
+                    if (!*memory)
+                        break;
+                    continue;
+                }
+                if (process.synthesis_eligibility !=
+                    VerilogSynthesisEligibility::Eligible) {
+                    session.diagnose(
+                        "ProcessNotEligibleForNativeLowering",
+                        "M7.15 process eligibility is required before native lowering",
+                        process.process.location);
+                    for (const auto& diagnostic : process.diagnostics)
+                        session.diagnostics.push_back(
+                            {diagnostic.code, diagnostic.message,
+                             diagnostic.location,
+                             diagnostic.related_location});
+                    break;
+                }
                 if (process.process.kind == VerilogProcessKind::AlwaysFF ||
                     (process.process.kind == VerilogProcessKind::Always &&
                      !process.process.events.empty() &&

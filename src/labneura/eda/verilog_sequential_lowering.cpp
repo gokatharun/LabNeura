@@ -504,4 +504,141 @@ bool lower_verilog_native_sequential_process(
     return true;
 }
 
+std::optional<bool> lower_verilog_native_memory_process(
+    VerilogNativeLoweringSession& session,
+    const VerilogProcessAnalysis& analysis) {
+    const auto& process = analysis.process;
+    if (!process.procedural_block || !process.procedural_block->body)
+        return std::nullopt;
+
+    const auto* body = process.procedural_block->body.get();
+    if (body->kind != VerilogStatementKind::Block || body->statements.size() != 2)
+        return std::nullopt;
+
+    const VerilogStatement* write = nullptr;
+    const VerilogExpression* write_enable = nullptr;
+    const auto* first = body->statements[0].get();
+    if (first && first->kind == VerilogStatementKind::If && first->expression &&
+        first->first_statement && !first->second_statement) {
+        write_enable = first->expression.get();
+        write = first->first_statement.get();
+    } else {
+        write = first;
+    }
+    const auto* read = body->statements[1].get();
+    if (!write || !read ||
+        write->kind != VerilogStatementKind::ProceduralAssignment ||
+        read->kind != VerilogStatementKind::ProceduralAssignment ||
+        write->assignment_kind != VerilogAssignmentKind::Nonblocking ||
+        read->assignment_kind != VerilogAssignmentKind::Nonblocking ||
+        !write->left || !write->right || !read->left || !read->right)
+        return std::nullopt;
+
+    auto memory_select = [&](const VerilogExpression& expression)
+        -> std::pair<const VerilogNativeMemoryDeclaration*, const VerilogExpression*> {
+        if (expression.kind != VerilogExpressionKind::Select ||
+            expression.select_kind != VerilogSelectKind::Bit ||
+            !expression.first || !expression.second ||
+            expression.first->kind != VerilogExpressionKind::Identifier)
+            return {nullptr, nullptr};
+        const auto* symbol = session.resolve_symbol(*expression.first);
+        const auto found = session.memory_declarations.find(symbol);
+        return found == session.memory_declarations.end()
+            ? std::pair<const VerilogNativeMemoryDeclaration*, const VerilogExpression*>{nullptr, nullptr}
+            : std::pair<const VerilogNativeMemoryDeclaration*, const VerilogExpression*>{
+                  &found->second, expression.second.get()};
+    };
+
+    const auto [write_memory, write_address_expression] = memory_select(*write->left);
+    const auto [read_memory, read_address_expression] = memory_select(*read->right);
+    if (!write_memory && !read_memory)
+        return std::nullopt;
+    if (!write_memory || !read_memory || write_memory->symbol != read_memory->symbol) {
+        session.diagnose("UnsupportedNativeMemoryPorts",
+                         "memory process must contain one whole-word write and one registered read of the same memory",
+                         process.location);
+        return false;
+    }
+    if (session.inferred_memories.contains(write_memory->symbol)) {
+        session.diagnose("MultipleNativeMemoryWriters",
+                         "native memory inference supports exactly one clocked process per memory",
+                         process.location);
+        return false;
+    }
+    if (process.events.size() != 1 ||
+        process.events.front().edge != VerilogEventEdge::Posedge ||
+        !process.events.front().symbol) {
+        session.diagnose("UnsupportedNativeMemoryClock",
+                         "native memory inference requires one positive-edge clock",
+                         process.location);
+        return false;
+    }
+    const auto* clock_signal = session.signal(process.events.front().symbol);
+    if (!clock_signal || clock_signal->bits.size() != 1) {
+        session.diagnose("UnsupportedNativeMemoryClock",
+                         "memory clock must resolve to a one-bit module input",
+                         process.events.front().location);
+        return false;
+    }
+
+    const size_t word_width = *write_memory->word_type.bit_width;
+    const size_t depth = write_memory->depth;
+    if ((depth & (depth - 1)) != 0) {
+        session.diagnose("UnsupportedNativeMemoryDepth",
+                         "native memory inference currently requires a power-of-two depth",
+                         write_memory->declaration->location);
+        return false;
+    }
+    size_t address_width = 0;
+    for (size_t values = depth; values > 1; values >>= 1)
+        ++address_width;
+
+    auto write_address = lower_verilog_native_expression(
+        session, *write_address_expression);
+    auto read_address = lower_verilog_native_expression(
+        session, *read_address_expression);
+    auto write_data = lower_verilog_native_expression(
+        session, *write->right, {}, word_width);
+    if (!write_address || !read_address || !write_data ||
+        write_address->bits.size() != address_width ||
+        read_address->bits.size() != address_width ||
+        write_data->bits.size() != word_width) {
+        session.diagnose("UnsupportedNativeMemoryPortWidth",
+                         "memory address or data width does not match the inferred declaration",
+                         process.location);
+        return false;
+    }
+
+    const auto* output_symbol = read->left->kind == VerilogExpressionKind::Identifier
+        ? session.resolve_symbol(*read->left) : nullptr;
+    const auto* output_signal = session.signal(output_symbol);
+    if (!output_signal || output_signal->bits.size() != word_width) {
+        session.diagnose("UnsupportedNativeMemoryReadTarget",
+                         "registered memory read must assign one complete output word",
+                         read->left->location);
+        return false;
+    }
+    std::string enable_net = session.constant(true);
+    if (write_enable) {
+        auto enable = lower_verilog_native_expression(session, *write_enable);
+        if (!enable || enable->bits.size() != 1) {
+            session.diagnose("UnsupportedNativeMemoryWriteEnable",
+                             "memory write enable must be a one-bit expression",
+                             write_enable->location);
+            return false;
+        }
+        enable_net = enable->bits.front();
+    }
+
+    session.memories.emplace_back(
+        write_memory->symbol->name, word_width, depth, address_width,
+        clock_signal->bits.front(), enable_net, std::move(write_address->bits),
+        std::move(write_data->bits), std::move(read_address->bits),
+        output_signal->bits, MemoryReadDuringWrite::ReadBeforeWrite);
+    session.inferred_memories.insert(write_memory->symbol);
+    session.driven_net_names.insert(output_signal->bits.begin(),
+                                    output_signal->bits.end());
+    return true;
+}
+
 } // namespace labneura::eda::detail

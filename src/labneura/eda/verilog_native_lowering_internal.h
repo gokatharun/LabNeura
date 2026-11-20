@@ -33,6 +33,13 @@ struct VerilogNativeLoweringSignal {
     std::optional<PortDirection> direction;
 };
 
+struct VerilogNativeMemoryDeclaration {
+    const VerilogSemanticSymbol* symbol = nullptr;
+    const VerilogVariableDeclaration* declaration = nullptr;
+    VerilogIntegralType word_type;
+    size_t depth = 0;
+};
+
 // Shared lowering contract. It owns only construction data for the existing
 // Module/Net/Instance model; it is not a second graph representation.
 struct VerilogNativeLoweringSession {
@@ -45,6 +52,10 @@ struct VerilogNativeLoweringSession {
     std::vector<Port> ports;
     std::vector<Net> nets;
     std::vector<Instance> instances;
+    std::vector<Memory> memories;
+    std::unordered_map<const VerilogSemanticSymbol*, VerilogNativeMemoryDeclaration>
+        memory_declarations;
+    std::unordered_set<const VerilogSemanticSymbol*> inferred_memories;
     std::vector<VerilogNativeLoweringDiagnostic> diagnostics;
     std::vector<VerilogNativeLoweringSignal> signals;
     std::unordered_map<const VerilogSemanticSymbol*, size_t> signal_indices;
@@ -117,6 +128,12 @@ bool lower_verilog_native_combinational_process(
     VerilogNativeLoweringSession& session,
     const VerilogProcessAnalysis& process);
 bool lower_verilog_native_sequential_process(
+    VerilogNativeLoweringSession& session,
+    const VerilogProcessAnalysis& process);
+
+// nullopt means the process does not reference a supported memory declaration.
+// true/false means it was recognized and lowering succeeded/failed.
+std::optional<bool> lower_verilog_native_memory_process(
     VerilogNativeLoweringSession& session,
     const VerilogProcessAnalysis& process);
 
