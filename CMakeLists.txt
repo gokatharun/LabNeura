@@ -1258,18 +1258,6 @@ if(LABNEURA_BUILD_EDA AND NOT SKBUILD)
     add_test(NAME eda_verilog_randomized_lowering
       COMMAND labneura_eda_verilog_randomized_lowering_test)
 
-    add_executable(labneura_eda_verilog_native_formal_equivalence_test
-      tests/eda_verilog_native_formal_equivalence_test.cpp)
-    target_compile_definitions(labneura_eda_verilog_native_formal_equivalence_test
-      PRIVATE
-        "LABNEURA_NATIVE_FORMAL_FIXTURE_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/tests/data/verilog/native_equivalence/formal\"")
-    target_link_libraries(labneura_eda_verilog_native_formal_equivalence_test
-      PRIVATE labneura_eda)
-    add_test(NAME eda_verilog_native_formal_equivalence
-      COMMAND labneura_eda_verilog_native_formal_equivalence_test)
-    set_tests_properties(eda_verilog_native_formal_equivalence PROPERTIES
-      SKIP_RETURN_CODE 77 TIMEOUT 90)
-
     set_tests_properties(
       eda_netlist_evaluator
       eda_verilog_combinational_equivalence
@@ -1364,6 +1352,20 @@ if(LABNEURA_BUILD_EDA AND NOT SKBUILD)
     )
   endif()
 
+  if(BUILD_TESTING)
+    add_executable(labneura_eda_verilog_native_formal_equivalence_test
+      tests/eda_verilog_native_formal_equivalence_test.cpp)
+    target_compile_definitions(labneura_eda_verilog_native_formal_equivalence_test
+      PRIVATE
+        "LABNEURA_NATIVE_FORMAL_FIXTURE_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/tests/data/verilog/native_equivalence/formal\"")
+    target_link_libraries(labneura_eda_verilog_native_formal_equivalence_test
+      PRIVATE labneura_eda)
+    add_test(NAME eda_verilog_native_formal_equivalence
+      COMMAND labneura_eda_verilog_native_formal_equivalence_test)
+    set_tests_properties(eda_verilog_native_formal_equivalence PROPERTIES
+      SKIP_RETURN_CODE 77 TIMEOUT 90)
+  endif()
+
   add_executable(labneura_lexer_benchmark EXCLUDE_FROM_ALL
     benchmarks/eda/verilog_lexer_benchmark.cpp
   )
@@ -1456,22 +1458,28 @@ endif()
 
 if(SKBUILD)
   set(Python_FIND_FRAMEWORK FIRST)
-  find_package(Python COMPONENTS Interpreter REQUIRED)
-  execute_process(
-    COMMAND "${Python_EXECUTABLE}" -c
-      "import pathlib, sys, sysconfig; version = sysconfig.get_config_var('VERSION'); candidates = [sysconfig.get_path('include'), sysconfig.get_config_var('INCLUDEPY') or '', str(pathlib.Path(sysconfig.get_path('stdlib')).parents[1] / 'include' / ('python' + version)), str(pathlib.Path(sys.prefix) / 'include' / ('python' + version))]; print(next((path for path in candidates if path and (pathlib.Path(path) / 'Python.h').is_file()), ''))"
-    OUTPUT_VARIABLE LABNEURA_PYTHON_INCLUDE_DIR
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-    RESULT_VARIABLE LABNEURA_PYTHON_INCLUDE_RESULT
-  )
-  if(NOT LABNEURA_PYTHON_INCLUDE_RESULT EQUAL 0 OR
-     NOT EXISTS "${LABNEURA_PYTHON_INCLUDE_DIR}/Python.h")
-    message(FATAL_ERROR "Could not locate Python.h for ${Python_EXECUTABLE}")
+  if(WIN32)
+    find_package(Python COMPONENTS Interpreter Development.Module REQUIRED)
+    set(LABNEURA_PYTHON_EXTENSION_SUFFIX ".pyd")
+  else()
+    find_package(Python COMPONENTS Interpreter REQUIRED)
+    execute_process(
+      COMMAND "${Python_EXECUTABLE}" -c
+        "import pathlib, sys, sysconfig; version = sysconfig.get_config_var('VERSION'); candidates = [sysconfig.get_path('include'), sysconfig.get_config_var('INCLUDEPY') or '', str(pathlib.Path(sysconfig.get_path('stdlib')).parents[1] / 'include' / ('python' + version)), str(pathlib.Path(sys.prefix) / 'include' / ('python' + version))]; print(next((path for path in candidates if path and (pathlib.Path(path) / 'Python.h').is_file()), ''))"
+      OUTPUT_VARIABLE LABNEURA_PYTHON_INCLUDE_DIR
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+      RESULT_VARIABLE LABNEURA_PYTHON_INCLUDE_RESULT
+    )
+    if(NOT LABNEURA_PYTHON_INCLUDE_RESULT EQUAL 0 OR
+       NOT EXISTS "${LABNEURA_PYTHON_INCLUDE_DIR}/Python.h")
+      message(FATAL_ERROR "Could not locate Python.h for ${Python_EXECUTABLE}")
+    endif()
+    add_library(Python::Module INTERFACE IMPORTED)
+    target_include_directories(Python::Module INTERFACE
+      "${LABNEURA_PYTHON_INCLUDE_DIR}"
+    )
+    set(LABNEURA_PYTHON_EXTENSION_SUFFIX "${CMAKE_SHARED_MODULE_SUFFIX}")
   endif()
-  add_library(Python::Module INTERFACE IMPORTED)
-  target_include_directories(Python::Module INTERFACE
-    "${LABNEURA_PYTHON_INCLUDE_DIR}"
-  )
   find_package(pybind11 CONFIG REQUIRED)
 
   if(LABNEURA_BUILD_COMPAT)
@@ -1483,7 +1491,7 @@ if(SKBUILD)
     set_target_properties(labneura_python PROPERTIES
       PREFIX ""
       OUTPUT_NAME labneura
-      SUFFIX "${CMAKE_SHARED_MODULE_SUFFIX}"
+      SUFFIX "${LABNEURA_PYTHON_EXTENSION_SUFFIX}"
     )
     target_link_libraries(labneura_python PRIVATE pybind11::module labneura)
     if(LABNEURA_ENABLE_COVERAGE OR "$ENV{LABNEURA_COVERAGE}" STREQUAL "1")
@@ -1512,7 +1520,7 @@ if(SKBUILD)
     set_target_properties(_tensor PROPERTIES
       PREFIX ""
       OUTPUT_NAME _tensor
-      SUFFIX "${CMAKE_SHARED_MODULE_SUFFIX}"
+      SUFFIX "${LABNEURA_PYTHON_EXTENSION_SUFFIX}"
       POSITION_INDEPENDENT_CODE ON
     )
     target_link_libraries(_tensor PRIVATE pybind11::module labneura_tensor)
@@ -1542,7 +1550,7 @@ if(SKBUILD)
     set_target_properties(_eda PROPERTIES
       PREFIX ""
       OUTPUT_NAME _eda
-      SUFFIX "${CMAKE_SHARED_MODULE_SUFFIX}"
+      SUFFIX "${LABNEURA_PYTHON_EXTENSION_SUFFIX}"
       POSITION_INDEPENDENT_CODE ON
     )
     target_link_libraries(_eda PRIVATE pybind11::module labneura_eda)
