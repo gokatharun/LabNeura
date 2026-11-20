@@ -1352,7 +1352,10 @@ if(LABNEURA_BUILD_EDA AND NOT SKBUILD)
     )
   endif()
 
-  if(BUILD_TESTING)
+  # The formal-equivalence harness invokes the external Yosys executable via a
+  # POSIX shell. The dedicated Linux Yosys CI job owns that integration test;
+  # keep Windows EDA-only CTest free of an unavoidable external-tool skip.
+  if(BUILD_TESTING AND NOT WIN32)
     add_executable(labneura_eda_verilog_native_formal_equivalence_test
       tests/eda_verilog_native_formal_equivalence_test.cpp)
     target_compile_definitions(labneura_eda_verilog_native_formal_equivalence_test
