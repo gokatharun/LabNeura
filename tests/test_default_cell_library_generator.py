@@ -13,7 +13,9 @@ TEMPLATE = (
     / "default_cell_library.h.in"
 )
 LIBERTY = ROOT / "assets" / "sky130_fd_sc_hd__tt_025C_1v80.lib"
-LITERAL = re.compile(r'^\s*std::string_view\("((?:\\.|[^"\\])*)"\),$')
+LITERAL = re.compile(
+    r'^\s*std::string_view\("((?:\\.|[^"\\])*)", ([0-9]+)\),$'
+)
 
 
 def generate(tmp_path, data):
@@ -34,11 +36,14 @@ def generate(tmp_path, data):
     )
     chunks = []
     literal_spellings = []
+    declared_lengths = []
     for line in output.read_text(encoding="utf-8").splitlines():
         match = LITERAL.match(line)
         if match:
             literal_spellings.append(match.group(1).encode())
             chunks.append(ast.literal_eval(f'"{match.group(1)}"').encode())
+            declared_lengths.append(int(match.group(2)))
+    assert list(map(len, chunks)) == declared_lengths
     return output, chunks, literal_spellings
 
 

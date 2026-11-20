@@ -35,7 +35,7 @@ function(labneura_generate_embedded_liberty input_path template_path output_path
     string(SUBSTRING "${liberty_source}" ${offset} ${current_length} chunk)
     _labneura_escape_liberty_chunk("${chunk}" escaped_chunk)
     string(APPEND LABNEURA_EDA_LIBERTY_CHUNKS
-      "    std::string_view(\"${escaped_chunk}\"),\n")
+      "    std::string_view(\"${escaped_chunk}\", ${current_length}),\n")
     math(EXPR LABNEURA_EDA_LIBERTY_CHUNK_COUNT
       "${LABNEURA_EDA_LIBERTY_CHUNK_COUNT} + 1")
     math(EXPR offset "${offset} + ${current_length}")
