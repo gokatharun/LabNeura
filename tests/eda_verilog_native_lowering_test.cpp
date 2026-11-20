@@ -54,6 +54,13 @@ bool has_diagnostic(const VerilogNativeLoweringResult& result,
                        });
 }
 
+std::string diagnostic_text(const VerilogNativeLoweringResult& result) {
+    std::string text;
+    for (const auto& diagnostic : result.diagnostics)
+        text += " [" + diagnostic.code + "] " + diagnostic.message;
+    return text;
+}
+
 VerificationBits bits(std::uint32_t value, size_t width) {
     VerificationBits result(width);
     for (size_t bit = 0; bit < width; ++bit)
@@ -89,6 +96,26 @@ void exhaustively_check_dynamic_select(const std::string& source,
             require(evaluate_select(module, data, data_width, index, index_width) ==
                         expected,
                     "mapped dynamic bit-select differs from independent truth table");
+        }
+    }
+}
+
+void exhaustively_check_nonzero_dynamic_select(const std::string& source,
+                                               bool ascending) {
+    Fixture fixture(source);
+    require(fixture.lowered.succeeded(),
+            "range-proven nonzero dynamic bit-select did not lower:" +
+                diagnostic_text(fixture.lowered));
+    const auto& module = *fixture.lowered.module;
+    for (std::uint32_t data = 0; data < 16; ++data) {
+        for (std::uint32_t index = 0; index < 4; ++index) {
+            // The selector values are 4..7.  The input test bits are stored
+            // LSB first, so descending [7:4] maps 4 to bit 0 while ascending
+            // [4:7] maps 4 to bit 3.
+            const size_t position = ascending ? 3 - index : index;
+            require(evaluate_select(module, data, 4, index, 2) ==
+                        (((data >> position) & 1U) != 0),
+                    "nonzero-range dynamic select differs from independent truth table");
         }
     }
 }
@@ -196,13 +223,77 @@ void test_bounded_dynamic_select_and_range_rejection() {
                         (((data >> (index ^ 1U)) & 1U) != 0),
                     "computed dynamic index differs from independent expectation");
 
-    Fixture nonzero(
+    exhaustively_check_nonzero_dynamic_select(
         "module m(input logic [7:4] data, input logic [1:0] index, output logic y);\n"
-        " assign y = data[index];\n"
+        " logic [2:0] selected_index;\n"
+        " assign selected_index = {1'b1, index};\n"
+        " assign y = data[selected_index];\n"
+        "endmodule\n", false);
+    exhaustively_check_nonzero_dynamic_select(
+        "module m(input logic [4:7] data, input logic [1:0] index, output logic y);\n"
+        " assign y = data[{1'b1, index}];\n"
+        "endmodule\n", true);
+
+    Fixture zero_based_offset(
+        "module m(input logic [3:0] data, input logic [1:0] index, output logic y);\n"
+        " assign y = data[index + 2'd0];\n"
         "endmodule\n");
-    require(!nonzero.lowered.succeeded() &&
-                has_diagnostic(nonzero.lowered, "DynamicNativeSelectRangeUnproven"),
-            "nonzero range was incorrectly treated as zero-based");
+    require(zero_based_offset.lowered.succeeded(),
+            "overflow-safe zero-based constant offset did not lower");
+    for (std::uint32_t data = 0; data < 16; ++data)
+        for (std::uint32_t index = 0; index < 4; ++index)
+            require(evaluate_select(*zero_based_offset.lowered.module, data, 4, index, 2) ==
+                        (((data >> index) & 1U) != 0),
+                    "zero-based constant-offset select differs from independent truth table");
+
+    exhaustively_check_nonzero_dynamic_select(
+        "module m(input logic [7:4] data, input logic [1:0] index, output logic y);\n"
+        " assign y = data[index + 3'd4];\n"
+        "endmodule\n", false);
+    exhaustively_check_nonzero_dynamic_select(
+        "module m(input logic [7:4] data, input logic [1:0] index, output logic y);\n"
+        " assign y = data[{1'b1, index}];\n"
+        "endmodule\n", false);
+    exhaustively_check_dynamic_select(
+        "module m(input logic [3:0] data, input logic [1:0] index, output logic y);\n"
+        " assign y = data[{1'b1, index} - 3'd4];\n"
+        "endmodule\n", 4, 2, false);
+
+    Fixture arithmetic_overflow(
+        "module m(input logic [3:0] data, input logic [1:0] index, output logic y);\n"
+        " assign y = data[index + 2'd1];\n"
+        "endmodule\n");
+    require(!arithmetic_overflow.lowered.succeeded() &&
+                has_diagnostic(arithmetic_overflow.lowered,
+                               "DynamicNativeSelectRangeUnproven"),
+            "wrapping dynamic index arithmetic was accepted");
+
+    Fixture arithmetic_underflow(
+        "module m(input logic [3:0] data, input logic [1:0] index, output logic y);\n"
+        " assign y = data[index - 2'd1];\n"
+        "endmodule\n");
+    require(!arithmetic_underflow.lowered.succeeded() &&
+                has_diagnostic(arithmetic_underflow.lowered,
+                               "DynamicNativeSelectRangeUnproven"),
+            "underflowing dynamic index arithmetic was accepted");
+
+    Fixture unsafe_intersection(
+        "module m(input logic [7:4] data, input logic [1:0] index, output logic y);\n"
+        " assign y = data[index + 3'd5];\n"
+        "endmodule\n");
+    require(!unsafe_intersection.lowered.succeeded() &&
+                has_diagnostic(unsafe_intersection.lowered,
+                               "DynamicNativeSelectRangeUnproven"),
+            "partially out-of-range dynamic index was accepted");
+
+    Fixture sparse_concatenation(
+        "module m(input logic [3:0] data, input logic index, output logic y);\n"
+        " assign y = data[{index, index}];\n"
+        "endmodule\n");
+    require(!sparse_concatenation.lowered.succeeded() &&
+                has_diagnostic(sparse_concatenation.lowered,
+                               "DynamicNativeSelectRangeUnproven"),
+            "sparse repeated-index concatenation was accepted");
 
     Fixture too_wide(
         "module m(input logic [3:0] data, input logic [2:0] index, output logic y);\n"

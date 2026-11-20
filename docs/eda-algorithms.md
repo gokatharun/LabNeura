@@ -408,12 +408,17 @@ from their sign bit and unsigned values from zero; truncation removes high
 bits, and packed vectors are connected least-significant bit first while
 retaining their declared port ranges.
 
-The subset accepts dynamic packed bit-select reads only when the select index
-has a known unsigned width and its full two-state range `0..2^W-1` fits the
-declared one-dimensional packed range. It lowers the select as a balanced
-MUX2 tree using the declaration's actual packed ordering. Dynamic writes,
-dynamic part-selects, signed or unknown-width indices, and indices that could
-be out of range remain unsupported. The subset rejects X/Z constants, unsupported arithmetic (including
+The subset accepts dynamic packed bit-select reads only when a known unsigned
+index has a proven contiguous range within the declared one-dimensional packed
+range. The proof accepts unsigned constants and identifiers, concatenations
+(including zero extension), unambiguous continuously driven computed selectors,
+and overflow/underflow-free addition or subtraction by a known constant. The
+interval must be power-of-two aligned, so its low index bits directly select a
+balanced MUX2 tree; this avoids inventing outputs for impossible index values.
+The tree uses the declaration's actual packed ordering, including nonzero,
+ascending ranges. Dynamic writes, dynamic part-selects, signed or unknown-width
+indices, sparse or unproven ranges, and arithmetic that can overflow or
+underflow remain unsupported. The subset rejects X/Z constants, unsupported arithmetic (including
 nonconstant multiplication/division), unsupported local
 storage, ambiguous drivers, incomplete combinational assignments, latches,
 unsupported reset patterns, inout ports, and hierarchy. Eligibility is only a
