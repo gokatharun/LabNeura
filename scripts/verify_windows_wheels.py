@@ -51,13 +51,14 @@ def validate(dist: Path, expected_version: str, extract_dir: Path) -> Path:
         for tag in core_tags
     ):
         raise AssertionError(f"{core.name}: expected a py3-none-any core wheel")
-    if not any(
-        tag.interpreter == "cp311"
-        and tag.abi == "cp311"
+    windows_tags = {
+        tag for tag in eda_tags
+        if tag.interpreter in {"cp38", "cp39", "cp310", "cp311", "cp312", "cp313"}
+        and tag.abi == tag.interpreter
         and tag.platform == "win_amd64"
-        for tag in eda_tags
-    ):
-        raise AssertionError(f"{eda.name}: expected cp311-cp311-win_amd64, got {eda_tags}")
+    }
+    if not windows_tags:
+        raise AssertionError(f"{eda.name}: expected a supported CPython win_amd64 wheel, got {eda_tags}")
 
     with zipfile.ZipFile(core) as archive:
         metadata = _metadata(archive, core)

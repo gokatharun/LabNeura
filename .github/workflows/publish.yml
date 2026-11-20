@@ -137,8 +137,20 @@ jobs:
             platform: windows-amd64
             arch: AMD64
             linux_arch: ""
-            python_group: cp311
-            cibw_build: cp311-*
+            python_group: cp38-cp39
+            cibw_build: cp38-* cp39-*
+          - os: windows-2022
+            platform: windows-amd64
+            arch: AMD64
+            linux_arch: ""
+            python_group: cp310-cp311
+            cibw_build: cp310-* cp311-*
+          - os: windows-2022
+            platform: windows-amd64
+            arch: AMD64
+            linux_arch: ""
+            python_group: cp312-cp313
+            cibw_build: cp312-* cp313-*
 
     steps:
       - name: Checkout repository
@@ -758,7 +770,7 @@ jobs:
                   platform.startswith("macosx_") and platform.endswith("_x86_64")),
               "macos-arm64": (python_tags, lambda platform:
                   platform.startswith("macosx_") and platform.endswith("_arm64")),
-              "windows-amd64": ({"cp311"}, lambda platform:
+              "windows-amd64": (python_tags, lambda platform:
                   platform == "win_amd64"),
           }
           for name in ("labneura-tensor", "labneura-eda"):
