@@ -28,7 +28,9 @@ jobs:
           python-version: '3.11'
 
       - name: Update version files from release tag
-        run: python scripts/update_version.py --version "${GITHUB_REF_NAME#v}"
+        run: >-
+          python -c "import os, subprocess, sys; subprocess.run([sys.executable,
+          'scripts/update_version.py', '--version', os.environ['GITHUB_REF_NAME'].removeprefix('v')], check=True)"
 
       - name: Open version sync pull request
         uses: peter-evans/create-pull-request@v7
@@ -155,7 +157,9 @@ jobs:
 
       - name: Set package version from release tag
         if: github.event_name == 'release'
-        run: python scripts/update_version.py --version "${GITHUB_REF_NAME#v}"
+        run: >-
+          python -c "import os, subprocess, sys; subprocess.run([sys.executable,
+          'scripts/update_version.py', '--version', os.environ['GITHUB_REF_NAME'].removeprefix('v')], check=True)"
 
       - name: Validate package version declarations
         if: github.event_name == 'workflow_dispatch'
@@ -257,7 +261,9 @@ jobs:
 
       - name: Set package version from release tag
         if: github.event_name == 'release'
-        run: python scripts/update_version.py --version "${GITHUB_REF_NAME#v}"
+        run: >-
+          python -c "import os, subprocess, sys; subprocess.run([sys.executable,
+          'scripts/update_version.py', '--version', os.environ['GITHUB_REF_NAME'].removeprefix('v')], check=True)"
 
       - name: Validate package version declarations
         if: github.event_name == 'workflow_dispatch'
@@ -333,7 +339,9 @@ jobs:
 
       - name: Set package version from release tag
         if: github.event_name == 'release'
-        run: python scripts/update_version.py --version "${GITHUB_REF_NAME#v}"
+        run: >-
+          python -c "import os, subprocess, sys; subprocess.run([sys.executable,
+          'scripts/update_version.py', '--version', os.environ['GITHUB_REF_NAME'].removeprefix('v')], check=True)"
 
       - name: Validate package version declarations
         if: github.event_name == 'workflow_dispatch'
@@ -480,7 +488,9 @@ jobs:
 
       - name: Set package version from release tag
         if: github.event_name == 'release'
-        run: python scripts/update_version.py --version "${GITHUB_REF_NAME#v}"
+        run: >-
+          python -c "import os, subprocess, sys; subprocess.run([sys.executable,
+          'scripts/update_version.py', '--version', os.environ['GITHUB_REF_NAME'].removeprefix('v')], check=True)"
 
       - name: Validate package version declarations
         if: github.event_name == 'workflow_dispatch'
