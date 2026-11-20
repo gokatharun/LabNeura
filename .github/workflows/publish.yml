@@ -808,3 +808,10 @@ jobs:
           path: ${{ runner.temp }}/labneura-release-dist/*
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publish qualified distributions to PyPI
+        if: github.event_name == 'release'
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: python -m twine upload --non-interactive "$RUNNER_TEMP"/labneura-release-dist/*
