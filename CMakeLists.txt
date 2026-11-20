@@ -1643,7 +1643,7 @@ if(LABNEURA_INSTALL_TARGETS AND NOT SKBUILD AND NOT LABNEURA_SPLIT_PYTHON_DISTRI
   )
   write_basic_package_version_file(
     "${CMAKE_CURRENT_BINARY_DIR}/LabNeuraConfigVersion.cmake"
-    VERSION 0.4.9
+    VERSION 0.5.0
     COMPATIBILITY SameMajorVersion
   )
   install(FILES
