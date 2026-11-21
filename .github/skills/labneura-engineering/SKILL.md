@@ -170,6 +170,15 @@ For performance changes:
 - Prevent known regressions: validate `dumpbin` inputs, confirm CMake targets
   exist before invoking them, use PowerShell-safe quoting on Windows, and split
   generated sources before MSVC string-literal/compiler limits are reached.
+- Tests that mutate process environment must use `test_environment.h`'s scoped
+  helper, which restores the prior value and maps to `_putenv_s` on Windows;
+  do not call POSIX `setenv` or `unsetenv` directly.
+- Probe ISA support using compiler-specific flags: `/arch:AVX2` and an
+  intrinsic compile probe for MSVC, versus `-mavx2`/`-mf16c` for GCC/Clang.
+  Apply those flags only to the dedicated ISA translation units.
+- Windows wheel jobs must initialize the MSVC developer environment and verify
+  `dumpbin` before mandatory PE dependency inspection. CMake configure/build
+  steps in PowerShell must check `$LASTEXITCODE` before invoking CTest.
 - A macOS or Linux compile does not prove Windows support. If local MSVC is not
   available, require the relevant remote Windows build and runtime CI result.
 

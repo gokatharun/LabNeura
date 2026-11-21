@@ -458,6 +458,9 @@ if(NOT SKBUILD AND LABNEURA_BUILD_TENSOR AND BUILD_TESTING)
     add_executable(labneura_fp32_parallel_add_test
       tests/fp32_parallel_add_test.cpp
     )
+    target_include_directories(labneura_fp32_parallel_add_test PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
     target_link_libraries(labneura_fp32_parallel_add_test PRIVATE labneura_tensor)
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
       target_compile_definitions(labneura_fp32_parallel_add_test

@@ -1,4 +1,4 @@
-#if defined(__AVX2__) && defined(__F16C__)
+#if (defined(__AVX2__) && defined(__F16C__)) || defined(_M_AVX2)
 
 #include "avx2_fp16_f16c.h"
 #include <immintrin.h>
@@ -66,4 +66,4 @@ void avx2_fp16_f16c_kernel(int16_t* dst, const int16_t* src, std::size_t size,
 
 }  // namespace labneura
 
-#endif  // __AVX2__ && __F16C__
+#endif  // (__AVX2__ && __F16C__) || _M_AVX2

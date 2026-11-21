@@ -1,4 +1,4 @@
-#if defined(__AVX2__)
+#if defined(__AVX2__) || defined(_M_AVX2)
 
 #include "labneura/backends/cpu/avx2.h"
 #include "avx2_internal.h"
@@ -403,4 +403,4 @@ void AVX2Backend::operation_int16(const TensorBackend& other, OperationType op_t
 
 } // namespace labneura
 
-#endif // __AVX2__
+#endif // __AVX2__ || _M_AVX2

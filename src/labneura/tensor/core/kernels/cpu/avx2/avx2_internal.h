@@ -1,6 +1,6 @@
 #pragma once
 
-#if defined(__AVX2__)
+#if defined(__AVX2__) || defined(_M_AVX2)
 
 #include <immintrin.h>
 #include <algorithm>
@@ -94,4 +94,4 @@ static inline __m256i divide_int32_avx2(__m256i numerator, __m256i denominator) 
 
 } // namespace labneura
 
-#endif // __AVX2__
+#endif // __AVX2__ || _M_AVX2

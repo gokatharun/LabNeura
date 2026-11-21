@@ -89,7 +89,17 @@ function(labneura_add_tensor_component)
   endif()
 
   if(labneura_tensor_target_x86)
-    check_cxx_compiler_flag("-mavx2" LABNEURA_COMPILER_SUPPORTS_AVX2)
+    if(MSVC)
+      check_cxx_compiler_flag("/arch:AVX2" LABNEURA_COMPILER_SUPPORTS_AVX2)
+      set(LABNEURA_TENSOR_AVX2_FLAGS "/arch:AVX2")
+      set(LABNEURA_TENSOR_AVX2_IEEE_FLAGS "/arch:AVX2 /fp:precise")
+      set(LABNEURA_TENSOR_F16C_FLAGS "/arch:AVX2 /fp:precise")
+    else()
+      check_cxx_compiler_flag("-mavx2" LABNEURA_COMPILER_SUPPORTS_AVX2)
+      set(LABNEURA_TENSOR_AVX2_FLAGS "-mavx2")
+      set(LABNEURA_TENSOR_AVX2_IEEE_FLAGS "-mavx2 -fno-fast-math")
+      set(LABNEURA_TENSOR_F16C_FLAGS "-mavx2 -mf16c -fno-fast-math")
+    endif()
     if(LABNEURA_COMPILER_SUPPORTS_AVX2)
       target_sources(labneura_tensor_objects PRIVATE
         ${LABNEURA_TENSOR_AVX2_CONSTRUCTOR_SOURCE})
@@ -99,27 +109,41 @@ function(labneura_add_tensor_component)
         ${PROJECT_SOURCE_DIR}/src/labneura/tensor/core/kernels/cpu/avx2/avx2_ops_logical.cpp
         ${PROJECT_SOURCE_DIR}/src/labneura/tensor/core/kernels/cpu/avx2/avx2_ops_int8.cpp
         ${PROJECT_SOURCE_DIR}/src/labneura/tensor/core/kernels/cpu/avx2/avx2_ops_int16.cpp
-        PROPERTIES COMPILE_FLAGS "-mavx2")
+        PROPERTIES COMPILE_FLAGS "${LABNEURA_TENSOR_AVX2_FLAGS}")
       set_source_files_properties(
         ${PROJECT_SOURCE_DIR}/src/labneura/tensor/core/kernels/cpu/avx2/avx2_ops_fp32.cpp
         ${PROJECT_SOURCE_DIR}/src/labneura/tensor/core/kernels/cpu/avx2/avx2_ops_fp16.cpp
         ${PROJECT_SOURCE_DIR}/src/labneura/tensor/core/kernels/cpu/avx2/avx2_ops_compare.cpp
-        PROPERTIES COMPILE_FLAGS "-mavx2 -fno-fast-math")
+        PROPERTIES COMPILE_FLAGS "${LABNEURA_TENSOR_AVX2_IEEE_FLAGS}")
       target_compile_definitions(labneura_tensor_objects
         PRIVATE LABNEURA_ENABLE_AVX2=1)
-      message(STATUS "LabNeura: AVX2 backend enabled (-mavx2)")
+      message(STATUS "LabNeura: AVX2 backend enabled (${LABNEURA_TENSOR_AVX2_FLAGS})")
 
-      check_cxx_compiler_flag("-mf16c" LABNEURA_COMPILER_SUPPORTS_F16C)
+      if(MSVC)
+        set(LABNEURA_TENSOR_REQUIRED_FLAGS_SAVED "${CMAKE_REQUIRED_FLAGS}")
+        set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} /arch:AVX2")
+        check_cxx_source_compiles(
+          "#include <immintrin.h>
+           int main() {
+             const __m128i half = _mm_setzero_si128();
+             const __m256 value = _mm256_cvtph_ps(half);
+             return _mm256_movemask_ps(value);
+           }"
+          LABNEURA_COMPILER_SUPPORTS_F16C)
+        set(CMAKE_REQUIRED_FLAGS "${LABNEURA_TENSOR_REQUIRED_FLAGS_SAVED}")
+      else()
+        check_cxx_compiler_flag("-mf16c" LABNEURA_COMPILER_SUPPORTS_F16C)
+      endif()
       if(LABNEURA_COMPILER_SUPPORTS_F16C)
         target_sources(labneura_tensor_objects PRIVATE ${LABNEURA_TENSOR_F16C_SOURCE})
         set_source_files_properties(${LABNEURA_TENSOR_F16C_SOURCE}
-          PROPERTIES COMPILE_FLAGS "-mavx2 -mf16c -fno-fast-math")
+          PROPERTIES COMPILE_FLAGS "${LABNEURA_TENSOR_F16C_FLAGS}")
         target_compile_definitions(labneura_tensor_objects
           PRIVATE LABNEURA_ENABLE_AVX2_F16C=1)
-        message(STATUS "LabNeura: AVX2 FP16 F16C kernel enabled (-mf16c, isolated)")
+        message(STATUS "LabNeura: AVX2 FP16 F16C kernel enabled (isolated)")
       endif()
     else()
-      message(STATUS "LabNeura: AVX2 backend disabled (compiler lacks -mavx2)")
+      message(STATUS "LabNeura: AVX2 backend disabled (compiler lacks the required ISA flag)")
     endif()
   endif()
 

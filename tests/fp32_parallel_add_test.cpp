@@ -1,6 +1,7 @@
 #include "labneura/backends/common/backend_factory.h"
 #include "labneura/runtime.h"
 #include "labneura/tensor.h"
+#include "test_environment.h"
 
 #include <algorithm>
 #include <cmath>
@@ -15,36 +16,6 @@ namespace {
 void require(bool condition, const std::string& message) {
     if (!condition) throw std::runtime_error(message);
 }
-
-class BackendEnvironment {
-public:
-    explicit BackendEnvironment(const char* backend) {
-        const char* old_value = std::getenv("LABNEURA_BACKEND");
-        if (old_value) {
-            had_old_value_ = true;
-            old_value_ = old_value;
-        }
-        if (setenv("LABNEURA_BACKEND", backend, 1) != 0) {
-            throw std::runtime_error("failed to set backend environment");
-        }
-        if (labneura::detect_backend() != backend) {
-            throw std::runtime_error(std::string("requested backend unavailable: ") +
-                                     backend);
-        }
-    }
-
-    ~BackendEnvironment() {
-        if (had_old_value_) {
-            setenv("LABNEURA_BACKEND", old_value_.c_str(), 1);
-        } else {
-            unsetenv("LABNEURA_BACKEND");
-        }
-    }
-
-private:
-    bool had_old_value_{false};
-    std::string old_value_;
-};
 
 std::vector<float> make_values(std::size_t size, std::size_t salt) {
     std::vector<float> values(size);
@@ -69,7 +40,12 @@ void check_equal(const labneura::Tensor& actual,
 }
 
 void test_backend(const char* backend, std::size_t available) {
-    BackendEnvironment selected(backend);
+    labneura::test::ScopedEnvironmentVariable selected(
+        "LABNEURA_BACKEND", std::string(backend));
+    if (labneura::detect_backend() != backend) {
+        throw std::runtime_error(std::string("requested backend unavailable: ") +
+                                 backend);
+    }
     const std::vector<std::size_t> sizes = {
         1, 7, 8, 9, 31, 32, 33,
         16383, 16384, 16385,

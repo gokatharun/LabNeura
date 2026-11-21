@@ -1,4 +1,4 @@
-#if defined(__AVX2__)
+#if defined(__AVX2__) || defined(_M_AVX2)
 
 #include "labneura/backends/cpu/avx2.h"
 #include "labneura/types.hpp"
