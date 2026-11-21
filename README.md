@@ -5,6 +5,29 @@
 
 High-performance C++ tensor library with Python bindings, featuring **hardware-accelerated SIMD operations** optimized for modern CPUs. Supports AVX2 (x86_64), NEON (ARM64/Apple Silicon), and provides mixed-precision computation with optional INT8 quantization.
 
+## Developer quick start
+
+The root Makefile is a thin wrapper around the portable `scripts/dev.py`
+entry point. GNU Make users can run:
+
+```bash
+make compile COMPONENT=all TARGET=native
+make test COMPONENT=all TARGET=native
+make benchmark COMPONENT=eda
+make check
+```
+
+Windows developers without GNU Make use the equivalent command, for example
+`python scripts/dev.py --component eda --target native test`. Build parallelism
+is selected from host CPU and available memory and can be overridden with
+`JOBS=N` or `--jobs N`. Cross targets require an explicitly configured
+toolchain; a cross-compile is never reported as runtime validation.
+
+The release surface is exactly three distributions: the platform-independent
+`labneura` umbrella and the independently installable native
+`labneura-tensor` and `labneura-eda` components. Supported release ABIs and
+platforms are defined in `scripts/release_inventory.py`.
+
 ## 🚀 Features
 
 ### Hardware Acceleration

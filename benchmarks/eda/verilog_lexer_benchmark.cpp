@@ -46,6 +46,40 @@ struct Measurements {
     size_t retained_bytes = 0;
 };
 
+std::string repeated_source(std::string_view pattern, size_t minimum_bytes) {
+    std::string source;
+    source.reserve(minimum_bytes + pattern.size());
+    while (source.size() < minimum_bytes)
+        source.append(pattern);
+    return source;
+}
+
+void add_input(std::vector<Input>& inputs, std::string name, std::string source) {
+    inputs.push_back({name, std::make_shared<const labneura::eda::VerilogSourceBuffer>(
+                                std::move(source), name)});
+}
+
+void add_synthetic_inputs(std::vector<Input>& inputs) {
+    constexpr size_t category_bytes = 256 * 1024;
+    add_input(inputs, "synthetic_identifier_heavy",
+              repeated_source("alpha_identifier beta_signal_123 gamma$delta long_identifier_name ",
+                              category_bytes));
+    add_input(inputs, "synthetic_numeric_heavy",
+              repeated_source("0 123456 32'hdead_beef 16'b1010_0101 3.1415 1.25e+3 ",
+                              category_bytes));
+    add_input(inputs, "synthetic_operator_heavy",
+              repeated_source("+ - * / % && || === !== <<< >>> <= >= += -= -> :: ; , ( ) ",
+                              category_bytes));
+    add_input(inputs, "synthetic_comment_heavy",
+              repeated_source("// line comment with identifier_123\n/* block comment ** content */\n",
+                              category_bytes));
+    add_input(inputs, "synthetic_large_rtl",
+              repeated_source(
+                  "module top(input logic [31:0] a, b, output logic [31:0] y); "
+                  "assign y = (a + b) ^ 32'h55aa_aa55; endmodule\n",
+                  1024 * 1024));
+}
+
 #if defined(LABNEURA_ENABLE_SLANG_LEXER_BENCHMARK)
 uint64_t consume_spelling(uint64_t checksum, std::string_view spelling) {
     for (const unsigned char ch : spelling) {
@@ -303,13 +337,17 @@ void print_measurements(std::string_view category,
 
 int main(int argc, char** argv) {
     if (argc < 2) {
-        std::cerr << "usage: labneura_lexer_benchmark <verilog-source> [more sources...]\n";
+        std::cerr << "usage: labneura_lexer_benchmark [--synthetic] "
+                     "<verilog-source> [more sources...]\n";
         return 2;
     }
 
     std::vector<Input> inputs;
-    size_t input_bytes = 0;
     for (int i = 1; i < argc; ++i) {
+        if (std::string_view(argv[i]) == "--synthetic") {
+            add_synthetic_inputs(inputs);
+            continue;
+        }
         std::ifstream file(argv[i], std::ios::binary);
         if (!file) {
             std::cerr << "could not read input source: " << argv[i] << '\n';
@@ -317,10 +355,16 @@ int main(int argc, char** argv) {
         }
         std::string source{std::istreambuf_iterator<char>(file),
                            std::istreambuf_iterator<char>()};
-        input_bytes += source.size();
-        inputs.push_back({argv[i], std::make_shared<const labneura::eda::VerilogSourceBuffer>(
-                                       std::move(source), argv[i])});
+        add_input(inputs, argv[i], std::move(source));
     }
+    if (inputs.empty()) {
+        std::cerr << "no benchmark inputs were provided\n";
+        return 2;
+    }
+
+    size_t input_bytes = 0;
+    for (const auto& input : inputs)
+        input_bytes += input.source->text().size();
 
     size_t corpus_tokens = 0;
     for (auto& input : inputs) {

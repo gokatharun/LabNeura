@@ -45,8 +45,6 @@ jobs:
             packaging/core/src/labneura/__init__.py
             packaging/tensor/pyproject.toml
             packaging/eda/pyproject.toml
-            packaging/compat/pyproject.toml
-            packaging/all/pyproject.toml
           commit-message: "chore: sync version for ${{ github.event.release.tag_name }}"
           title: "chore: sync version for ${{ github.event.release.tag_name }}"
           body: |
@@ -290,8 +288,6 @@ jobs:
         run: |
           mkdir -p "$WHEELHOUSE"
           python -m build --wheel --no-isolation --outdir "$WHEELHOUSE" packaging/core
-          python -m build --wheel --no-isolation --outdir "$WHEELHOUSE" packaging/compat
-          python -m build --wheel --no-isolation --outdir "$WHEELHOUSE" packaging/all
 
       - name: Validate pure wheel versions
         env:
@@ -306,8 +302,8 @@ jobs:
           wheelhouse = Path(sys.argv[1])
           expected_version = sys.argv[2]
           wheels = sorted(wheelhouse.glob("*.whl"))
-          if len(wheels) != 3:
-              raise SystemExit(f"expected 3 pure wheels, found {len(wheels)}")
+          if len(wheels) != 1:
+              raise SystemExit(f"expected 1 pure umbrella wheel, found {len(wheels)}")
 
           mismatches = []
           for wheel in wheels:
@@ -327,7 +323,9 @@ jobs:
                   "wheel version mismatch before artifact upload:\n"
                   + "\n".join(mismatches)
               )
-          print(f"Validated 3 pure wheels at {expected_version}")
+          if metadata["Name"] != "labneura":
+              raise SystemExit(f"unexpected pure distribution {metadata['Name']}")
+          print(f"Validated labneura umbrella wheel at {expected_version}")
           PY
 
       - name: Upload pure Python wheels
@@ -338,7 +336,7 @@ jobs:
           if-no-files-found: error
 
   build-source-distribution:
-    name: Build and qualify native EDA source distribution
+    name: Build and qualify native component source distributions
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout repository
@@ -362,8 +360,10 @@ jobs:
       - name: Install source build tools
         run: python -m pip install --upgrade pip build scikit-build-core pybind11 wheel twine
 
-      - name: Build self-contained EDA sdist
-        run: python scripts/build_eda_sdist.py --outdir "$RUNNER_TEMP/sdist"
+      - name: Build self-contained Tensor and EDA sdists
+        run: |
+          python scripts/build_tensor_sdist.py --outdir "$RUNNER_TEMP/sdist"
+          python scripts/build_eda_sdist.py --outdir "$RUNNER_TEMP/sdist"
 
       - name: Audit and rebuild EDA sdist
         env:
@@ -395,19 +395,34 @@ jobs:
           ]
           if binaries:
               raise SystemExit(f"EDA sdist bundles compiled binaries: {binaries}")
+          tensor_archives = list(dist.glob("labneura_tensor-*.tar.gz"))
+          if len(tensor_archives) != 1:
+              raise SystemExit(f"expected one Tensor sdist, found {tensor_archives}")
+          with tarfile.open(tensor_archives[0], "r:gz") as archive:
+              tensor_names = archive.getnames()
+          if any("slang" in name.lower() for name in tensor_names):
+              raise SystemExit("Tensor sdist unexpectedly bundles Slang content")
           PY
           mkdir -p "$RUNNER_TEMP/sdist-source" "$RUNNER_TEMP/sdist-rebuilt"
           tar -xzf "$RUNNER_TEMP"/sdist/labneura_eda-*.tar.gz -C "$RUNNER_TEMP/sdist-source"
           SDIST_ROOT=$(find "$RUNNER_TEMP/sdist-source" -mindepth 1 -maxdepth 1 -type d -print -quit)
           python -m build --wheel --no-isolation --outdir "$RUNNER_TEMP/sdist-rebuilt" "$SDIST_ROOT"
+          mkdir -p "$RUNNER_TEMP/tensor-sdist-source"
+          tar -xzf "$RUNNER_TEMP"/sdist/labneura_tensor-*.tar.gz -C "$RUNNER_TEMP/tensor-sdist-source"
+          TENSOR_SDIST_ROOT=$(find "$RUNNER_TEMP/tensor-sdist-source" -mindepth 1 -maxdepth 1 -type d -print -quit)
+          python -m build --wheel --no-isolation --outdir "$RUNNER_TEMP/sdist-rebuilt" "$TENSOR_SDIST_ROOT"
           python -m twine check "$RUNNER_TEMP"/sdist/labneura_eda-*.tar.gz
+          python -m twine check "$RUNNER_TEMP"/sdist/labneura_tensor-*.tar.gz
           test "$(find "$RUNNER_TEMP/sdist-rebuilt" -name 'labneura_eda-*.whl' | wc -l)" -eq 1
+          test "$(find "$RUNNER_TEMP/sdist-rebuilt" -name 'labneura_tensor-*.whl' | wc -l)" -eq 1
 
-      - name: Upload qualified EDA sdist
+      - name: Upload qualified native component sdists
         uses: actions/upload-artifact@v4
         with:
           name: source-distributions
-          path: ${{ runner.temp }}/sdist/labneura_eda-*.tar.gz
+          path: |
+            ${{ runner.temp }}/sdist/labneura_eda-*.tar.gz
+            ${{ runner.temp }}/sdist/labneura_tensor-*.tar.gz
           if-no-files-found: error
           retention-days: 30
 
@@ -554,7 +569,7 @@ jobs:
           platform = sys.argv[4]
           wheels = sorted(wheelhouse.rglob("*.whl"))
           pure_wheels = sorted(verify_dir.glob("*.whl"))
-          if not wheels or len(pure_wheels) != 3:
+          if not wheels or len(pure_wheels) != 1:
               raise SystemExit(
                   f"incomplete wheel inputs: {len(wheels)} native and "
                   f"{len(pure_wheels)} pure wheels"
@@ -596,7 +611,7 @@ jobs:
               for wheel in verify_dir.glob("*.whl"):
                   name, _, _, _ = parse_wheel_filename(wheel.name)
                   if canonicalize_name(name) in {
-                      "labneura", "labneura-all", "labneura-core"
+                      "labneura"
                   }:
                       shutil.copy2(wheel, wheelhouse)
           PY
@@ -608,9 +623,10 @@ jobs:
         shell: pwsh
         run: |
           $wheelhouse = "$env:RUNNER_TEMP\verify-wheelhouse"
-          $wheelPair = "$env:RUNNER_TEMP\windows-core-eda-pair"
+          $wheelPair = "$env:RUNNER_TEMP\windows-eda-pair"
           New-Item -ItemType Directory -Force $wheelPair | Out-Null
-          Copy-Item "$wheelhouse\labneura_core-*.whl" $wheelPair
+          Copy-Item "$wheelhouse\labneura-*-py3-none-any.whl" $wheelPair
+          Copy-Item "$wheelhouse\labneura_tensor-*.whl" $wheelPair
           Copy-Item "$wheelhouse\labneura_eda-*.whl" $wheelPair
           $version = python scripts/update_version.py --get-version
           python scripts/verify_windows_wheels.py `
@@ -717,10 +733,7 @@ jobs:
           from packaging.utils import canonicalize_name, parse_wheel_filename
 
           wheel_dir = Path(os.environ["WHEEL_DIST"])
-          expected = {
-              "labneura-core", "labneura-tensor", "labneura-eda",
-              "labneura", "labneura-all",
-          }
+          expected = {"labneura", "labneura-tensor", "labneura-eda"}
           distributions = defaultdict(list)
           versions = set()
           wheel_versions = []
@@ -754,9 +767,8 @@ jobs:
                       f"wheel version {version} does not match release "
                       f"tag version {release_version}"
                   )
-          for name in ("labneura-core", "labneura", "labneura-all"):
-              if len(distributions[name]) != 1:
-                  raise SystemExit(f"expected one pure wheel for {name}")
+          if len(distributions["labneura"]) != 1:
+              raise SystemExit("expected one platform-independent labneura wheel")
 
           python_tags = {f"cp{version}" for version in (38, 39, 310, 311, 312, 313)}
           platform_families = {
@@ -789,7 +801,7 @@ jobs:
                           )
           with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env_file:
               env_file.write(f"LABNEURA_WHEEL_VERSION={version}\n")
-          print(f"Validated all five distributions at version {version}")
+          print(f"Validated all three distributions at version {version}")
           print(f"Collected {sum(map(len, distributions.values()))} wheels")
           PY
           python -m pip install --upgrade twine
@@ -800,6 +812,9 @@ jobs:
               basename "$distribution"
             done
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Require the complete ABI and platform inventory
+        run: python scripts/verify_release_inventory.py "${{ runner.temp }}/labneura-release-dist"
 
       - name: Retain exact qualified release artifacts
         uses: actions/upload-artifact@v4

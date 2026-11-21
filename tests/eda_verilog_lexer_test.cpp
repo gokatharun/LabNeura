@@ -173,6 +173,21 @@ void test_numbers() {
     for (size_t i = 0; i < 4; ++i)
         require(malformed.tokens[i].kind == VerilogTokenKind::Invalid,
                 "malformed numeric token must be marked invalid");
+
+    auto separated = labneura::eda::lex_verilog("1_000 1.2_5 1e1_0");
+    require(separated.errors.empty() &&
+                separated.tokens[0].kind == VerilogTokenKind::DecimalNumber &&
+                separated.tokens[1].kind == VerilogTokenKind::RealNumber &&
+                separated.tokens[2].kind == VerilogTokenKind::RealNumber,
+            "valid underscore-separated decimal components must lex cleanly");
+
+    auto malformed_separators =
+        labneura::eda::lex_verilog("1_ 1__2 1._2 1e_2 1e2_");
+    require(malformed_separators.errors.size() == 5,
+            "invalid decimal separator positions must each report an error");
+    for (size_t i = 0; i < 5; ++i)
+        require(malformed_separators.tokens[i].kind == VerilogTokenKind::Invalid,
+                "invalid decimal separator token must be marked invalid");
 }
 
 void test_strings_comments_and_errors() {

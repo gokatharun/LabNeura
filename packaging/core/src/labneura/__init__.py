@@ -1,8 +1,7 @@
 """LabNeura's component-aware Python package namespace.
 
-Tensor and EDA are optional native components.  This package intentionally
-does not require either component so that ``labneura-core`` can be installed
-on its own.
+Tensor and EDA are independently built native components installed by the
+platform-independent ``labneura`` umbrella distribution.
 """
 
 from __future__ import annotations
@@ -12,7 +11,7 @@ from importlib import import_module
 from importlib.util import find_spec
 
 
-# This is the core package's version source of truth.  Component distributions
+# This is the umbrella package's version source of truth. Component distributions
 # should use the coordinated release version, but must not derive their
 # availability from this optional-import module.
 __version__ = "0.5.2"

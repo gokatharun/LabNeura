@@ -90,5 +90,6 @@ Invoke this agent when you need:
 ## Files this agent primarily owns
 
 - `include/labneura/eda/verilog_syntax.h`
-- `src/labneura/eda/verilog_parser.cpp`
+- `src/labneura/eda/parser/verilog/syntax/native_verilog_parser.cpp`
+- `src/labneura/eda/parser/verilog/syntax/verilog_syntax.cpp`
 - `tests/eda_verilog_syntax_test.cpp`

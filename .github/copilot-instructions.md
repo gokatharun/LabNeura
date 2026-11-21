@@ -18,6 +18,25 @@ progressively replaces Slang as the production parser.
 - Do not silently change broadcasting, overflow, saturation, aliasing, promotion, or error semantics.
 - Do not commit or push unless explicitly requested.
 
+## Windows portability (mandatory)
+
+- Treat Windows x86_64/MSVC as a first-class build and runtime target alongside
+  GCC, Clang, and AppleClang.
+- Separate compiler guards from architecture guards, isolate SIMD translation
+  units, and preserve runtime CPU dispatch; portable x86 wheels cannot assume
+  AVX2 or F16C.
+- Use fixed-width integer types, portable aligned allocation, standard
+  filesystem paths, explicit DLL visibility, portable environment handling,
+  and native Python extension initialization.
+- Keep CMake and Python orchestration cross-platform. Do not embed POSIX shell
+  assumptions in commands that execute on Windows.
+- Previous regressions included empty `dumpbin` paths, absent CMake targets,
+  POSIX quoting in PowerShell, and MSVC generated-source/string-literal limits.
+  Validate paths and targets, use runner-native quoting, and bound generated
+  translation units.
+- AppleClang success is not evidence of MSVC success. Require remote Windows CI
+  when local Windows compilation and runtime testing are unavailable.
+
 ## EDA compiler team rules (front end)
 
 1. C++ remains the primary implementation language.

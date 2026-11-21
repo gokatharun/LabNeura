@@ -156,6 +156,23 @@ For performance changes:
 - Do not force CPU workers and GPU queues into one scheduler abstraction.
 - Add Metal/CUDA/HIP only through a concrete vertical slice with actual hardware validation. Do not add speculative GPU frameworks now.
 
+## Windows portability rules
+
+- Design and test for GCC, Clang, AppleClang, and MSVC. Compiler and CPU
+  architecture guards are separate concerns.
+- Use fixed-width integers, portable aligned allocation, standard filesystem
+  paths, explicit DLL visibility, portable environment handling, and correct
+  Python extension initialization.
+- Keep architecture intrinsics in isolated translation units. Portable x86
+  wheels use runtime capability detection and must start without AVX2/F16C.
+- CMake and Python scripts are the portable orchestration layer; do not require
+  a POSIX shell on Windows.
+- Prevent known regressions: validate `dumpbin` inputs, confirm CMake targets
+  exist before invoking them, use PowerShell-safe quoting on Windows, and split
+  generated sources before MSVC string-literal/compiler limits are reached.
+- A macOS or Linux compile does not prove Windows support. If local MSVC is not
+  available, require the relevant remote Windows build and runtime CI result.
+
 ## Performance rules
 - Correctness first, performance second.
 - Profile before optimizing.

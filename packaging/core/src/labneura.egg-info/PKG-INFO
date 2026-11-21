@@ -1,0 +1,26 @@
+Metadata-Version: 2.4
+Name: labneura
+Version: 0.5.2
+Summary: Platform-independent umbrella for LabNeura Tensor and EDA
+Author: LabNeura Authors
+License: MIT
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+Requires-Dist: labneura-tensor<0.6,>=0.5
+Requires-Dist: labneura-eda<0.6,>=0.5
+
+# LabNeura
+
+`labneura` is the platform-independent umbrella distribution. It owns the
+shared Python package initializer and installs the independently built Tensor
+and EDA native distributions:
+
+```bash
+python -m pip install labneura
+```
+
+Install `labneura-tensor` or `labneura-eda` directly when only one native
+component is required.
+
+See the [LabNeura repository](https://github.com/gokatharun/LabNeura) for
+documentation and source code.

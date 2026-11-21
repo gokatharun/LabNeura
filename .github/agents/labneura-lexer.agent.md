@@ -30,7 +30,7 @@ You are the Lexer Engineer for LabNeura's native Verilog/SystemVerilog frontend 
 ## Core responsibilities
 
 ### Scalar reference lexer
-- Maintain `include/labneura/eda/verilog_lexer.h` and `src/labneura/eda/verilog_lexer.cpp`.
+- Maintain `include/labneura/eda/verilog_lexer.h` and `src/labneura/eda/parser/verilog/lexer/verilog_lexer.cpp`.
 - Handle versioned Verilog/SystemVerilog keywords, identifiers, escaped identifiers, system identifiers, compiler directives, backtick tokens.
 - Handle numeric forms: decimal, based (unsized/sized), unbased, real numbers, time literals.
 - Handle string literals, line comments, block comments, unterminated-input diagnostics.
@@ -40,7 +40,7 @@ You are the Lexer Engineer for LabNeura's native Verilog/SystemVerilog frontend 
 - Preserve source identity (same `VerilogSourceBuffer` pointer → same `source_id`).
 
 ### SIMD byte classification
-- Maintain `src/labneura/eda/verilog_byte_classifier.*` (scalar always compiled).
+- Maintain `src/labneura/eda/parser/verilog/lexer/verilog_byte_classifier.*` (scalar always compiled).
 - NEON implementation for ARM64 (compiled only after intrinsic check).
 - AVX2 implementation for x86_64 (compiled only with `-mavx2`).
 - Future AVX-512 when hardware and compiler support justify it.
@@ -87,9 +87,9 @@ Invoke this agent when you need:
 ## Files this agent primarily owns
 
 - `include/labneura/eda/verilog_lexer.h`
-- `src/labneura/eda/verilog_lexer.cpp`
+- `src/labneura/eda/parser/verilog/lexer/verilog_lexer.cpp`
 - `include/labneura/eda/verilog_byte_classifier.h`
-- `src/labneura/eda/verilog_byte_classifier.cpp`
-- `src/labneura/eda/verilog_byte_classifier_avx2.cpp`
+- `src/labneura/eda/parser/verilog/lexer/verilog_byte_classifier.cpp`
+- `src/labneura/eda/parser/verilog/lexer/verilog_byte_classifier_avx2.cpp`
 - `tests/eda_verilog_lexer_test.cpp`
 - `benchmarks/eda/verilog_lexer_benchmark.cpp`

@@ -24,8 +24,6 @@ VERSION_DECLARATIONS = (
     (Path("packaging/core/src/labneura/__init__.py"), CORE_VERSION),
     (Path("packaging/tensor/pyproject.toml"), PYPROJECT_VERSION),
     (Path("packaging/eda/pyproject.toml"), PYPROJECT_VERSION),
-    (Path("packaging/compat/pyproject.toml"), PYPROJECT_VERSION),
-    (Path("packaging/all/pyproject.toml"), PYPROJECT_VERSION),
 )
 
 

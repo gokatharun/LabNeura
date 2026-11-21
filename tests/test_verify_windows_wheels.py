@@ -30,18 +30,23 @@ def _wheel(path: Path, name: str, requires=(), payload=()):
             archive.writestr(name, contents)
 
 
-def test_validates_exact_cp311_windows_core_eda_pair(tmp_path):
+def test_validates_exact_cp311_windows_release_set(tmp_path):
     dist = tmp_path / "dist"
     dist.mkdir()
     _wheel(
-        dist / "labneura_core-0.4.9-py3-none-any.whl",
-        "labneura-core",
+        dist / "labneura-0.4.9-py3-none-any.whl",
+        "labneura",
+        requires=("labneura-tensor>=0.5,<0.6", "labneura-eda>=0.5,<0.6"),
         payload=(("labneura/__init__.py", ""),),
+    )
+    _wheel(
+        dist / "labneura_tensor-0.4.9-cp311-cp311-win_amd64.whl",
+        "labneura-tensor",
+        payload=(("labneura/_tensor.cp311-win_amd64.pyd", b"PE fixture"),),
     )
     _wheel(
         dist / "labneura_eda-0.4.9-cp311-cp311-win_amd64.whl",
         "labneura-eda",
-        requires=("labneura-core>=0.5,<0.6",),
         payload=(("labneura/_eda.cp311-win_amd64.pyd", b"PE fixture"),),
     )
 
@@ -61,11 +66,18 @@ def test_validates_exact_cp311_windows_core_eda_pair(tmp_path):
 def test_rejects_slang_or_bundled_dlls(tmp_path, payload):
     dist = tmp_path / "dist"
     dist.mkdir()
-    _wheel(dist / "labneura_core-0.4.9-py3-none-any.whl", "labneura-core")
+    _wheel(
+        dist / "labneura-0.4.9-py3-none-any.whl", "labneura",
+        requires=("labneura-tensor>=0.5,<0.6", "labneura-eda>=0.5,<0.6"),
+    )
+    _wheel(
+        dist / "labneura_tensor-0.4.9-cp311-cp311-win_amd64.whl",
+        "labneura-tensor",
+        payload=(("labneura/_tensor.cp311-win_amd64.pyd", b"PE"),),
+    )
     _wheel(
         dist / "labneura_eda-0.4.9-cp311-cp311-win_amd64.whl",
         "labneura-eda",
-        requires=("labneura-core>=0.5,<0.6",),
         payload=payload,
     )
 

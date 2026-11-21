@@ -430,3 +430,26 @@ A feature is complete only when its semantics are documented, implementation exi
   passed.
 - [ ] Linux x86-64 optimized scalar/AVX2 timing, `perf` counters and profile,
   plus sanitizer reruns on suitable CI hardware.
+# ARCH-1 developer/release acceptance
+
+- [x] Portable `scripts/dev.py` and thin Makefile expose component-aware build,
+  test, benchmark, coverage, check, format, clean, and guarded push commands.
+- [x] Push validation requires `main`, `origin`, a nonempty message, clean
+  conflict state, safe staging paths, compile/test/check, and both diff checks.
+- [x] Release inventory defines exactly three distributions, CPython 3.8–3.13,
+  and Linux x86_64/ARM64, macOS x86_64/ARM64, and Windows AMD64.
+- [x] Artifact qualification fails when any required native wheel is missing.
+- [ ] Execute the revised complete wheel matrix and Windows MSVC runtime jobs in
+  GitHub Actions; local non-Windows checks do not satisfy this item.
+
+## ARCH-1B component boundaries
+
+- [x] Core-only, Tensor-with-Core, and EDA-without-Tensor configurations build
+  and execute component-owned native tests.
+- [x] Tensor kernels and runtime infrastructure are owned by Tensor Core;
+  Verilog parsing, analysis, and lowering have responsibility-based trees.
+- [x] Python native source/header mirrors are absent; packages consume the
+  authoritative native trees.
+- [x] Automated checks enforce dependency boundaries, source registration,
+  ownership, and portable ISA isolation.
+- [ ] Windows MSVC and x86 AVX2 runtime execution remain CI-only validation.

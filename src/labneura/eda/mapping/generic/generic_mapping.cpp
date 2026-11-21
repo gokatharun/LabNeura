@@ -1,7 +1,7 @@
 #include "labneura/eda/netlist.h"
 #include "labneura/eda/verilog_native_lowering.h"
 
-#include "labneura/eda/native_verilog_project_context.h"
+#include "labneura/eda/parser/verilog/elaboration/native_verilog_project_context.h"
 
 #include <algorithm>
 #include <cctype>

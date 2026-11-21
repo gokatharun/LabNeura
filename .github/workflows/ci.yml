@@ -2,1467 +2,236 @@ name: LabNeura CI
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main]
+    paths-ignore: ['**.md', 'docs/**', 'benchmarking/results/**']
   pull_request:
-    branches: [ main, develop ]
+    branches: [main]
+    paths-ignore: ['**.md', 'docs/**', 'benchmarking/results/**']
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  python-wheel-matrix:
-    name: Python wheels and isolated install matrix (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 90
-    permissions:
-      contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-24.04, macos-latest]
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install local wheel build and test tools
-        run: python -m pip install build scikit-build-core pybind11 wheel 'setuptools>=61' pytest
-
-      - name: Build all five distributions into an isolated wheelhouse
-        env:
-          CMAKE_BUILD_PARALLEL_LEVEL: '2'
-          LABNEURA_WHEELHOUSE: ${{ runner.temp }}/labneura-wheelhouse
-        run: |
-          mkdir -p "$LABNEURA_WHEELHOUSE"
-          python -m build --wheel --no-isolation -o "$LABNEURA_WHEELHOUSE" packaging/core
-          python -m build --wheel --no-isolation -o "$LABNEURA_WHEELHOUSE" packaging/tensor
-          python -m build --wheel --no-isolation -o "$LABNEURA_WHEELHOUSE" packaging/eda
-          python -m build --wheel --no-isolation -o "$LABNEURA_WHEELHOUSE" packaging/compat
-          python -m build --wheel --no-isolation -o "$LABNEURA_WHEELHOUSE" packaging/all
-
-      - name: Run package initializer and built native extension regressions
-        env:
-          LABNEURA_WHEELHOUSE: ${{ runner.temp }}/labneura-wheelhouse
-          LABNEURA_TEST_ARTIFACTS: ${{ runner.temp }}/labneura-native-artifacts
-        run: |
-          mkdir -p "$LABNEURA_TEST_ARTIFACTS"
-          python - <<'PY'
-          import os
-          import zipfile
-          from pathlib import Path
-
-          wheelhouse = Path(os.environ["LABNEURA_WHEELHOUSE"])
-          output = Path(os.environ["LABNEURA_TEST_ARTIFACTS"])
-          for distribution, prefix in (
-              ("labneura-tensor", "labneura/_tensor"),
-              ("labneura-eda", "labneura/_eda"),
-          ):
-              wheel_stem = distribution.replace("-", "_")
-              wheels = list(wheelhouse.glob(f"{wheel_stem}-*.whl"))
-              if len(wheels) != 1:
-                  raise SystemExit(f"expected one {distribution} wheel, found {wheels}")
-              with zipfile.ZipFile(wheels[0]) as archive:
-                  entries = [name for name in archive.namelist() if name.startswith(prefix)]
-                  if len(entries) != 1:
-                      raise SystemExit(f"expected one {prefix} extension, found {entries}")
-                  target = output / Path(entries[0]).name
-                  target.write_bytes(archive.read(entries[0]))
-                  print(f"{distribution} native wheel binary: {target}")
-          PY
-          TENSOR_EXTENSION=$(find "$LABNEURA_TEST_ARTIFACTS" -name '*_tensor*' -print -quit)
-          EDA_EXTENSION=$(find "$LABNEURA_TEST_ARTIFACTS" -name '*_eda*' -print -quit)
-          LABNEURA_TENSOR_EXTENSION="$TENSOR_EXTENSION" \
-            python -m pytest -p no:cacheprovider -o addopts= tests/python_packaging/test_tensor_extension.py
-          LABNEURA_EDA_EXTENSION="$EDA_EXTENSION" \
-            python -m pytest -p no:cacheprovider -o addopts= tests/python_packaging/test_eda_extension.py
-          python -m pytest -p no:cacheprovider -o addopts= \
-            tests/python_packaging/test_core_package.py tests/test_version.py
-          python scripts/update_version.py --check
-
-      - name: Verify wheel ownership, runtime links, and isolated install matrices
-        run: >-
-          python scripts/verify_wheel_matrix.py
-          "$RUNNER_TEMP/labneura-wheelhouse"
-          --version "$(python scripts/update_version.py --get-version)"
-          --workdir "$RUNNER_TEMP/labneura-wheel-matrix"
-
-  native-eda-package:
-    name: Native EDA wheel and sdist without Slang
+  architecture:
+    name: Architecture and developer commands
     runs-on: ubuntu-24.04
-    permissions:
-      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: Install EDA packaging tools
-        run: python -m pip install build scikit-build-core pybind11 wheel 'setuptools>=61'
-      - name: Build native-only artifacts
-        env:
-          CMAKE_BUILD_PARALLEL_LEVEL: '2'
-          CMAKE_ARGS: >-
-            -DLABNEURA_ENABLE_SLANG_VALIDATION=OFF
-            -DFETCHCONTENT_FULLY_DISCONNECTED=ON
-        run: |
-          mkdir -p "$RUNNER_TEMP/eda-dist"
-          python -m build --wheel --no-isolation --outdir "$RUNNER_TEMP/eda-dist" packaging/core
-          python -m build --wheel --no-isolation --outdir "$RUNNER_TEMP/eda-dist" packaging/eda
-          python scripts/build_eda_sdist.py --outdir "$RUNNER_TEMP/eda-dist"
-      - name: Prove EDA sdist is self-contained and buildable
-        env:
-          CMAKE_BUILD_PARALLEL_LEVEL: '2'
-          CMAKE_ARGS: >-
-            -DLABNEURA_ENABLE_SLANG_VALIDATION=OFF
-            -DFETCHCONTENT_FULLY_DISCONNECTED=ON
-        run: |
-          mkdir -p "$RUNNER_TEMP/eda-sdist-source" "$RUNNER_TEMP/eda-sdist-wheel"
-          tar -xzf "$RUNNER_TEMP"/eda-dist/labneura_eda-*.tar.gz \
-            -C "$RUNNER_TEMP/eda-sdist-source"
-          SDIST_ROOT=$(find "$RUNNER_TEMP/eda-sdist-source" -mindepth 1 -maxdepth 1 -type d -print -quit)
-          test -f "$SDIST_ROOT/CMakeLists.txt"
-          test -f "$SDIST_ROOT/python/eda_module.cpp"
-          test -d "$SDIST_ROOT/src/labneura/eda"
-          python -m build --wheel --no-isolation \
-            --outdir "$RUNNER_TEMP/eda-sdist-wheel" "$SDIST_ROOT"
-          test "$(find "$RUNNER_TEMP/eda-sdist-wheel" -name 'labneura_eda-*.whl' | wc -l)" -eq 1
-      - name: Reject bundled Slang and inspect extension linkage
-        run: |
-          python - "$RUNNER_TEMP/eda-dist" <<'PY'
-          import sys, tarfile, zipfile
-          from pathlib import Path
-          dist = Path(sys.argv[1])
-          for artifact in dist.iterdir():
-              if artifact.suffix == '.whl':
-                  with zipfile.ZipFile(artifact) as archive:
-                      names = archive.namelist()
-              elif artifact.name.endswith('.tar.gz'):
-                  with tarfile.open(artifact, 'r:gz') as archive:
-                      names = archive.getnames()
-              else:
-                  continue
-              bad = [name for name in names if 'slang' in name.lower()]
-              if bad:
-                  raise SystemExit(f'Slang bundled in {artifact}: {bad}')
-          PY
-          WHEEL=$(find "$RUNNER_TEMP/eda-dist" -name 'labneura_eda-*.whl' -print -quit)
-          unzip -q "$WHEEL" -d "$RUNNER_TEMP/eda-unpacked"
-          EXT=$(find "$RUNNER_TEMP/eda-unpacked" -name '*_eda*.so' -print -quit)
-          test -n "$EXT"
-          ! ldd "$EXT" | grep -i slang
-      - name: Clean install and native smoke test
-        run: |
-          python -m venv "$RUNNER_TEMP/eda-venv"
-          "$RUNNER_TEMP/eda-venv/bin/pip" install --no-index "$RUNNER_TEMP/eda-dist"/*.whl
-          "$RUNNER_TEMP/eda-venv/bin/python" - "$RUNNER_TEMP/eda-smoke" <<'PY'
-          import sys
-          from pathlib import Path
-          import labneura.eda as eda
+        with: {python-version: '3.11'}
+      - run: python -m pip install pytest
+      - run: make check
+      - run: python -m pytest -q tests/architecture tests/test_dev_commands.py tests/test_release_inventory.py
 
-          root = Path(sys.argv[1]); root.mkdir()
-          (root / "top.v").write_text(
-              "module top(input wire a, output wire y); assign y = a; endmodule\n",
-              encoding="utf-8")
-          module = eda.parse_verilog(str(root / "top.v"))
-          assert module.name == "top"
-          assert [p.name for p in module.ports] == ["a", "y"]
-          assert eda.read_verilog(str(root / "top.v")).name == "top"
-          project = eda.parse_verilog(str(root))
-          assert project.module_count == 1 and project.modules[0].name == "top"
-          mapped = eda.generic_map(project, "top")
-          assert mapped.name == "top" and mapped.nets
-
-          (root / "unsupported.v").write_text(
-              "module unsupported(input wire a, output wire y); function f; input x; f=x; endfunction assign y=f(a); endmodule\n",
-              encoding="utf-8")
-          try:
-              eda.parse_verilog(str(root / "unsupported.v"))
-          except RuntimeError as error:
-              assert "native" in str(error).lower() or "unsupported" in str(error).lower()
-          else:
-              raise AssertionError("unsupported native Verilog was accepted")
-          PY
-
-  native-eda-windows:
-    name: Native EDA correctness and wheel (Windows x86_64, MSVC)
-    runs-on: windows-2022
-    timeout-minutes: 90
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: x64
-      - name: Install native EDA build tools
-        run: python -m pip install build scikit-build-core pybind11 wheel "setuptools>=61" pytest
-      - name: Configure and test EDA-only MSVC build
-        shell: pwsh
-        run: |
-          cmake -S . -B build/eda-windows `
-            -A x64 `
-            -DCMAKE_BUILD_TYPE=Release `
-            -DBUILD_TESTING=ON `
-            -DLABNEURA_BUILD_ACCEL_CORE=OFF `
-            -DLABNEURA_BUILD_TENSOR=OFF `
-            -DLABNEURA_BUILD_COMPAT=OFF `
-            -DLABNEURA_BUILD_EDA=ON `
-            -DLABNEURA_ENABLE_SLANG_VALIDATION=OFF `
-            -DFETCHCONTENT_FULLY_DISCONNECTED=ON
-          cmake --build build/eda-windows --config Release --parallel 2
-          cmake --build build/eda-windows --config Release `
-            --target labneura_lexer_benchmark --parallel 2
-          $ctestOutput = ctest --test-dir build/eda-windows -C Release `
-            --output-on-failure --no-tests=error 2>&1
-          $ctestOutput | Write-Host
-          if ($LASTEXITCODE -ne 0) { throw "Windows EDA-only CTest failed" }
-          if ($ctestOutput -match "(?im)Not Run") {
-            throw "Windows EDA-only CTest contains a missing executable"
-          }
-          $lexerTest = (Resolve-Path `
-            "build/eda-windows/Release/labneura_eda_verilog_lexer_test.exe").Path
-          & $lexerTest SCALAR
-          if ($LASTEXITCODE -ne 0) {
-            throw "Windows scalar lexer parity failed"
-          }
-          & $lexerTest AVX2
-          if ($LASTEXITCODE -eq 77) {
-            Write-Host "Windows AVX2 lexer explicitly skipped: CPU unavailable"
-          } elseif ($LASTEXITCODE -ne 0) {
-            throw "Windows AVX2 lexer parity failed"
-          }
-          & "build/eda-windows/Release/labneura_lexer_benchmark.exe" `
-            tests/data/verilog/lexer_corpus.sv `
-            examples/verilog/ibex/ibex_alu.sv `
-            examples/verilog/8080_core/i8080.v `
-            2>&1 | Tee-Object windows-lexer-benchmark.log
-          if ($LASTEXITCODE -ne 0) {
-            throw "Windows lexer benchmark failed"
-          }
-          if (-not (Select-String -Path windows-lexer-benchmark.log `
-              -Pattern "backend=scalar" -Quiet)) {
-            throw "Windows lexer benchmark did not execute scalar backend"
-          }
-      - name: Upload Windows lexer benchmark
-        uses: actions/upload-artifact@v4
-        with:
-          name: lexer-benchmark-windows-x86_64-msvc
-          path: windows-lexer-benchmark.log
-          if-no-files-found: error
-      - name: Build Slang-free core and EDA wheels
-        shell: pwsh
-        env:
-          CMAKE_BUILD_PARALLEL_LEVEL: '2'
-          CMAKE_ARGS: >-
-            -DLABNEURA_ENABLE_SLANG_VALIDATION=OFF
-            -DFETCHCONTENT_FULLY_DISCONNECTED=ON
-        run: |
-          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\eda-dist" | Out-Null
-          python -m build --wheel --no-isolation --outdir "$env:RUNNER_TEMP\eda-dist" packaging/core
-          python -m build --wheel --no-isolation --outdir "$env:RUNNER_TEMP\eda-dist" packaging/eda
-      - name: Validate wheel tags, metadata, contents, and extension dependencies
-        id: windows-wheel-audit
-        shell: pwsh
-        run: |
-          $version = python scripts/update_version.py --get-version
-          python scripts/verify_windows_wheels.py `
-            "$env:RUNNER_TEMP\eda-dist" `
-            --version $version `
-            --extract-dir "$env:RUNNER_TEMP\eda-unpacked" `
-            --github-output $env:GITHUB_OUTPUT
-          $extension = Get-ChildItem "$env:RUNNER_TEMP\eda-unpacked" `
-            -Recurse -File -Filter "*_eda*.pyd" | Select-Object -First 1
-          if (-not $extension) { throw "Extracted EDA extension was not found" }
-          $dependencies = & dumpbin /dependents $extension.FullName
-          if ($LASTEXITCODE -ne 0) { throw "dumpbin failed for $($extension.FullName)" }
-          $dependencies
-          if ($dependencies -match "(?i)slang") { throw "EDA extension links Slang" }
-          if ($dependencies -match "(?i)Error opening file") {
-            throw "dumpbin could not resolve an EDA extension dependency"
-          }
-      - name: Clean wheel install and native contract tests
-        shell: pwsh
-        run: |
-          python -m venv "$env:RUNNER_TEMP\eda-venv"
-          $venvPython = "$env:RUNNER_TEMP\eda-venv\Scripts\python.exe"
-          $coreWheel = (Get-ChildItem "$env:RUNNER_TEMP\eda-dist\labneura_core-*.whl").FullName
-          $edaWheel = (Get-ChildItem "$env:RUNNER_TEMP\eda-dist\labneura_eda-*.whl").FullName
-          & $venvPython -m pip install --no-index --no-deps $coreWheel $edaWheel
-          if ($LASTEXITCODE -ne 0) { throw "Exact Windows wheel installation failed" }
-          & $venvPython -m pip check
-          if ($LASTEXITCODE -ne 0) { throw "Installed Windows wheel metadata is inconsistent" }
-          & $venvPython -m pip install pytest
-          $qualification = "$env:RUNNER_TEMP\eda-qualification"
-          New-Item -ItemType Directory -Force "$qualification\tests\python_packaging" | Out-Null
-          New-Item -ItemType Directory -Force "$qualification\packaging\core\src\labneura" | Out-Null
-          Copy-Item tests/test_eda_native_contract.py "$qualification\tests\test_eda_native_contract.py"
-          Copy-Item tests/python_packaging/test_eda_extension.py "$qualification\tests\python_packaging\test_eda_extension.py"
-          Copy-Item packaging/core/src/labneura/__init__.py "$qualification\packaging\core\src\labneura\__init__.py"
-          $sitePackages = & "$env:RUNNER_TEMP\eda-venv\Scripts\python.exe" -c "import site; print(site.getsitepackages()[0])"
-          $extension = Get-ChildItem $sitePackages -Recurse -Filter "*_eda*.pyd" | Select-Object -First 1
-          if (-not $extension) { throw "Installed EDA extension was not found" }
-          $env:LABNEURA_EDA_EXTENSION = $extension.FullName
-          $env:PYTHONNOUSERSITE = "1"
-          Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue
-          Push-Location $qualification
-          try {
-            & $venvPython -m pytest -q -o addopts= `
-              tests/test_eda_native_contract.py `
-              tests/python_packaging/test_eda_extension.py
-            if ($LASTEXITCODE -ne 0) { throw "Installed Windows EDA contract tests failed" }
-          } finally {
-            Pop-Location
-          }
-      - name: Upload qualified Windows AMD64 wheels
-        uses: actions/upload-artifact@v4
-        with:
-          name: qualified-windows-amd64-cp311-wheels
-          path: ${{ runner.temp }}/eda-dist/*.whl
-          if-no-files-found: error
-          retention-days: 30
-          compression-level: 0
-
-  gcc-source-build:
-    name: Source build (GCC 13)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install GCC 13
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-13 g++-13
-
-      - name: Install Python test dependencies
-        run: make deps
-
-      - name: Build and test with GCC 13
-        run: |
-          export CC=gcc-13
-          export CXX=g++-13
-          make clean install test
-
-  eda-equivalence-yosys:
-    name: EDA combinational equivalence (Yosys)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install Yosys
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y yosys
-          command -v yosys
-          yosys -V
-
-      - name: Install Python test dependencies
-        run: make deps
-
-      - name: Build and install current checkout
-        run: make install
-
-      - name: Run EDA equivalence tests
-        run: |
-          command -v yosys
-          yosys -V
-          python -m pytest -o addopts= -q tests/test_eda_equivalence.py
-
-      - name: Build and run native Yosys formal-equivalence CTest
-        run: |
-          cmake -S . -B build/eda-formal \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DBUILD_TESTING=ON \
-            -DLABNEURA_BUILD_ACCEL_CORE=OFF \
-            -DLABNEURA_BUILD_TENSOR=OFF \
-            -DLABNEURA_BUILD_COMPAT=OFF \
-            -DLABNEURA_BUILD_EDA=ON
-          cmake --build build/eda-formal \
-            --target labneura_eda_verilog_native_formal_equivalence_test \
-            --parallel 2
-          set -o pipefail
-          ctest --test-dir build/eda-formal --no-tests=error -V \
-            -R '^eda_verilog_native_formal_equivalence$' \
-            2>&1 | tee native-yosys-formal-ctest.log
-          grep -Eq \
-            'Test #[0-9]+: eda_verilog_native_formal_equivalence .*Passed' \
-            native-yosys-formal-ctest.log
-
-      - name: Upload native formal CTest log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: native-yosys-formal-ctest-log
-          path: native-yosys-formal-ctest.log
-          if-no-files-found: warn
-
-  eda-sanitizers:
-    name: EDA-only AddressSanitizer and UndefinedBehaviorSanitizer
-    runs-on: ubuntu-24.04
-    timeout-minutes: 90
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install Clang
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang
-
-      - name: Configure EDA-only sanitizer build
-        env:
-          CC: clang
-          CXX: clang++
-        run: |
-          cmake -S . -B build/eda-sanitizers \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DBUILD_TESTING=ON \
-            -DLABNEURA_BUILD_ACCEL_CORE=OFF \
-            -DLABNEURA_BUILD_TENSOR=OFF \
-            -DLABNEURA_BUILD_COMPAT=OFF \
-            -DLABNEURA_BUILD_EDA=ON \
-            -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" \
-            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined" \
-            -DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=address,undefined"
-
-      - name: Build and run EDA-only sanitizer tests
-        env:
-          ASAN_OPTIONS: detect_leaks=1
-          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
-        run: |
-          cmake --build build/eda-sanitizers --parallel 2
-          set -o pipefail
-          ctest --test-dir build/eda-sanitizers --output-on-failure \
-            2>&1 | tee ctest-eda-sanitizers.log
-
-      - name: Upload sanitizer CTest log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: eda-sanitizer-ctest-log
-          path: ctest-eda-sanitizers.log
-          if-no-files-found: warn
-
-  build-test:
-    name: Build & Test (${{ matrix.os }})
+  native:
+    name: Native C++ (${{ matrix.platform }})
     runs-on: ${{ matrix.os }}
-
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-24.04, macos-latest]
-        python-version: ["3.9", "3.10", "3.11"]
-
-    steps:
-      # ----------------------------------
-      # Checkout
-      # ----------------------------------
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      # ----------------------------------
-      # Python
-      # ----------------------------------
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      # ----------------------------------
-      # System dependencies
-      # ----------------------------------
-      - name: Install system dependencies (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1 || true
-          sudo apt-get update || true
-          sudo apt-get install -y \
-            build-essential \
-            clang \
-            llvm \
-            llvm-dev \
-            lld
-      - name: Install system dependencies (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          brew update || true
-          brew install llvm || true
-
-      # ----------------------------------
-      # Python dependencies
-      # ----------------------------------
-      - name: Install Python dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install pytest pytest-cov numpy setuptools wheel pybind11
-
-      - name: Ensure LLVM tools are available
-        run: |
-          if [ "$RUNNER_OS" = "macOS" ]; then
-            if ! command -v llvm-profdata >/dev/null 2>&1; then
-              echo "Installing LLVM via Homebrew"
-              brew install llvm
-            fi
-
-            echo "LLVM_PROFDATA=$(xcrun --find llvm-profdata)" >> $GITHUB_ENV
-            echo "LLVM_COV=$(xcrun --find llvm-cov)" >> $GITHUB_ENV
-
-          else
-            CLANG_VERSION=$(/usr/bin/clang --version | sed -n 's/.*version \([0-9][0-9]*\)\..*/\1/p' | head -n 1)
-            if [ -z "$CLANG_VERSION" ]; then
-              echo "Could not determine the installed Clang version"
-              exit 1
-            fi
-
-            LLVM_PROFDATA_TOOL="llvm-profdata-$CLANG_VERSION"
-            LLVM_COV_TOOL="llvm-cov-$CLANG_VERSION"
-            if ! command -v "$LLVM_PROFDATA_TOOL" >/dev/null 2>&1 ||
-               ! command -v "$LLVM_COV_TOOL" >/dev/null 2>&1; then
-              echo "Installing LLVM $CLANG_VERSION coverage tools"
-              sudo apt-get update
-              sudo apt-get install -y "llvm-$CLANG_VERSION"
-            fi
-
-            LLVM_PROFDATA_PATH=$(command -v "$LLVM_PROFDATA_TOOL")
-            LLVM_COV_PATH=$(command -v "$LLVM_COV_TOOL")
-            "$LLVM_PROFDATA_PATH" --version
-            "$LLVM_COV_PATH" --version
-            echo "LLVM_PROFDATA=$LLVM_PROFDATA_PATH" >> $GITHUB_ENV
-            echo "LLVM_COV=$LLVM_COV_PATH" >> $GITHUB_ENV
-          fi
-
-      # ----------------------------------
-      # Run CI via Makefile
-      # ----------------------------------
-      - name: Run LabNeura CI (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          export CC=/usr/bin/clang
-          export CXX=/usr/bin/clang++
-          export LABNEURA_COVERAGE=1
-          make ci
-
-      - name: Run LabNeura CI (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          export CC=clang
-          export CXX=clang++
-          export LABNEURA_COVERAGE=1
-          make ci
-
-      # ----------------------------------
-      # Upload coverage reports
-      # ----------------------------------
-      - name: Upload coverage artifact
-        if: |
-          matrix.os == 'ubuntu-24.04' &&
-          matrix.python-version == '3.11'
-        uses: actions/upload-artifact@v4
-        with:
-          name: labneura-coverage
-          path: |
-            coverage.txt
-            coverage_html
-
-  lexer-performance:
-    name: Lexer performance (${{ matrix.platform }})
-    if: github.event_name != 'pull_request'
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 120
-    permissions:
-      contents: read
-    env:
-      SLANG_COMMIT: 7ddf4059f79eff508dd486eb42fd650cdf320d52
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-24.04
-            platform: linux-x86_64
-            backend: AVX2
-          - os: ubuntu-24.04-arm
-            platform: linux-arm64
-            backend: NEON
-          - os: macos-latest
-            platform: macos-arm64
-            backend: NEON
-          - os: windows-2022
-            platform: windows-x86_64-msvc
-            backend: AVX2
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Set up MSVC
-        if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: x64
-
-      - name: Provision pinned external Slang (Unix)
-        if: runner.os != 'Windows'
-        shell: bash
-        run: |
-          git clone --filter=blob:none https://github.com/MikePopoloski/slang.git \
-            "$RUNNER_TEMP/slang-src"
-          git -C "$RUNNER_TEMP/slang-src" checkout "$SLANG_COMMIT"
-          cmake -S "$RUNNER_TEMP/slang-src" -B "$RUNNER_TEMP/slang-build" \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_INSTALL_PREFIX="$RUNNER_TEMP/slang-install" \
-            -DSLANG_INCLUDE_TESTS=OFF \
-            -DSLANG_INCLUDE_TOOLS=OFF \
-            -DSLANG_INCLUDE_PYLIB=OFF \
-            -DSLANG_INCLUDE_DOCS=OFF \
-            -DSLANG_INCLUDE_INSTALL=ON \
-            -DSLANG_USE_MIMALLOC=OFF
-          cmake --build "$RUNNER_TEMP/slang-build" --config Release \
-            --target install --parallel 2
-
-      - name: Provision pinned external Slang (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          git clone --filter=blob:none https://github.com/MikePopoloski/slang.git `
-            "$env:RUNNER_TEMP/slang-src"
-          git -C "$env:RUNNER_TEMP/slang-src" checkout $env:SLANG_COMMIT
-          cmake -S "$env:RUNNER_TEMP/slang-src" -B "$env:RUNNER_TEMP/slang-build" `
-            -A x64 `
-            -DCMAKE_INSTALL_PREFIX="$env:RUNNER_TEMP/slang-install" `
-            -DSLANG_INCLUDE_TESTS=OFF `
-            -DSLANG_INCLUDE_TOOLS=OFF `
-            -DSLANG_INCLUDE_PYLIB=OFF `
-            -DSLANG_INCLUDE_DOCS=OFF `
-            -DSLANG_INCLUDE_INSTALL=ON `
-            -DSLANG_USE_MIMALLOC=OFF
-          cmake --build "$env:RUNNER_TEMP/slang-build" --config Release `
-            --target install --parallel 2
-
-      - name: Configure isolated validation build (Unix)
-        if: runner.os != 'Windows'
-        shell: bash
-        run: |
-          cmake -S . -B build/slang-lexer-validation \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/slang-install" \
-            -DBUILD_TESTING=ON \
-            -DLABNEURA_BUILD_ACCEL_CORE=OFF \
-            -DLABNEURA_BUILD_TENSOR=OFF \
-            -DLABNEURA_BUILD_COMPAT=OFF \
-            -DLABNEURA_BUILD_EDA=ON \
-            -DLABNEURA_ENABLE_SLANG_VALIDATION=ON \
-            -DFETCHCONTENT_FULLY_DISCONNECTED=ON
-          cmake --build build/slang-lexer-validation \
-            --target labneura_eda_verilog_lexer_test \
-                     labneura_lexer_slang_benchmark \
-            --parallel 2
-
-      - name: Configure isolated validation build (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          cmake -S . -B build/slang-lexer-validation `
-            -A x64 `
-            -DCMAKE_PREFIX_PATH="$env:RUNNER_TEMP/slang-install" `
-            -DBUILD_TESTING=ON `
-            -DLABNEURA_BUILD_ACCEL_CORE=OFF `
-            -DLABNEURA_BUILD_TENSOR=OFF `
-            -DLABNEURA_BUILD_COMPAT=OFF `
-            -DLABNEURA_BUILD_EDA=ON `
-            -DLABNEURA_ENABLE_SLANG_VALIDATION=ON `
-            -DFETCHCONTENT_FULLY_DISCONNECTED=ON
-          cmake --build build/slang-lexer-validation --config Release `
-            --target labneura_eda_verilog_lexer_test `
-                     labneura_lexer_slang_benchmark `
-            --parallel 2
-
-      - name: Run lexer correctness and benchmark (Unix)
-        if: runner.os != 'Windows'
-        shell: bash
-        run: |
-          ctest --test-dir build/slang-lexer-validation \
-            --output-on-failure --no-tests=error \
-            -R '^eda_verilog_lexer$'
-          build/slang-lexer-validation/labneura_eda_verilog_lexer_test SCALAR
-          build/slang-lexer-validation/labneura_eda_verilog_lexer_test \
-            '${{ matrix.backend }}'
-          build/slang-lexer-validation/labneura_lexer_slang_benchmark \
-            tests/data/verilog/lexer_corpus.sv \
-            examples/verilog/ibex/ibex_alu.sv \
-            examples/verilog/8080_core/i8080.v \
-            | tee lexer-benchmark-${{ matrix.platform }}.log
-          grep -q 'backend=scalar' lexer-benchmark-${{ matrix.platform }}.log
-          grep -q 'backend=slang' lexer-benchmark-${{ matrix.platform }}.log
-
-      - name: Run lexer correctness and benchmark (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          ctest --test-dir build/slang-lexer-validation -C Release `
-            --output-on-failure --no-tests=error -R '^eda_verilog_lexer$'
-          $test = "build/slang-lexer-validation/Release/labneura_eda_verilog_lexer_test.exe"
-          & $test SCALAR
-          if ($LASTEXITCODE -ne 0) { throw "Windows scalar lexer parity failed" }
-          & $test AVX2
-          if ($LASTEXITCODE -eq 77) {
-            Write-Host "Windows AVX2 unavailable; benchmark will report N/A"
-          } elseif ($LASTEXITCODE -ne 0) {
-            throw "Windows AVX2 lexer parity failed"
-          }
-          $benchmark = "build/slang-lexer-validation/Release/labneura_lexer_slang_benchmark.exe"
-          & $benchmark `
-            tests/data/verilog/lexer_corpus.sv `
-            examples/verilog/ibex/ibex_alu.sv `
-            examples/verilog/8080_core/i8080.v `
-            2>&1 | Tee-Object lexer-benchmark-${{ matrix.platform }}.log
-          if ($LASTEXITCODE -ne 0) { throw "Windows lexer benchmark failed" }
-
-      - name: Convert benchmark to structured JSON
-        run: >-
-          python scripts/lexer_benchmark_report.py parse
-          --input lexer-benchmark-${{ matrix.platform }}.log
-          --output lexer-benchmark-${{ matrix.platform }}.json
-          --platform ${{ matrix.platform }}
-
-      - name: Upload lexer comparison
-        uses: actions/upload-artifact@v4
-        with:
-          name: lexer-performance-${{ matrix.platform }}
-          path: |
-            lexer-benchmark-${{ matrix.platform }}.log
-            lexer-benchmark-${{ matrix.platform }}.json
-          if-no-files-found: error
-
-  lexer-performance-summary:
-    name: Consolidate lexer performance
-    if: github.event_name != 'pull_request' && needs.lexer-performance.result == 'success'
-    needs: lexer-performance
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: lexer-performance-*
-          path: lexer-performance-artifacts
-          merge-multiple: true
-      - name: Generate consolidated reports
-        run: |
-          python scripts/lexer_benchmark_report.py aggregate \
-            --input-dir lexer-performance-artifacts \
-            --json lexer-performance-summary.json \
-            --markdown lexer-performance-summary.md
-          cat lexer-performance-summary.md >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: lexer-performance-summary
-          path: |
-            lexer-performance-summary.json
-            lexer-performance-summary.md
-          if-no-files-found: error
-
-  native-simd:
-    name: Native validation (${{ matrix.architecture }}, ${{ matrix.compiler }})
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 120
+          - {os: ubuntu-24.04, platform: linux-x86_64-gcc, cc: gcc, cxx: g++}
+          - {os: ubuntu-24.04-arm, platform: linux-arm64-gcc, cc: gcc, cxx: g++}
+          - {os: macos-latest, platform: macos-arm64-appleclang, cc: clang, cxx: clang++}
     env:
       CC: ${{ matrix.cc }}
       CXX: ${{ matrix.cxx }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-24.04
-            architecture: x86_64
-            compiler: gcc
-            cc: gcc
-            cxx: g++
-            backend: AVX2
-          - os: ubuntu-24.04
-            architecture: x86_64
-            compiler: clang
-            cc: clang
-            cxx: clang++
-            backend: AVX2
-          - os: ubuntu-24.04-arm
-            architecture: aarch64
-            compiler: gcc
-            cc: gcc
-            cxx: g++
-            backend: NEON
-          - os: macos-latest
-            architecture: arm64
-            compiler: AppleClang
-            cc: clang
-            cxx: clang++
-            backend: NEON
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install Clang
-        if: matrix.compiler == 'clang'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang
-
-      - name: Verify x86_64 CPU features
-        if: matrix.architecture == 'x86_64'
-        run: |
-          uname -a
-          "$CXX" --version
-          cmake --version
-          python --version
-          lscpu
-          python - <<'PY'
-          from pathlib import Path
-
-          lines = Path("/proc/cpuinfo").read_text().splitlines()
-          model = next(
-              (line.split(":", 1)[1].strip()
-               for line in lines if line.startswith("model name")),
-              "unknown",
-          )
-          flags_line = next(
-              (line.split(":", 1)[1]
-               for line in lines if line.startswith(("flags", "Features"))),
-              "",
-          )
-          flags = set(flags_line.split())
-          print(f"AVX2 validation CPU: {model}")
-          print(f"AVX2 supported: {'avx2' in flags}")
-          print(f"F16C supported: {'f16c' in flags}")
-          if "avx2" not in flags:
-              raise SystemExit("This x86_64 runner does not expose AVX2")
-          if "f16c" not in flags:
-              raise SystemExit("This x86_64 runner does not expose F16C")
-          PY
-
-      - name: Verify ARM64 architecture and NEON availability
-        if: matrix.architecture != 'x86_64'
-        env:
-          EXPECTED_ARCHITECTURE: ${{ matrix.architecture }}
-        run: |
-          uname -a
-          "$CXX" --version
-          cmake --version
-          python --version
-          python - <<'PY'
-          import os
-          import platform
-          import subprocess
-          from pathlib import Path
-
-          expected = os.environ["EXPECTED_ARCHITECTURE"]
-          actual = platform.machine()
-          print(f"Runner architecture: {actual}")
-          if actual != expected:
-              raise SystemExit(
-                  f"Expected native {expected} runner, got {actual}"
-              )
-
-          if platform.system() == "Linux":
-              cpu_info = subprocess.run(
-                  ["lscpu"],
-                  capture_output=True,
-                  text=True,
-                  check=True,
-              )
-              print(cpu_info.stdout)
-              lines = Path("/proc/cpuinfo").read_text().splitlines()
-              model = next(
-                  (line.split(":", 1)[1].strip()
-                   for line in lines if line.startswith("model name")),
-                  "unknown ARM64 CPU",
-              )
-              feature_line = next(
-                  (line.split(":", 1)[1]
-                   for line in lines if line.startswith("Features")),
-                  "",
-              )
-              features = set(feature_line.split())
-              print(f"CPU model: {model}")
-              print(f"NEON/ASIMD available: {bool({'asimd', 'neon'} & features)}")
-              if not {"asimd", "neon"} & features:
-                  raise SystemExit("Linux ARM64 runner does not expose NEON/ASIMD")
-          else:
-              hardware = subprocess.run(
-                  ["system_profiler", "SPHardwareDataType"],
-                  capture_output=True,
-                  text=True,
-                  check=False,
-              )
-              model = next(
-                  (line.strip() for line in hardware.stdout.splitlines()
-                   if "Chip:" in line or "Processor Name:" in line),
-                  platform.processor() or "Apple ARM64",
-              )
-              print(f"CPU model: {model}")
-              print("NEON/ASIMD is architectural on native Apple ARM64")
-          PY
-
-      - name: Configure native build
-        env:
-          CC: ${{ matrix.cc }}
-          CXX: ${{ matrix.cxx }}
-        run: |
-          cmake -S . -B build/native \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DBUILD_TESTING=ON \
-            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-
-      - name: Build native tests and benchmark
-        run: |
-          cmake --build build/native --parallel 2
-          cmake --build build/native --target labneura_lexer_benchmark \
-            --parallel 2
-
-      - name: Require scalar lexer parity to execute
-        run: |
-          set -o pipefail
-          ctest --test-dir build/native -V \
-            -R '^eda_verilog_lexer_scalar$' \
-            2>&1 | tee scalar-lexer-ctest.log
-          grep -Eq 'eda_verilog_lexer_scalar.*Passed' scalar-lexer-ctest.log
-
-      - name: Measure native lexer backends
-        run: |
-          build/native/labneura_lexer_benchmark \
-            tests/data/verilog/lexer_corpus.sv \
-            examples/verilog/ibex/ibex_alu.sv \
-            examples/verilog/8080_core/i8080.v \
-            | tee "lexer-benchmark-${{ matrix.architecture }}-${{ matrix.compiler }}.log"
-          grep -q 'backend=scalar' \
-            "lexer-benchmark-${{ matrix.architecture }}-${{ matrix.compiler }}.log"
-
-      - name: Verify AVX2 and F16C compiler flags
-        if: matrix.architecture == 'x86_64'
-        run: |
-          python - <<'PY'
-          import json
-          from pathlib import Path
-
-          commands = json.loads(
-              Path("build/native/compile_commands.json").read_text()
-          )
-          cache = Path("build/native/CMakeCache.txt").read_text()
-          for feature in (
-              "LABNEURA_COMPILER_SUPPORTS_AVX2:INTERNAL=1",
-              "LABNEURA_COMPILER_SUPPORTS_F16C:INTERNAL=1",
-          ):
-              if feature not in cache:
-                  raise SystemExit(
-                      f"CMake did not confirm compiler support: {feature}"
-                  )
-
-          avx_sources = (
-              "avx2_backend.cpp",
-              "avx2_ops_int8.cpp",
-              "avx2_ops_int16.cpp",
-              "avx2_ops_fp32.cpp",
-              "avx2_ops_fp16.cpp",
-              "verilog_byte_classifier_avx2.cpp",
-          )
-          for name in avx_sources:
-              entry = next(
-                  (item for item in commands if item["file"].endswith(name)),
-                  None,
-              )
-              if entry is None or "-mavx2" not in entry["command"]:
-                  raise SystemExit(f"{name} was not compiled with -mavx2")
-              print(f"AVX2 flags confirmed: {name}")
-
-          portable_sources = (
-              "backend_factory.cpp",
-              "verilog_byte_classifier.cpp",
-              "avx2_backend_constructor.cpp",
-              "avx2_integer_arithmetic_test.cpp",
-          )
-          for name in portable_sources:
-              entry = next(
-                  (item for item in commands if item["file"].endswith(name)),
-                  None,
-              )
-              if entry is None or "-mavx2" in entry["command"]:
-                  raise SystemExit(
-                      f"{name} must remain compiled for the portable ISA"
-                  )
-
-          f16c = next(
-              (item for item in commands
-               if item["file"].endswith("avx2_ops_fp16_f16c.cpp")),
-              None,
-          )
-          flags_line = next(
-              (line.split(":", 1)[1]
-               for line in Path("/proc/cpuinfo").read_text().splitlines()
-               if line.startswith("flags")),
-              "",
-          )
-          cpu_flags = set(flags_line.split())
-          if "f16c" not in cpu_flags:
-              raise SystemExit("This x86_64 runner does not expose F16C")
-          if (f16c is None or "-mavx2" not in f16c["command"]
-              or "-mf16c" not in f16c["command"]):
-              raise SystemExit("F16C kernel is missing -mavx2 or -mf16c")
-          print("F16C flags confirmed: -mavx2 -mf16c")
-          PY
-
-      - name: Confirm AVX2 runtime dispatch
-        if: matrix.architecture == 'x86_64'
-        env:
-          LABNEURA_BACKEND: AVX2
-        run: build/native/labneura_backend_selection_test
-
-      - name: Confirm NEON runtime dispatch
-        if: matrix.architecture != 'x86_64'
-        env:
-          LABNEURA_BACKEND: NEON
-        run: build/native/labneura_backend_selection_test
-
-      - name: Verify Generic backend selection and focused tests
-        env:
-          LABNEURA_BACKEND: GENERIC
-        run: |
-          build/native/labneura_backend_selection_test
-          set -o pipefail
-          ctest --test-dir build/native -V \
-            -R '^(fp32_generic_allocating|add_into_generic|tensor_nd_generic|tensor_broadcast_generic|tensor_broadcast_fp16_generic|tensor_comparison_generic|bool_dtype_generic)$' \
-            2>&1 | tee generic-focused-ctest.log
-          python - <<'PY'
-          import re
-          from pathlib import Path
-
-          expected = {
-              "fp32_generic_allocating",
-              "add_into_generic",
-              "tensor_nd_generic",
-              "tensor_broadcast_generic",
-              "tensor_broadcast_fp16_generic",
-              "tensor_comparison_generic",
-              "bool_dtype_generic",
-          }
-          statuses = {}
-          for line in Path("generic-focused-ctest.log").read_text().splitlines():
-              match = re.match(
-                  r"\s*\d+/\d+\s+Test\s+#\d+:\s+(\S+)\s+\.{2,}\**\s*(Passed|Skipped|Failed)\b",
-                  line,
-              )
-              if match:
-                  statuses[match.group(1)] = match.group(2)
-          if statuses != {name: "Passed" for name in expected}:
-              raise SystemExit(
-                  f"Required Generic tests did not all pass: {statuses}"
-              )
-          PY
-
-      - name: Run native C++ tests
-        env:
-          LABNEURA_BACKEND: ${{ matrix.backend }}
-        run: |
-          set -o pipefail
-          ctest --test-dir build/native --output-on-failure \
-            2>&1 | tee "ctest-${{ matrix.architecture }}-${{ matrix.compiler }}.log"
-
-      - name: Require every AVX2 CTest to execute
-        if: matrix.architecture == 'x86_64'
-        env:
-          LABNEURA_BACKEND: AVX2
-        run: |
-          set -o pipefail
-          ctest --test-dir build/native -V \
-            -R '^(avx2_int8_multiplication|fp32_avx2_allocating|add_into_avx2|tensor_nd_avx2|tensor_comparison_avx2|bool_dtype_avx2|avx2_allocation_safety|avx2_fp16_arithmetic|eda_verilog_lexer_avx2|avx2_integer_arithmetic)$' \
-            2>&1 | tee avx2-focused-ctest.log
-          python - <<'PY'
-          import re
-          from pathlib import Path
-
-          expected = {
-              "avx2_int8_multiplication",
-              "fp32_avx2_allocating",
-              "add_into_avx2",
-              "tensor_nd_avx2",
-              "tensor_comparison_avx2",
-              "bool_dtype_avx2",
-              "avx2_allocation_safety",
-              "avx2_fp16_arithmetic",
-              "eda_verilog_lexer_avx2",
-              "avx2_integer_arithmetic",
-          }
-          statuses = {}
-          for line in Path("avx2-focused-ctest.log").read_text().splitlines():
-              match = re.match(
-                  r"\s*\d+/\d+\s+Test\s+#\d+:\s+(\S+)\s+\.{2,}\**\s*(Passed|Skipped|Failed)\b",
-                  line,
-              )
-              if match:
-                  statuses[match.group(1)] = match.group(2)
-          if statuses != {name: "Passed" for name in expected}:
-              raise SystemExit(
-                  f"Required AVX2 tests did not all pass: {statuses}"
-              )
-          PY
-
-      - name: Require every NEON CTest to execute
-        if: matrix.architecture != 'x86_64'
-        env:
-          LABNEURA_BACKEND: NEON
-        run: |
-          set -o pipefail
-          ctest --test-dir build/native -V \
-            -R '^(neon_int8_subtraction|fp32_neon_allocating|add_into_neon|tensor_nd_neon|tensor_comparison_neon|bool_dtype_neon|neon_fp16_arithmetic|eda_verilog_lexer_neon)$' \
-            2>&1 | tee neon-focused-ctest.log
-          python - <<'PY'
-          import re
-          from pathlib import Path
-
-          expected = {
-              "neon_int8_subtraction",
-              "fp32_neon_allocating",
-              "add_into_neon",
-              "tensor_nd_neon",
-              "tensor_comparison_neon",
-              "bool_dtype_neon",
-              "neon_fp16_arithmetic",
-              "eda_verilog_lexer_neon",
-          }
-          statuses = {}
-          for line in Path("neon-focused-ctest.log").read_text().splitlines():
-              match = re.match(
-                  r"\s*\d+/\d+\s+Test\s+#\d+:\s+(\S+)\s+\.{2,}\**\s*(Passed|Skipped|Failed)\b",
-                  line,
-              )
-              if match:
-                  statuses[match.group(1)] = match.group(2)
-          if statuses != {name: "Passed" for name in expected}:
-              raise SystemExit(
-                  f"Required NEON tests did not all pass: {statuses}"
-              )
-          PY
-
-      - name: Verify F16C vector and scalar FP16 execution
-        if: matrix.architecture == 'x86_64'
-        env:
-          LABNEURA_BACKEND: AVX2
-        run: |
-          set -o pipefail
-          build/native/labneura_fp16_regression_test AVX2 \
-            2>&1 | tee avx2-fp16-regression.log
-          grep -Fq "Running AVX2 FP16 with the F16C vector kernel" \
-            avx2-fp16-regression.log
-          grep -Fq "Running AVX2 FP16 with the scalar fallback" \
-            avx2-fp16-regression.log
-
-      - name: Install package for Python EDA regressions
-        env:
-          CMAKE_BUILD_PARALLEL_LEVEL: '2'
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install pytest numpy
-          python -m pip install .
-
-      - name: Run prescribed Python EDA regressions
-        run: |
-          set -o pipefail
-          python -m pytest -q -o addopts= \
-            tests/test_eda.py \
-            tests/test_eda_graph.py \
-            tests/test_eda_equivalence.py \
-            tests/test_eda_fpga.py \
-            tests/test_eda_native_contract.py \
-            2>&1 | tee "python-eda-${{ matrix.architecture }}-${{ matrix.compiler }}.log"
-
-      - name: Run full Python suite on native backend
-        env:
-          LABNEURA_BACKEND: ${{ matrix.backend }}
-        run: |
-          python -c "import labneura; assert labneura.detect_backend() == '${{ matrix.backend }}'; print('Selected backend:', labneura.detect_backend())"
-          set -o pipefail
-          python -m pytest -q -o addopts= \
-            2>&1 | tee "python-native-${{ matrix.architecture }}-${{ matrix.compiler }}.log"
-
-      - name: Verify AVX2 broadcast dispatch does not use Generic
-        if: matrix.architecture == 'x86_64'
-        env:
-          LABNEURA_BACKEND: AVX2
-        run: |
-          python - <<'PY'
-          import labneura
-
-          if labneura.detect_backend() != "AVX2":
-              raise SystemExit(
-                  f"Expected AVX2 backend, got {labneura.detect_backend()}"
-              )
-
-          for mode, lhs_values, rhs_values in (
-              (
-                  labneura.QuantizationMode.FP32,
-                  [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-                  [10.0, 20.0, 30.0],
-              ),
-              (
-                  labneura.QuantizationMode.FP16,
-                  [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-                  [10.0, 20.0, 30.0],
-              ),
-              (
-                  labneura.QuantizationMode.INT8,
-                  [1, 2, 3, 4, 5, 6],
-                  [10, 20, 30],
-              ),
-              (
-                  labneura.QuantizationMode.INT16,
-                  [1, 2, 3, 4, 5, 6],
-                  [10, 20, 30],
-              ),
-          ):
-              matrix = labneura.Tensor.from_flat(lhs_values, [2, 3], mode)
-              vector = labneura.Tensor.from_flat(rhs_values, [3], mode)
-              try:
-                  matrix.add(vector)
-              except RuntimeError:
-                  continue
-              raise SystemExit(
-                  f"AVX2 {mode} broadcasting unexpectedly succeeded; "
-                  "it may have been routed through Generic"
-              )
-          PY
-
-      - name: Run AVX2 equal-shape FP16, INT8, and INT16 arithmetic tests
-        if: matrix.architecture == 'x86_64'
-        env:
-          LABNEURA_BACKEND: AVX2
-        run: python -m pytest tests/test_avx2_div_int816fp16.py -q -o addopts=
-
-      - name: Run Generic FP16, FP32, INT8, and INT16 broadcast tests
-        if: matrix.architecture == 'x86_64'
-        env:
-          LABNEURA_BACKEND: GENERIC
-        run: |
-          python -c "import labneura; assert labneura.detect_backend() == 'GENERIC'; print('Selected backend:', labneura.detect_backend())"
-          python -m pytest \
-            tests/test_tensor_broadcast.py \
-            tests/test_base_default_implementations.py \
-            -q -o addopts=
-
-      - name: Configure EDA-only Release build
-        env:
-          CC: ${{ matrix.cc }}
-          CXX: ${{ matrix.cxx }}
-        run: |
-          cmake -S . -B build/eda-only \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DBUILD_TESTING=ON \
-            -DLABNEURA_BUILD_ACCEL_CORE=OFF \
-            -DLABNEURA_BUILD_TENSOR=OFF \
-            -DLABNEURA_BUILD_COMPAT=OFF \
-            -DLABNEURA_BUILD_EDA=ON
-
-      - name: Build and test EDA-only configuration
-        run: |
-          cmake --build build/eda-only --parallel 2
-          set -o pipefail
-          ctest --test-dir build/eda-only --output-on-failure \
-            2>&1 | tee "ctest-eda-only-${{ matrix.architecture }}-${{ matrix.compiler }}.log"
-
-      - name: Upload native validation logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: native-validation-logs-${{ matrix.architecture }}-${{ matrix.compiler }}
-          path: |
-            ctest-${{ matrix.architecture }}-${{ matrix.compiler }}.log
-            ctest-eda-only-${{ matrix.architecture }}-${{ matrix.compiler }}.log
-            generic-focused-ctest.log
-            avx2-focused-ctest.log
-            neon-focused-ctest.log
-            scalar-lexer-ctest.log
-            lexer-benchmark-${{ matrix.architecture }}-${{ matrix.compiler }}.log
-            avx2-fp16-regression.log
-            python-native-${{ matrix.architecture }}-${{ matrix.compiler }}.log
-            python-eda-${{ matrix.architecture }}-${{ matrix.compiler }}.log
-            build/native/compile_commands.json
-          if-no-files-found: warn
-
-      - name: Run native backend benchmarks
-        if: github.event_name != 'pull_request' && matrix.compiler != 'clang' && matrix.os != 'macos-latest'
-        run: |
-          build/native/labneura_native_backend_benchmark \
-            benchmark-${{ matrix.architecture }}-${{ matrix.compiler }}.csv
-
-      - name: Upload native benchmark results
-        if: github.event_name != 'pull_request' && matrix.compiler != 'clang' && matrix.os != 'macos-latest'
-        uses: actions/upload-artifact@v4
-        with:
-          name: simd-benchmarks-${{ matrix.architecture }}-${{ matrix.compiler }}
-          path: benchmark-${{ matrix.architecture }}-${{ matrix.compiler }}.csv
-          if-no-files-found: error
-
-  python-benchmarks:
-    name: Python API benchmarks vs NumPy/PyTorch (${{ matrix.architecture }})
-    runs-on: ${{ matrix.os }}
-    if: github.event_name != 'pull_request'
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            architecture: x86_64
-          - os: ubuntu-24.04-arm
-            architecture: aarch64
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install LabNeura and benchmark-only dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install .
-          python -m pip install -r benchmarking/requirements.txt pytest
-
-      - name: Test benchmark helpers
-        run: python -m pytest tests/test_benchmark_runner.py
-
-      - name: Run Python benchmark smoke test
-        run: python benchmarking/run_benchmarks.py --smoke --output-dir python-benchmark-smoke
-
-      - name: Run Python benchmarks
-        run: python benchmarking/run_benchmarks.py --output-dir python-benchmark-${{ matrix.architecture }}
-
-      - name: Upload Python benchmark results
-        uses: actions/upload-artifact@v4
-        with:
-          name: python-benchmarks-${{ matrix.architecture }}
-          path: python-benchmark-${{ matrix.architecture }}
-          if-no-files-found: error
-
-  publish-ci-reports:
-    name: Publish CI reports
-    runs-on: ubuntu-latest
-    needs: [build-test, native-simd, python-benchmarks]
-    concurrency:
-      group: ci-report-publish-${{ github.ref }}
-      cancel-in-progress: false
-
-    if: |
-      !cancelled() &&
-      needs.build-test.result == 'success' &&
-      needs.native-simd.result == 'success' &&
-      github.ref == 'refs/heads/main' &&
-      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-
+      CCACHE_DIR: ${{ github.workspace }}/.ci-cache/ccache
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/cache@v4
         with:
-          persist-credentials: true
-
-      - name: Download coverage artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: labneura-coverage
-          path: ci_artifacts
-
-      - name: Download native benchmark artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: simd-benchmarks-*
-          path: ci_artifacts
-          merge-multiple: true
-
-      - name: Download Python benchmark artifacts
-        continue-on-error: true
-        uses: actions/download-artifact@v4
-        with:
-          pattern: python-benchmarks-*
-          path: python_artifacts
-
-      - name: Update checkout to latest main
-        run: git pull --rebase origin main
-
-      - name: Generate and publish CI reports
+          path: .ci-cache/ccache
+          key: ccache-${{ matrix.platform }}-${{ hashFiles('CMakeLists.txt', 'cmake/**', 'src/**', 'include/**') }}
+          restore-keys: ccache-${{ matrix.platform }}-
+      - name: Configure one Release tree
+        run: >-
+          cmake -S . -B build/native -DCMAKE_BUILD_TYPE=Release
+          -DBUILD_TESTING=ON -DLABNEURA_ENABLE_SLANG_VALIDATION=OFF
+          -DFETCHCONTENT_FULLY_DISCONNECTED=ON
+      - name: Build and test every component once
         run: |
-          mkdir -p coverage/html
+          cmake --build build/native --parallel 2
+          ctest --test-dir build/native --output-on-failure --no-tests=error
+      - name: Build benchmark executables
+        run: |
+          cmake --build build/native --target labneura_native_backend_benchmark --parallel 2
+          cmake --build build/native --target labneura_lexer_benchmark --parallel 2
+          cmake --build build/native --target labneura_preprocessor_benchmark --parallel 2
+      - name: Upload native logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-logs-${{ matrix.platform }}
+          path: build/native/Testing/Temporary/LastTest.log
+          if-no-files-found: warn
 
-          rm -rf coverage/html/*
-          cp ci_artifacts/coverage.txt coverage/coverage.txt
-          cp -r ci_artifacts/coverage_html/* coverage/html/
-          python benchmarking/publish_ci_results.py \
-            --results-dir ci_artifacts \
-            --output benchmarking/results/latest.md \
-            --commit "$GITHUB_SHA" \
-            --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+  native-windows:
+    name: Native C++ (windows-x86_64-msvc)
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with: {arch: x64}
+      - name: Configure, build, and test one Release tree
+        shell: pwsh
+        run: |
+          cmake -S . -B build/native -A x64 -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DLABNEURA_ENABLE_SLANG_VALIDATION=OFF -DFETCHCONTENT_FULLY_DISCONNECTED=ON
+          cmake --build build/native --config Release --parallel
+          ctest --test-dir build/native -C Release --output-on-failure --no-tests=error
 
-          mkdir -p benchmarking/results/python
-          if [ -d python_artifacts ]; then
-            rm -rf benchmarking/results/python
-            mkdir -p benchmarking/results/python
-            {
-              echo "# Python API benchmarks (LabNeura vs NumPy/PyTorch)"
-              echo
-              echo "Commit: \`$GITHUB_SHA\` - [workflow run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)"
-              echo
-              echo "Each architecture is measured on its own runner; do not compare across rows."
-              echo
-            } > benchmarking/results/python/README.md
-            for dir in python_artifacts/python-benchmarks-*; do
-              [ -d "$dir" ] || continue
-              arch="${dir##*python-benchmarks-}"
-              mkdir -p "benchmarking/results/python/$arch"
-              cp -r "$dir"/. "benchmarking/results/python/$arch/"
-              echo "- [$arch report]($arch/report.md) ([JSON]($arch/benchmark.json), [CSV]($arch/benchmark.csv))" \
-                >> benchmarking/results/python/README.md
-            done
-          fi
+  native-coverage:
+    name: Native coverage (${{ matrix.platform }})
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: ubuntu-24.04, platform: linux-x86_64-clang, backend: x86_64}
+          - {os: ubuntu-24.04-arm, platform: linux-arm64-clang, backend: arm64}
+    env:
+      CC: clang
+      CXX: clang++
+      LLVM_PROFILE_FILE: ${{ github.workspace }}/build/coverage/profiles/%p-%m.profraw
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install LLVM coverage tools
+        run: sudo apt-get update && sudo apt-get install -y clang llvm
+      - name: Configure instrumented native build
+        run: >-
+          cmake -S . -B build/coverage -DCMAKE_BUILD_TYPE=Debug
+          -DBUILD_TESTING=ON -DLABNEURA_ENABLE_COVERAGE=ON
+          -DLABNEURA_ENABLE_SLANG_VALIDATION=OFF
+          -DFETCHCONTENT_FULLY_DISCONNECTED=ON
+      - name: Build and execute native CTests
+        run: |
+          cmake --build build/coverage --parallel 2
+          mkdir -p build/coverage/profiles
+          set -o pipefail
+          ctest --test-dir build/coverage --output-on-failure --no-tests=error | tee coverage-ctest.log
+      - name: Require supported SIMD and scalar coverage tests to execute
+        env:
+          COVERAGE_BACKEND: ${{ matrix.backend }}
+        run: |
+          python - <<'PY'
+          import os
+          import re
+          from pathlib import Path
 
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          log = Path("coverage-ctest.log").read_text(encoding="utf-8")
+          statuses = {}
+          for match in re.finditer(
+              r"Test\s+#\d+:\s+(\S+).*?(Passed|Skipped|Failed)", log
+          ):
+              statuses[match.group(1)] = match.group(2)
 
-          git add coverage benchmarking/results/latest.md benchmarking/results/python
+          generic = {
+              "backend_selection", "fp32_generic_allocating", "add_into_generic",
+              "tensor_nd_generic", "tensor_comparison_generic", "bool_dtype_generic",
+              "eda_verilog_lexer_scalar",
+          }
+          x86 = {
+              "avx2_int8_multiplication", "avx2_integer_arithmetic",
+              "fp32_avx2_allocating", "add_into_avx2", "tensor_nd_avx2",
+              "tensor_comparison_avx2", "bool_dtype_avx2", "avx2_allocation_safety",
+              "fp16_f16c_dispatch", "avx2_fp16_arithmetic", "eda_verilog_lexer_avx2",
+          }
+          arm = {
+              "neon_int8_subtraction", "fp32_neon_allocating", "add_into_neon",
+              "tensor_nd_neon", "tensor_comparison_neon", "bool_dtype_neon",
+              "neon_fp16_arithmetic", "eda_verilog_lexer_neon",
+          }
+          required = generic | (x86 if os.environ["COVERAGE_BACKEND"] == "x86_64" else arm)
+          missing = sorted(name for name in required if statuses.get(name) != "Passed")
+          if missing:
+              raise SystemExit(
+                  "required backend tests did not execute and pass: "
+                  f"{[(name, statuses.get(name)) for name in missing]}"
+              )
+          print("PASS: required scalar and SIMD coverage tests executed")
+          PY
+      - name: Generate coverage report
+        run: |
+          python scripts/coverage_report.py --toolchain llvm --build-dir build/coverage --profiles build/coverage/profiles --output coverage/native
+          python scripts/write_coverage_summary.py --native coverage/native/native-summary.json --output COVERAGE.md
+          cat COVERAGE.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-coverage-${{ matrix.platform }}
+          path: |
+            COVERAGE.md
+            coverage/native
+            coverage-ctest.log
+          if-no-files-found: error
 
-          if git diff --cached --quiet; then
-            echo "No generated report changes"
-            exit 0
-          fi
+  wheels:
+    name: Three distributions and isolated installation (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-latest, windows-2022]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - run: python -m pip install build scikit-build-core pybind11 wheel 'setuptools>=61' pytest packaging
+      - name: Create wheelhouse
+        shell: python
+        run: |
+          from pathlib import Path
+          Path("wheelhouse").mkdir()
+      - name: Build Core wheel
+        env: {CMAKE_BUILD_PARALLEL_LEVEL: '2'}
+        run: >-
+          python -m build --wheel --no-isolation --outdir wheelhouse packaging/core
+      - name: Build Tensor wheel
+        env: {CMAKE_BUILD_PARALLEL_LEVEL: '2'}
+        run: python -m build --wheel --no-isolation --outdir wheelhouse packaging/tensor
+      - name: Build EDA wheel
+        env: {CMAKE_BUILD_PARALLEL_LEVEL: '2'}
+        run: python -m build --wheel --no-isolation --outdir wheelhouse packaging/eda
+      - name: Verify ownership, dependencies, and clean installs
+        shell: python
+        run: |
+          import subprocess
+          version = subprocess.check_output(
+              ["python", "scripts/update_version.py", "--get-version"], text=True
+          ).strip()
+          subprocess.run(
+              ["python", "scripts/verify_wheel_matrix.py", "wheelhouse",
+               "--version", version, "--workdir", "wheel-matrix"],
+              check=True,
+          )
+      - uses: actions/upload-artifact@v4
+        with:
+          name: smoke-wheelhouse-${{ runner.os }}
+          path: wheelhouse
+          if-no-files-found: error
 
-          git commit -m "ci: publish coverage and benchmarks [skip ci]"
-          git push origin HEAD:main
+  python-regressions:
+    name: Python regression suite
+    runs-on: ubuntu-24.04
+    needs: wheels
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - run: python -m pip install pytest numpy
+      - uses: actions/download-artifact@v4
+        with:
+          name: smoke-wheelhouse-Linux
+          path: wheelhouse
+      - name: Install the exact Linux wheel artifacts
+        run: python -m pip install --no-index wheelhouse/*.whl
+      - run: python -m pytest -q tests

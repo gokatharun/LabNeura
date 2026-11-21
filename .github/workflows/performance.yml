@@ -1,0 +1,77 @@
+name: LabNeura Performance
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'CMakeLists.txt'
+      - 'cmake/**'
+      - 'include/**'
+      - 'src/**'
+      - 'benchmarks/**'
+      - 'tests/native_backend_benchmark.cpp'
+      - 'tests/eda_verilog_lexer_test.cpp'
+  workflow_dispatch:
+  schedule:
+    - cron: '42 3 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: performance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-benchmarks:
+    name: Release benchmark (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: ubuntu-24.04, platform: linux-x86_64, shell: bash}
+          - {os: ubuntu-24.04-arm, platform: linux-arm64, shell: bash}
+          - {os: macos-latest, platform: macos-arm64, shell: bash}
+          - {os: windows-2022, platform: windows-x86_64, shell: pwsh}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: runner.os == 'Windows'
+        with: {arch: x64}
+      - name: Configure uninstrumented Release benchmark build
+        shell: ${{ matrix.shell }}
+        run: >-
+          cmake -S . -B build/performance -DCMAKE_BUILD_TYPE=Release
+          -DBUILD_TESTING=ON -DLABNEURA_ENABLE_SLANG_VALIDATION=OFF
+          -DFETCHCONTENT_FULLY_DISCONNECTED=ON
+      - name: Build correctness tests and benchmark binaries
+        shell: ${{ matrix.shell }}
+        run: |
+          cmake --build build/performance --parallel 2
+          cmake --build build/performance --target labneura_native_backend_benchmark --parallel 2
+          cmake --build build/performance --target labneura_lexer_benchmark --parallel 2
+      - name: Validate before timing
+        shell: ${{ matrix.shell }}
+        run: ctest --test-dir build/performance --output-on-failure --no-tests=error
+      - name: Measure Tensor and EDA benchmarks (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          build/performance/labneura_native_backend_benchmark tensor-benchmark.csv
+          build/performance/labneura_lexer_benchmark --synthetic tests/data/verilog/lexer_corpus.sv examples/verilog/ibex/ibex_alu.sv examples/verilog/8080_core/i8080.v | tee lexer-benchmark.log
+      - name: Measure Tensor and EDA benchmarks (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & build/performance/Release/labneura_native_backend_benchmark.exe tensor-benchmark.csv
+          if ($LASTEXITCODE -ne 0) { throw "Tensor benchmark failed" }
+          & build/performance/Release/labneura_lexer_benchmark.exe --synthetic tests/data/verilog/lexer_corpus.sv examples/verilog/ibex/ibex_alu.sv examples/verilog/8080_core/i8080.v 2>&1 | Tee-Object lexer-benchmark.log
+          if ($LASTEXITCODE -ne 0) { throw "Lexer benchmark failed" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: performance-${{ matrix.platform }}
+          path: |
+            tensor-benchmark.csv
+            lexer-benchmark.log
+          if-no-files-found: error

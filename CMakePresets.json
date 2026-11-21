@@ -1,0 +1,100 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {"major": 3, "minor": 20, "patch": 0},
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/build/presets/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "BUILD_TESTING": "ON",
+        "LABNEURA_ENABLE_SLANG_VALIDATION": "OFF"
+      }
+    },
+    {
+      "name": "core",
+      "inherits": "base",
+      "cacheVariables": {
+        "LABNEURA_BUILD_ACCEL_CORE": "ON",
+        "LABNEURA_BUILD_TENSOR": "OFF",
+        "LABNEURA_BUILD_EDA": "OFF",
+        "LABNEURA_BUILD_COMPAT": "OFF"
+      }
+    },
+    {
+      "name": "tensor",
+      "inherits": "base",
+      "cacheVariables": {
+        "LABNEURA_BUILD_ACCEL_CORE": "ON",
+        "LABNEURA_BUILD_TENSOR": "ON",
+        "LABNEURA_BUILD_EDA": "OFF",
+        "LABNEURA_BUILD_COMPAT": "OFF"
+      }
+    },
+    {
+      "name": "eda",
+      "inherits": "base",
+      "cacheVariables": {
+        "LABNEURA_BUILD_ACCEL_CORE": "OFF",
+        "LABNEURA_BUILD_TENSOR": "OFF",
+        "LABNEURA_BUILD_EDA": "ON",
+        "LABNEURA_BUILD_COMPAT": "OFF"
+      }
+    },
+    {
+      "name": "development",
+      "inherits": "base",
+      "cacheVariables": {
+        "LABNEURA_BUILD_ACCEL_CORE": "ON",
+        "LABNEURA_BUILD_TENSOR": "ON",
+        "LABNEURA_BUILD_EDA": "ON",
+        "LABNEURA_BUILD_COMPAT": "ON"
+      }
+    },
+    {
+      "name": "release",
+      "inherits": "development",
+      "cacheVariables": {"BUILD_TESTING": "OFF"}
+    },
+    {
+      "name": "benchmark",
+      "inherits": "development",
+      "cacheVariables": {"BUILD_TESTING": "ON"}
+    },
+    {
+      "name": "coverage",
+      "inherits": "development",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "LABNEURA_ENABLE_COVERAGE": "ON"
+      }
+    },
+    {
+      "name": "sanitizer",
+      "inherits": "development",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "LABNEURA_ENABLE_SANITIZERS": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {"name": "core", "configurePreset": "core"},
+    {"name": "tensor", "configurePreset": "tensor"},
+    {"name": "eda", "configurePreset": "eda"},
+    {"name": "development", "configurePreset": "development"},
+    {"name": "release", "configurePreset": "release"},
+    {"name": "benchmark", "configurePreset": "benchmark"},
+    {"name": "coverage", "configurePreset": "coverage"},
+    {"name": "sanitizer", "configurePreset": "sanitizer"}
+  ],
+  "testPresets": [
+    {"name": "core", "configurePreset": "core", "output": {"outputOnFailure": true}},
+    {"name": "tensor", "configurePreset": "tensor", "output": {"outputOnFailure": true}},
+    {"name": "eda", "configurePreset": "eda", "output": {"outputOnFailure": true}},
+    {"name": "development", "configurePreset": "development", "output": {"outputOnFailure": true}},
+    {"name": "coverage", "configurePreset": "coverage", "output": {"outputOnFailure": true}},
+    {"name": "sanitizer", "configurePreset": "sanitizer", "output": {"outputOnFailure": true}}
+  ]
+}

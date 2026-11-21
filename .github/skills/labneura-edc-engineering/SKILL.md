@@ -97,14 +97,14 @@ Specify:
 
 | Component | Owning agent | Key files |
 |-----------|-------------|-----------|
-| Lexer (scalar + NEON/AVX2 classifier) | Agent 2 | `include/labneura/eda/verilog_lexer.h`, `src/labneura/eda/verilog_lexer.cpp`, `verilog_byte_classifier.*` |
-| Preprocessor | Agent 2 (with Agent 4 for macro semantics) | `include/labneura/eda/verilog_preprocessor.h`, `src/labneura/eda/verilog_preprocessor.cpp` |
-| Parser / Syntax | Agent 3 | `include/labneura/eda/verilog_syntax.h`, `src/labneura/eda/verilog_parser.cpp` |
-| Semantic analysis | Agent 4 | `include/labneura/eda/verilog_semantic.h`, `src/labneura/eda/verilog_semantic.cpp` |
-| Type system / width inference | Agent 4 | `include/labneura/eda/verilog_type.h`, `src/labneura/eda/verilog_type.cpp` |
-| Constant evaluation | Agent 4 | `include/labneura/eda/verilog_constant.h`, `src/labneura/eda/verilog_constant.cpp` |
-| Elaboration | Agent 5 | `include/labneura/eda/verilog_elaboration.h`, `src/labneura/eda/verilog_elaboration.cpp` |
-| Performance / SIMD | Agent 6 | `include/labneura/backends/cpu/*`, `src/labneura/backends/cpu/*` |
+| Lexer (scalar + NEON/AVX2 classifier) | Agent 2 | `include/labneura/eda/verilog_lexer.h`, `src/labneura/eda/parser/verilog/lexer/*` |
+| Preprocessor | Agent 2 (with Agent 4 for macro semantics) | `include/labneura/eda/verilog_preprocessor.h`, `src/labneura/eda/parser/verilog/preprocessor/*` |
+| Parser / Syntax | Agent 3 | `include/labneura/eda/verilog_syntax.h`, `src/labneura/eda/parser/verilog/syntax/*` |
+| Semantic analysis | Agent 4 | `include/labneura/eda/verilog_semantic.h`, `src/labneura/eda/parser/verilog/semantic/*` |
+| Type system / width inference | Agent 4 | `include/labneura/eda/verilog_type.h`, `src/labneura/eda/parser/verilog/types/*` |
+| Constant evaluation | Agent 4 | `include/labneura/eda/verilog_constant.h`, `src/labneura/eda/parser/verilog/evaluation/*` |
+| Elaboration | Agent 5 | `include/labneura/eda/verilog_elaboration.h`, `src/labneura/eda/parser/verilog/elaboration/*` |
+| Performance / SIMD | Agent 6 | `src/labneura/eda/parser/verilog/lexer/verilog_byte_classifier*`, `src/labneura/tensor/core/kernels/cpu/*` |
 | Verification / differential | Agent 7 | `tests/eda_*_test.cpp`, `tests/data/verilog/*` |
 | Benchmarks | Agent 8 | `benchmarks/eda/*`, `benchmarking/*` |
 

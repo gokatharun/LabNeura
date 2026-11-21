@@ -94,9 +94,8 @@ Invoke this agent when you need:
 
 ## Files this agent primarily owns
 
-- `include/labneura/backends/cpu/*` (EDA-relevant performance code)
-- `src/labneura/backends/cpu/*` (EDA-relevant performance code)
-- `src/labneura/eda/verilog_byte_classifier_avx2.cpp`
+- `src/labneura/eda/parser/verilog/lexer/verilog_byte_classifier*`
+- `src/labneura/tensor/core/kernels/cpu/*`
 - `benchmarks/eda/verilog_lexer_benchmark.cpp`
 - `benchmarks/eda/verilog_preprocessor_benchmark.cpp`
 - (Collaborates with Agent 8 on benchmark infrastructure)

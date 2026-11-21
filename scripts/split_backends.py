@@ -6,7 +6,7 @@ Split large backend files into modular components by data type.
 import os
 import re
 
-BACKENDS_DIR = "src/labneura/backends"
+BACKENDS_DIR = "src/labneura/tensor/core/kernels/cpu"
 
 # Define split points for AVX2
 AVX2_SPLITS = {

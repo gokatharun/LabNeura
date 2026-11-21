@@ -98,10 +98,10 @@ Invoke this agent when you need:
 ## Files this agent primarily owns
 
 - `include/labneura/eda/verilog_semantic.h`
-- `src/labneura/eda/verilog_semantic.cpp`
+- `src/labneura/eda/parser/verilog/semantic/verilog_semantic.cpp`
 - `include/labneura/eda/verilog_type.h`
-- `src/labneura/eda/verilog_type.cpp`
+- `src/labneura/eda/parser/verilog/types/verilog_type.cpp`
 - `include/labneura/eda/verilog_constant.h`
-- `src/labneura/eda/verilog_constant.cpp`
+- `src/labneura/eda/parser/verilog/evaluation/verilog_constant.cpp`
 - `tests/eda_verilog_semantic_test.cpp`
 - `tests/eda_verilog_type_test.cpp`

@@ -98,5 +98,5 @@ Invoke this agent when you need:
 ## Files this agent primarily owns
 
 - `include/labneura/eda/verilog_elaboration.h`
-- `src/labneura/eda/verilog_elaboration.cpp`
+- `src/labneura/eda/parser/verilog/elaboration/verilog_elaboration.cpp`
 - `tests/eda_verilog_elaboration_test.cpp`

@@ -1,7 +1,0 @@
-README.md
-pyproject.toml
-src/labneura/__init__.py
-src/labneura_core.egg-info/PKG-INFO
-src/labneura_core.egg-info/SOURCES.txt
-src/labneura_core.egg-info/dependency_links.txt
-src/labneura_core.egg-info/top_level.txt

@@ -1,0 +1,2 @@
+labneura-tensor<0.6,>=0.5
+labneura-eda<0.6,>=0.5

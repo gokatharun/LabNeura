@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the Windows core/EDA wheel pair before runtime qualification."""
+"""Validate the exact three-distribution Windows wheel set."""
 
 from __future__ import annotations
 
@@ -33,46 +33,51 @@ def validate(dist: Path, expected_version: str, extract_dir: Path) -> Path:
             raise AssertionError(f"duplicate {canonical} wheel: {wheel.name}")
         indexed[canonical] = (wheel, str(version), build, tags)
 
-    expected = {"labneura-core", "labneura-eda"}
+    expected = {"labneura", "labneura-tensor", "labneura-eda"}
     if set(indexed) != expected:
         raise AssertionError(
             f"expected only {sorted(expected)}, found {sorted(indexed)} in {dist}"
         )
 
-    core, core_version, _, core_tags = indexed["labneura-core"]
+    umbrella, umbrella_version, _, umbrella_tags = indexed["labneura"]
+    tensor, tensor_version, _, tensor_tags = indexed["labneura-tensor"]
     eda, eda_version, _, eda_tags = indexed["labneura-eda"]
-    if {core_version, eda_version} != {expected_version}:
+    if {umbrella_version, tensor_version, eda_version} != {expected_version}:
         raise AssertionError(
             f"wheel versions differ from {expected_version}: "
-            f"{core.name}={core_version}, {eda.name}={eda_version}"
+            f"{umbrella.name}={umbrella_version}, {tensor.name}={tensor_version}, "
+            f"{eda.name}={eda_version}"
         )
     if not any(
         tag.interpreter == "py3" and tag.abi == "none" and tag.platform == "any"
-        for tag in core_tags
+        for tag in umbrella_tags
     ):
-        raise AssertionError(f"{core.name}: expected a py3-none-any core wheel")
-    windows_tags = {
-        tag for tag in eda_tags
-        if tag.interpreter in {"cp38", "cp39", "cp310", "cp311", "cp312", "cp313"}
-        and tag.abi == tag.interpreter
-        and tag.platform == "win_amd64"
-    }
-    if not windows_tags:
-        raise AssertionError(f"{eda.name}: expected a supported CPython win_amd64 wheel, got {eda_tags}")
+        raise AssertionError(f"{umbrella.name}: expected a py3-none-any umbrella wheel")
+    for wheel, tags in ((tensor, tensor_tags), (eda, eda_tags)):
+        windows_tags = {tag for tag in tags
+                        if tag.interpreter in {"cp38", "cp39", "cp310", "cp311", "cp312", "cp313"}
+                        and tag.abi == tag.interpreter and tag.platform == "win_amd64"}
+        if not windows_tags:
+            raise AssertionError(f"{wheel.name}: expected a supported CPython win_amd64 wheel, got {tags}")
 
-    with zipfile.ZipFile(core) as archive:
-        metadata = _metadata(archive, core)
-        if canonicalize_name(metadata["Name"]) != "labneura-core":
-            raise AssertionError(f"{core.name}: incorrect Name metadata")
+    with zipfile.ZipFile(umbrella) as archive:
+        metadata = _metadata(archive, umbrella)
+        if canonicalize_name(metadata["Name"]) != "labneura":
+            raise AssertionError(f"{umbrella.name}: incorrect Name metadata")
+        if _requirements(metadata) != {"labneura-tensor<0.6,>=0.5", "labneura-eda<0.6,>=0.5"}:
+            raise AssertionError(f"{umbrella.name}: unexpected dependencies {_requirements(metadata)}")
+
+    with zipfile.ZipFile(tensor) as archive:
+        metadata = _metadata(archive, tensor)
         if _requirements(metadata):
-            raise AssertionError(f"{core.name}: core wheel must have no dependencies")
+            raise AssertionError(f"{tensor.name}: Tensor wheel must be independent")
 
     with zipfile.ZipFile(eda) as archive:
         names = [name for name in archive.namelist() if not name.endswith("/")]
         metadata = _metadata(archive, eda)
         if canonicalize_name(metadata["Name"]) != "labneura-eda":
             raise AssertionError(f"{eda.name}: incorrect Name metadata")
-        if _requirements(metadata) != {"labneura-core<0.6,>=0.5"}:
+        if _requirements(metadata):
             raise AssertionError(
                 f"{eda.name}: unexpected dependencies {_requirements(metadata)}"
             )
@@ -89,7 +94,8 @@ def validate(dist: Path, expected_version: str, extract_dir: Path) -> Path:
         extension = extract_dir / Path(extensions[0]).name
         extension.write_bytes(archive.read(extensions[0]))
 
-    print(f"PASS {core.name}: version={core_version}, tags={sorted(map(str, core_tags))}")
+    print(f"PASS {umbrella.name}: version={umbrella_version}, tags={sorted(map(str, umbrella_tags))}")
+    print(f"PASS {tensor.name}: version={tensor_version}, tags={sorted(map(str, tensor_tags))}")
     print(f"PASS {eda.name}: version={eda_version}, tags={sorted(map(str, eda_tags))}")
     print(f"EDA_EXTENSION={extension.resolve()}")
     return extension.resolve()

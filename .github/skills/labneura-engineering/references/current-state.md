@@ -1,8 +1,26 @@
 # LabNeura Current Project State
 
-Last verified: 2026-11-20. Treat this as a continuity reference, not a
+Last verified: 2026-11-21. Treat this as a continuity reference, not a
 substitute for inspecting the current source, tests, worktree, and benchmark
 artifacts.
+
+## ARCH-1C CI, coverage, and performance reporting
+
+Routine `ci.yml` now owns architecture checks, one Release C++ build per
+primary platform, split-wheel isolation, and Python regressions. The former
+broad CI remains as manual/weekly `extended-validation.yml` for sanitizers,
+formal/differential checks, source-distribution rebuilds, and extended
+matrices. `performance.yml` is manual/weekly and uses a separate,
+uninstrumented Release build after correctness validation. `publish.yml`
+continues to own the 60 native-wheel plus one umbrella-wheel release inventory.
+
+`LABNEURA_ENABLE_COVERAGE` supports LLVM source coverage on Clang/AppleClang
+and gcov on GCC. The local Apple ARM64 baseline measured 50.81% native C++
+line, 71.13% function, and 41.94% branch coverage from 43 registered CTests
+(33 passed; 10 expected AVX2 skips). Python source coverage is explicitly N/A
+for checkout-only test runs that do not import a Python source package.
+`PERFORMANCE.md` and `COVERAGE.md` contain only measured compatible data and
+mark a missing persisted baseline as N/C.
 
 ## Windows release qualification (M7.20.2)
 
@@ -84,6 +102,20 @@ full lexer, 1,262.78 to 1,363.30 MB/s for NEON classification, and 146.38 to
 150.84 MB/s for the NEON full lexer. Retained capacity stayed 829,440 bytes.
 Slang-free EDA CTest passed 10 tests with one expected AVX2 skip; Python EDA
 regressions passed 92 tests.
+
+L7 adds an eight-byte scalar whitespace fast path before falling back to the
+cached SIMD scanner and validates decimal integer, fraction, and exponent
+separator rules during their initial scan instead of rescanning substrings.
+Sampling on Apple M1 reduced `ClassificationScanner::find_first_not` top-stack
+samples from 791 to 565 in comparable five-second NEON profiles. The Release
+benchmark now has deterministic identifier-, numeric-, operator-, comment-,
+and large-RTL synthetic inputs constructed outside timed regions. On the
+2,167,989-byte combined workload, representative full-lexer throughput changed
+from 128.96 to 159.79 MB/s scalar and 184.65 to 225.43 MB/s NEON; output
+capacity remained 29,337,600 bytes. Individual existing-source and synthetic
+results remain workload-specific. Slang-free EDA CTest passed 10 tests with
+one expected AVX2 skip, Python EDA regressions passed 92 tests, and x86_64
+AVX2 lexer-test and benchmark cross-targets compiled and linked.
 
 ## Project identity
 
@@ -1863,3 +1895,34 @@ Fresh Apple Silicon M1/arm64 Release validation on 2026-11-19:
 - The native EDA implementation has no Tensor or SIMD API dependency.
 - `git diff --check` and new-file whitespace checks passed. Existing dirty and
   untracked worktree changes were preserved; no commit or push was made.
+# ARCH-1 developer and release architecture (2026-11-21)
+
+The portable developer entry point is `scripts/dev.py`, exposed through the
+thin root Makefile as `compile`, `test`, `benchmark`, `coverage`, `check`,
+`format`, and guarded `push` commands. It selects parallelism from host CPU and
+available memory, supports component-isolated builds, and rejects unavailable
+cross targets rather than claiming them.
+
+The Python release surface is now exactly `labneura`, `labneura-tensor`, and
+`labneura-eda`. The pure `labneura` umbrella owns the initializer and depends
+on the two independently installable native components. Python 3.8 through
+3.13 and the five required platform families are centralized in
+`scripts/release_inventory.py`; release qualification rejects any missing
+native ABI/platform tuple. Local MSVC execution remains dependent on Windows
+CI and must not be inferred from macOS cross-compilation.
+
+## ARCH-1B native componentization (2026-11-21)
+
+Native ownership is physically separated into domain-independent Core
+(`src/labneura/core`), Tensor plus Tensor Core
+(`src/labneura/tensor/core`), and EDA parser/analysis/lowering subsystems.
+Component source inventories are owned by `cmake/components`; the root CMake
+coordinates shared policies, selection, compatibility, bindings, installation,
+and export. `labneura_core` is canonical, while the historical acceleration
+option and target remain compatibility aliases. Tensor depends on Core; EDA is
+independent of both.
+
+The obsolete tracked `python/src` and `python/include` mirrors were removed.
+Wheel and sdist builds stage or compile the authoritative root trees. Automated
+architecture checks enforce component dependencies, source ownership and
+registration, duplicate-tree absence, and per-source ISA isolation.

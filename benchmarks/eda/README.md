@@ -38,6 +38,17 @@ cmake --build "$TMPDIR/labneura-lexer-build" --target labneura_lexer_benchmark
   examples/verilog/8080_core/i8080.v
 ```
 
+Pass `--synthetic` alongside file inputs to add deterministic identifier-,
+numeric-, operator-, and comment-heavy 256 KiB inputs plus a 1 MiB RTL-shaped
+input. These buffers are constructed before timing:
+
+```sh
+"$TMPDIR/labneura-lexer-build/labneura_lexer_benchmark" --synthetic \
+  tests/data/verilog/lexer_corpus.sv \
+  examples/verilog/ibex/ibex_alu.sv \
+  examples/verilog/8080_core/i8080.v
+```
+
 The benchmark performs two warmups and nine measured passes per backend and
 case. It reports both the aggregate corpus and each input file separately.
 NEON results are reported as unavailable on builds without compiled ARM64

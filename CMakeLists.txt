@@ -9,15 +9,24 @@ include(GNUInstallDirs)
 
 option(
   LABNEURA_ENABLE_COVERAGE
-  "Enable LLVM source-based coverage instrumentation"
+  "Enable compiler-native source coverage instrumentation"
   OFF
 )
 
 option(
-  LABNEURA_BUILD_ACCEL_CORE
-  "Build the application-independent acceleration core"
-  ON
+  LABNEURA_ENABLE_SANITIZERS
+  "Enable AddressSanitizer and UndefinedBehaviorSanitizer"
+  OFF
 )
+
+option(LABNEURA_BUILD_CORE "Build the domain-independent Core component" ON)
+if(DEFINED LABNEURA_BUILD_ACCEL_CORE)
+  set(LABNEURA_BUILD_CORE "${LABNEURA_BUILD_ACCEL_CORE}" CACHE BOOL
+      "Build the domain-independent Core component" FORCE)
+else()
+  set(LABNEURA_BUILD_ACCEL_CORE "${LABNEURA_BUILD_CORE}" CACHE BOOL
+      "Deprecated compatibility alias for LABNEURA_BUILD_CORE" FORCE)
+endif()
 
 option(
   LABNEURA_BUILD_TENSOR
@@ -137,24 +146,6 @@ if(DEFINED ENV{LABNEURA_DEPS_DIR})
   set(FETCHCONTENT_BASE_DIR "$ENV{LABNEURA_DEPS_DIR}/${CMAKE_BUILD_TYPE}")
 endif()
 
-if(LABNEURA_BUILD_EDA)
-  # Embed the SKY130 Liberty file so the default parser works in source
-  # checkouts and installed wheels alike.
-  set(LABNEURA_EDA_DEFAULT_LIBERTY
-    "${CMAKE_SOURCE_DIR}/assets/sky130_fd_sc_hd__tt_025C_1v80.lib"
-  )
-  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-    "${LABNEURA_EDA_DEFAULT_LIBERTY}"
-    "${CMAKE_SOURCE_DIR}/src/labneura/eda/parser/liberty/default_cell_library.h.in"
-    "${CMAKE_SOURCE_DIR}/cmake/GenerateEmbeddedLiberty.cmake"
-  )
-  include("${CMAKE_SOURCE_DIR}/cmake/GenerateEmbeddedLiberty.cmake")
-  labneura_generate_embedded_liberty(
-    "${LABNEURA_EDA_DEFAULT_LIBERTY}"
-    "${CMAKE_SOURCE_DIR}/src/labneura/eda/parser/liberty/default_cell_library.h.in"
-    "${CMAKE_CURRENT_BINARY_DIR}/generated/labneura/eda/default_cell_library.h")
-endif()
-
 # ======================================
 # C++ Standard
 # ======================================
@@ -173,6 +164,15 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
 endif()
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
+# CMake reports the build host in CMAKE_SYSTEM_PROCESSOR for a same-host macOS
+# cross-architecture build. Normalize it to the explicitly requested single
+# architecture so backend and test registration describe the produced binary.
+if(APPLE AND CMAKE_OSX_ARCHITECTURES STREQUAL "x86_64")
+  set(CMAKE_SYSTEM_PROCESSOR "x86_64")
+elseif(APPLE AND CMAKE_OSX_ARCHITECTURES STREQUAL "arm64")
+  set(CMAKE_SYSTEM_PROCESSOR "arm64")
+endif()
 
 if(LABNEURA_BUILD_EDA)
   set(LABNEURA_VERILOG_LEXER_TARGET_ARM64 OFF)
@@ -243,11 +243,14 @@ endif()
 # Architecture detection
 # ======================================
 if(APPLE AND LABNEURA_BUILD_TENSOR)
-  execute_process(
-    COMMAND uname -m
-    OUTPUT_VARIABLE ARCH
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-  )
+  if(CMAKE_OSX_ARCHITECTURES)
+    set(ARCH "${CMAKE_OSX_ARCHITECTURES}")
+  else()
+    execute_process(
+      COMMAND uname -m
+      OUTPUT_VARIABLE ARCH
+      OUTPUT_STRIP_TRAILING_WHITESPACE)
+  endif()
 
   if(ARCH MATCHES "arm64|aarch64")
     message(STATUS "Apple Silicon detected (arm64) – NEON enabled")
@@ -259,191 +262,27 @@ endif()
 # ======================================
 set(LABNEURA_OBJECT_TARGETS "")
 
-if(LABNEURA_BUILD_ACCEL_CORE)
-  add_library(labneura_accel_core_objects OBJECT
-    src/labneura/backends/common/cpu_features.cpp
-  )
-  set_target_properties(labneura_accel_core_objects PROPERTIES
-    POSITION_INDEPENDENT_CODE ON
-  )
-  target_include_directories(labneura_accel_core_objects
-    PUBLIC
-      $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
-      $<INSTALL_INTERFACE:include>
-    PRIVATE
-      ${CMAKE_CURRENT_SOURCE_DIR}/src
-  )
+include(cmake/components/core/CMakeLists.txt)
+include(cmake/components/tensor/CMakeLists.txt)
+include(cmake/components/eda/CMakeLists.txt)
 
-  add_library(labneura_accel_core STATIC
-    $<TARGET_OBJECTS:labneura_accel_core_objects>
-  )
-  set_target_properties(labneura_accel_core PROPERTIES
-    POSITION_INDEPENDENT_CODE ON
-    EXPORT_NAME AccelCore
-  )
-  target_include_directories(labneura_accel_core
-    PUBLIC
-      $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
-      $<INSTALL_INTERFACE:include>
-  )
-  target_compile_features(labneura_accel_core PUBLIC cxx_std_20)
-  list(APPEND LABNEURA_OBJECT_TARGETS labneura_accel_core_objects)
+if(LABNEURA_BUILD_ACCEL_CORE)
+  labneura_add_core_component()
 endif()
 
 if(LABNEURA_BUILD_TENSOR)
-  add_library(labneura_tensor_objects OBJECT
-    src/labneura/tensor.cpp
-    src/labneura/runtime.cpp
-    src/labneura/parallel.cpp
-    src/labneura/backends/common/base.cpp
-    src/labneura/backends/common/tensor_storage.cpp
-    src/labneura/backends/common/backend_factory.cpp
-    src/labneura/backends/cpu/generic/generic_backend.cpp
-    src/labneura/backends/cpu/generic/generic_ops_fp32.cpp
-    src/labneura/backends/cpu/generic/generic_ops_compare.cpp
-    src/labneura/backends/cpu/generic/generic_ops_logical.cpp
-    src/labneura/backends/cpu/generic/generic_ops_int8.cpp
-    src/labneura/backends/cpu/neon/neon_backend.cpp
-    src/labneura/backends/cpu/neon/neon_ops_compare.cpp
-    src/labneura/backends/cpu/neon/neon_ops_logical.cpp
-    src/labneura/backends/cpu/neon/neon_ops_fp32.cpp
-    src/labneura/backends/cpu/neon/neon_ops_int8.cpp
-    src/labneura/backends/cpu/neon/neon_ops_int16.cpp
-    src/labneura/backends/cpu/avx2/avx2_backend.cpp
-    src/labneura/backends/cpu/avx2/avx2_ops_compare.cpp
-    src/labneura/backends/cpu/avx2/avx2_ops_logical.cpp
-    src/labneura/backends/cpu/avx2/avx2_ops_fp32.cpp
-    src/labneura/backends/cpu/avx2/avx2_ops_int8.cpp
-    src/labneura/backends/cpu/avx2/avx2_ops_fp16.cpp
-    src/labneura/backends/cpu/avx2/avx2_ops_int16.cpp
-  )
-  set_target_properties(labneura_tensor_objects PROPERTIES
-    POSITION_INDEPENDENT_CODE ON
-  )
-  target_include_directories(labneura_tensor_objects
-    PUBLIC
-      $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
-      $<INSTALL_INTERFACE:include>
-    PRIVATE
-      ${CMAKE_CURRENT_SOURCE_DIR}/src
-  )
-
-  add_library(labneura_tensor STATIC
-    $<TARGET_OBJECTS:labneura_tensor_objects>
-  )
-  set_target_properties(labneura_tensor PROPERTIES
-    POSITION_INDEPENDENT_CODE ON
-    EXPORT_NAME Tensor
-  )
-  target_include_directories(labneura_tensor
-    PUBLIC
-      $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
-      $<INSTALL_INTERFACE:include>
-  )
-  target_compile_features(labneura_tensor PUBLIC cxx_std_20)
-  if(TARGET labneura_accel_core)
-    target_link_libraries(labneura_tensor PUBLIC labneura_accel_core)
-  endif()
-  list(APPEND LABNEURA_OBJECT_TARGETS labneura_tensor_objects)
+  labneura_add_tensor_component()
 endif()
 
 if(LABNEURA_BUILD_EDA)
-  add_library(labneura_eda_objects OBJECT
-    src/labneura/eda/parser/native_verilog_parser.cpp
-    src/labneura/eda/verilog_lexer.cpp
-    src/labneura/eda/verilog_preprocessor.cpp
-    src/labneura/eda/verilog_syntax.cpp
-    src/labneura/eda/verilog_semantic.cpp
-    src/labneura/eda/verilog_callable_binding.cpp
-    src/labneura/eda/verilog_lvalue.cpp
-    src/labneura/eda/verilog_assignment.cpp
-    src/labneura/eda/verilog_control_flow.cpp
-    src/labneura/eda/verilog_loop_execution.cpp
-    src/labneura/eda/verilog_branch_execution.cpp
-    src/labneura/eda/verilog_function_evaluation.cpp
-    src/labneura/eda/verilog_task_execution.cpp
-    src/labneura/eda/verilog_process_analysis.cpp
-    src/labneura/eda/verilog_process_dependencies.cpp
-    src/labneura/eda/verilog_assignment_coverage.cpp
-    src/labneura/eda/verilog_sequential_analysis.cpp
-    src/labneura/eda/verilog_synthesis_eligibility.cpp
-    src/labneura/eda/verilog_constant.cpp
-    src/labneura/eda/verilog_type.cpp
-    src/labneura/eda/verilog_elaboration.cpp
-    src/labneura/eda/verilog_native_lowering.cpp
-    src/labneura/eda/verilog_expression_lowering.cpp
-    src/labneura/eda/verilog_combinational_lowering.cpp
-    src/labneura/eda/verilog_sequential_lowering.cpp
-    src/labneura/eda/verilog_module_lowering.cpp
-    src/labneura/eda/native_verilog_project_context.cpp
-    src/labneura/eda/native_verilog_project_projection.cpp
-    src/labneura/eda/verilog_byte_classifier.cpp
-    src/labneura/eda/parser/liberty_parser.cpp
-    src/labneura/eda/netlist/netlist_json.cpp
-    src/labneura/eda/netlist/netlist_verilog.cpp
-    src/labneura/eda/netlist/netlist_graph.cpp
-    src/labneura/eda/netlist/netlist_blif.cpp
-    src/labneura/eda/mapping/generic/generic_mapping.cpp
-    src/labneura/eda/mapping/technology/technology_mapping.cpp
-    src/labneura/eda/mapping/fpga/fpga_mapping.cpp
-    src/labneura/eda/mapping/fpga/fpga_library.cpp
-  )
-  if(LABNEURA_VERILOG_LEXER_HAS_AVX2)
-    target_sources(labneura_eda_objects PRIVATE
-      src/labneura/eda/verilog_byte_classifier_avx2.cpp
-    )
-    set_source_files_properties(
-      src/labneura/eda/verilog_byte_classifier_avx2.cpp
-      PROPERTIES COMPILE_OPTIONS "${LABNEURA_VERILOG_LEXER_AVX2_FLAG}"
-    )
-  endif()
-  set_target_properties(labneura_eda_objects PROPERTIES
-    POSITION_INDEPENDENT_CODE ON
-  )
-  target_include_directories(labneura_eda_objects
-    PUBLIC
-      $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
-      $<INSTALL_INTERFACE:include>
-    PRIVATE
-      ${CMAKE_CURRENT_SOURCE_DIR}/src
-      ${CMAKE_CURRENT_BINARY_DIR}/generated
-  )
-  if(LABNEURA_VERILOG_LEXER_HAS_NEON)
-    target_compile_definitions(labneura_eda_objects
-      PRIVATE LABNEURA_VERILOG_LEXER_HAS_NEON=1
-    )
-    message(STATUS "Verilog lexer NEON byte classification enabled")
-  else()
-    message(STATUS "Verilog lexer NEON byte classification unavailable; scalar enabled")
-  endif()
-  if(LABNEURA_VERILOG_LEXER_HAS_AVX2)
-    target_compile_definitions(labneura_eda_objects
-      PRIVATE LABNEURA_VERILOG_LEXER_HAS_AVX2=1
-    )
-    message(STATUS "Verilog lexer AVX2 byte classification compiled; runtime CPU check enabled")
-  else()
-    message(STATUS "Verilog lexer AVX2 byte classification unavailable; scalar fallback enabled")
-  endif()
-
-  add_library(labneura_eda STATIC
-    $<TARGET_OBJECTS:labneura_eda_objects>
-  )
-  set_target_properties(labneura_eda PROPERTIES
-    POSITION_INDEPENDENT_CODE ON
-    EXPORT_NAME EDA
-  )
-  target_include_directories(labneura_eda
-    PUBLIC
-      $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
-      $<INSTALL_INTERFACE:include>
-  )
-  target_compile_features(labneura_eda PUBLIC cxx_std_20)
-  list(APPEND LABNEURA_OBJECT_TARGETS labneura_eda_objects)
+  labneura_add_eda_component()
+  add_library(labneura_eda_frontend ALIAS labneura_eda_objects)
+  add_library(labneura_eda_lowering ALIAS labneura_eda_objects)
 endif()
 
 if(LABNEURA_BUILD_COMPAT)
   add_library(labneura STATIC
-    $<TARGET_OBJECTS:labneura_accel_core_objects>
+    $<TARGET_OBJECTS:labneura_core_objects>
     $<TARGET_OBJECTS:labneura_tensor_objects>
     $<TARGET_OBJECTS:labneura_eda_objects>
   )
@@ -463,89 +302,43 @@ if(LABNEURA_BUILD_COMPAT)
 endif()
 
 if(LABNEURA_ENABLE_COVERAGE OR "$ENV{LABNEURA_COVERAGE}" STREQUAL "1")
-  if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    message(FATAL_ERROR "LABNEURA_COVERAGE requires Clang")
+  if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    set(LABNEURA_COVERAGE_COMPILE_OPTIONS
+      -fprofile-instr-generate -fcoverage-mapping)
+    set(LABNEURA_COVERAGE_LINK_OPTIONS -fprofile-instr-generate)
+    set(LABNEURA_COVERAGE_FORMAT "llvm")
+  elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    set(LABNEURA_COVERAGE_COMPILE_OPTIONS --coverage -O0)
+    set(LABNEURA_COVERAGE_LINK_OPTIONS --coverage)
+    set(LABNEURA_COVERAGE_FORMAT "gcov")
+  else()
+    message(FATAL_ERROR
+      "LABNEURA_ENABLE_COVERAGE supports Clang/AppleClang or GCC; use the "
+      "platform coverage workflow for MSVC")
   endif()
   foreach(target IN LISTS LABNEURA_OBJECT_TARGETS)
-    target_compile_options(${target} PRIVATE
-      -fprofile-instr-generate
-      -fcoverage-mapping
-    )
+    target_compile_options(${target} PRIVATE ${LABNEURA_COVERAGE_COMPILE_OPTIONS})
   endforeach()
-  if(TARGET labneura)
-    target_link_options(labneura INTERFACE -fprofile-instr-generate)
-  endif()
-  message(STATUS "LabNeura: LLVM coverage instrumentation enabled")
-endif()
-
-if(LABNEURA_BUILD_TENSOR AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
-  # Check for AVX2 support
-  check_cxx_compiler_flag("-mavx2" LABNEURA_COMPILER_SUPPORTS_AVX2)
-  if(LABNEURA_COMPILER_SUPPORTS_AVX2)
-    target_sources(labneura_tensor_objects PRIVATE
-      src/labneura/backends/cpu/avx2/avx2_backend_constructor.cpp
-    )
-    # Apply AVX2 flags to all AVX2 backend files
-    set_source_files_properties(
-      src/labneura/backends/cpu/avx2/avx2_backend.cpp
-      src/labneura/backends/cpu/avx2/avx2_ops_compare.cpp
-      src/labneura/backends/cpu/avx2/avx2_ops_logical.cpp
-      src/labneura/backends/cpu/avx2/avx2_ops_int8.cpp
-      src/labneura/backends/cpu/avx2/avx2_ops_int16.cpp
-      PROPERTIES COMPILE_FLAGS "-mavx2"
-    )
-    # FP16 and FP32 must keep IEEE NaN/Inf/division semantics, so opt out of
-    # -ffast-math (Clang otherwise lowers vector division to RCPPS + Newton-Raphson).
-    set_source_files_properties(
-      src/labneura/backends/cpu/avx2/avx2_ops_fp32.cpp
-      src/labneura/backends/cpu/avx2/avx2_ops_fp16.cpp
-      src/labneura/backends/cpu/avx2/avx2_ops_compare.cpp
-      PROPERTIES COMPILE_FLAGS "-mavx2 -fno-fast-math"
-    )
-    target_compile_definitions(labneura_tensor_objects PRIVATE LABNEURA_ENABLE_AVX2=1)
-    message(STATUS "LabNeura: AVX2 backend enabled (-mavx2)")
-    # F16C is independent of AVX2: build its kernel in an isolated translation
-    # unit and select it at runtime only when the CPU reports support.
-    check_cxx_compiler_flag("-mf16c" LABNEURA_COMPILER_SUPPORTS_F16C)
-    if(LABNEURA_COMPILER_SUPPORTS_F16C)
-      target_sources(labneura_tensor_objects PRIVATE
-        src/labneura/backends/cpu/avx2/avx2_ops_fp16_f16c.cpp
-      )
-      set_source_files_properties(
-        src/labneura/backends/cpu/avx2/avx2_ops_fp16_f16c.cpp
-        PROPERTIES COMPILE_FLAGS "-mavx2 -mf16c -fno-fast-math"
-      )
-      target_compile_definitions(labneura_tensor_objects PRIVATE LABNEURA_ENABLE_AVX2_F16C=1)
-      message(STATUS "LabNeura: AVX2 FP16 F16C kernel enabled (-mf16c, isolated)")
+  foreach(target labneura_core labneura_tensor labneura_eda labneura)
+    if(TARGET ${target})
+      target_link_options(${target} INTERFACE ${LABNEURA_COVERAGE_LINK_OPTIONS})
     endif()
-  else()
-    message(STATUS "LabNeura: AVX2 backend disabled (compiler lacks -mavx2)")
-  endif()
-
-
+  endforeach()
+  message(STATUS "LabNeura: ${LABNEURA_COVERAGE_FORMAT} coverage instrumentation enabled")
 endif()
 
-if(LABNEURA_BUILD_TENSOR AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
-  # Generic is the numerical reference. Preserve IEEE behavior in floating
-  # arithmetic and comparisons; fast-math assumes NaNs do not occur.
-  set_source_files_properties(
-    src/labneura/backends/cpu/generic/generic_ops_fp32.cpp
-    src/labneura/backends/cpu/generic/generic_ops_compare.cpp
-    PROPERTIES COMPILE_FLAGS "-fno-fast-math"
-  )
-endif()
-
-if(LABNEURA_BUILD_TENSOR AND CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
-  target_compile_definitions(labneura_tensor_objects PRIVATE LABNEURA_ENABLE_NEON=1)
-  if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
-    # FP32 NEON division is IEEE (vdivq_f32 / scalar fdiv); keep NaN/Inf/denormal
-    # semantics independent of the global -ffast-math.
-    set_source_files_properties(
-      src/labneura/backends/cpu/neon/neon_ops_compare.cpp
-      src/labneura/backends/cpu/neon/neon_ops_fp32.cpp
-      PROPERTIES COMPILE_FLAGS "-fno-fast-math"
-    )
+if(LABNEURA_ENABLE_SANITIZERS)
+  if(MSVC)
+    message(FATAL_ERROR "LABNEURA_ENABLE_SANITIZERS currently requires Clang or GCC")
   endif()
+  foreach(target IN LISTS LABNEURA_OBJECT_TARGETS)
+    target_compile_options(${target} PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
+  endforeach()
+  foreach(target labneura_core labneura_tensor labneura_eda labneura)
+    if(TARGET ${target})
+      target_link_options(${target} INTERFACE -fsanitize=address,undefined)
+    endif()
+  endforeach()
 endif()
 
 # ======================================
@@ -612,16 +405,18 @@ endif()
 if(NOT SKBUILD AND LABNEURA_BUILD_COMPAT)
   add_executable(labneura_example examples/main.cpp)
   target_link_libraries(labneura_example PRIVATE labneura)
+endif()
 
-  if(BUILD_TESTING)
+if(NOT SKBUILD AND LABNEURA_BUILD_TENSOR AND BUILD_TESTING)
     add_executable(labneura_backend_selection_test
       tests/backend_selection_test.cpp
     )
     target_include_directories(labneura_backend_selection_test PRIVATE
-      ${CMAKE_CURRENT_SOURCE_DIR}/src/labneura/backends/common
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/labneura/tensor/core/dispatch
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/labneura/core
     )
     find_package(Threads REQUIRED)
-    target_link_libraries(labneura_backend_selection_test PRIVATE labneura Threads::Threads)
+    target_link_libraries(labneura_backend_selection_test PRIVATE labneura_tensor Threads::Threads)
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64"
        AND LABNEURA_COMPILER_SUPPORTS_AVX2)
       target_compile_definitions(labneura_backend_selection_test
@@ -642,10 +437,13 @@ if(NOT SKBUILD AND LABNEURA_BUILD_COMPAT)
       tests/thread_config_test.cpp
     )
     target_include_directories(labneura_thread_config_test PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/labneura/tensor/core/runtime
+    )
+    target_include_directories(labneura_thread_config_test PRIVATE
       ${CMAKE_CURRENT_SOURCE_DIR}/src/labneura
     )
     target_link_libraries(labneura_thread_config_test PRIVATE
-      labneura Threads::Threads
+      labneura_tensor Threads::Threads
     )
     add_test(NAME thread_configuration COMMAND labneura_thread_config_test)
 
@@ -653,14 +451,14 @@ if(NOT SKBUILD AND LABNEURA_BUILD_COMPAT)
       tests/parallel_for_test.cpp
     )
     target_link_libraries(labneura_parallel_for_test PRIVATE
-      labneura Threads::Threads
+      labneura_tensor Threads::Threads
     )
     add_test(NAME parallel_for_execution COMMAND labneura_parallel_for_test)
 
     add_executable(labneura_fp32_parallel_add_test
       tests/fp32_parallel_add_test.cpp
     )
-    target_link_libraries(labneura_fp32_parallel_add_test PRIVATE labneura)
+    target_link_libraries(labneura_fp32_parallel_add_test PRIVATE labneura_tensor)
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
       target_compile_definitions(labneura_fp32_parallel_add_test
         PRIVATE LABNEURA_TEST_NEON=1
@@ -674,7 +472,7 @@ if(NOT SKBUILD AND LABNEURA_BUILD_COMPAT)
     target_include_directories(labneura_unsupported_dtype_test PRIVATE
       ${CMAKE_CURRENT_SOURCE_DIR}/tests
     )
-    target_link_libraries(labneura_unsupported_dtype_test PRIVATE labneura)
+    target_link_libraries(labneura_unsupported_dtype_test PRIVATE labneura_tensor)
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64"
        AND LABNEURA_COMPILER_SUPPORTS_AVX2)
       target_compile_definitions(labneura_unsupported_dtype_test
@@ -697,11 +495,11 @@ if(NOT SKBUILD AND LABNEURA_BUILD_COMPAT)
     target_include_directories(labneura_simd_int8_regression_test PRIVATE
       ${CMAKE_CURRENT_SOURCE_DIR}/tests
     )
-    target_link_libraries(labneura_simd_int8_regression_test PRIVATE labneura)
+    target_link_libraries(labneura_simd_int8_regression_test PRIVATE labneura_tensor)
     add_executable(labneura_native_backend_benchmark
       tests/native_backend_benchmark.cpp
     )
-    target_link_libraries(labneura_native_backend_benchmark PRIVATE labneura)
+    target_link_libraries(labneura_native_backend_benchmark PRIVATE labneura_tensor)
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64"
        AND LABNEURA_COMPILER_SUPPORTS_AVX2)
       target_compile_definitions(labneura_simd_int8_regression_test
@@ -739,7 +537,7 @@ if(NOT SKBUILD AND LABNEURA_BUILD_COMPAT)
     target_include_directories(labneura_avx2_integer_arithmetic_test PRIVATE
       ${CMAKE_CURRENT_SOURCE_DIR}/tests
     )
-    target_link_libraries(labneura_avx2_integer_arithmetic_test PRIVATE labneura)
+    target_link_libraries(labneura_avx2_integer_arithmetic_test PRIVATE labneura_tensor)
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64"
        AND LABNEURA_COMPILER_SUPPORTS_AVX2)
       target_compile_definitions(labneura_avx2_integer_arithmetic_test
@@ -760,9 +558,9 @@ if(NOT SKBUILD AND LABNEURA_BUILD_COMPAT)
     )
     target_include_directories(labneura_fp16_regression_test PRIVATE
       ${CMAKE_CURRENT_SOURCE_DIR}/tests
-      ${CMAKE_CURRENT_SOURCE_DIR}/src/labneura/backends/common
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/labneura/tensor/core/dispatch
     )
-    target_link_libraries(labneura_fp16_regression_test PRIVATE labneura)
+    target_link_libraries(labneura_fp16_regression_test PRIVATE labneura_tensor)
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64"
        AND LABNEURA_COMPILER_SUPPORTS_AVX2)
       target_compile_definitions(labneura_fp16_regression_test
@@ -780,7 +578,7 @@ if(NOT SKBUILD AND LABNEURA_BUILD_COMPAT)
     target_include_directories(labneura_fp32_direct_output_test PRIVATE
       ${CMAKE_CURRENT_SOURCE_DIR}/tests
     )
-    target_link_libraries(labneura_fp32_direct_output_test PRIVATE labneura)
+    target_link_libraries(labneura_fp32_direct_output_test PRIVATE labneura_tensor)
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64"
        AND LABNEURA_COMPILER_SUPPORTS_AVX2)
       target_compile_definitions(labneura_fp32_direct_output_test
@@ -807,7 +605,7 @@ if(NOT SKBUILD AND LABNEURA_BUILD_COMPAT)
     target_include_directories(labneura_add_into_test PRIVATE
       ${CMAKE_CURRENT_SOURCE_DIR}/tests
     )
-    target_link_libraries(labneura_add_into_test PRIVATE labneura)
+    target_link_libraries(labneura_add_into_test PRIVATE labneura_tensor)
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64"
        AND LABNEURA_COMPILER_SUPPORTS_AVX2)
       target_compile_definitions(labneura_add_into_test
@@ -833,9 +631,9 @@ if(NOT SKBUILD AND LABNEURA_BUILD_COMPAT)
     )
     target_include_directories(labneura_tensor_nd_test PRIVATE
       ${CMAKE_CURRENT_SOURCE_DIR}/tests
-      ${CMAKE_CURRENT_SOURCE_DIR}/src/labneura/backends/common
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/labneura/tensor/core/dispatch
     )
-    target_link_libraries(labneura_tensor_nd_test PRIVATE labneura)
+    target_link_libraries(labneura_tensor_nd_test PRIVATE labneura_tensor)
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64"
        AND LABNEURA_COMPILER_SUPPORTS_AVX2)
       target_compile_definitions(labneura_tensor_nd_test
@@ -862,7 +660,7 @@ if(NOT SKBUILD AND LABNEURA_BUILD_COMPAT)
     target_include_directories(labneura_tensor_broadcast_test PRIVATE
       ${CMAKE_CURRENT_SOURCE_DIR}/tests
     )
-    target_link_libraries(labneura_tensor_broadcast_test PRIVATE labneura)
+    target_link_libraries(labneura_tensor_broadcast_test PRIVATE labneura_tensor)
     add_test(NAME tensor_broadcast_generic
       COMMAND labneura_tensor_broadcast_test
     )
@@ -876,7 +674,7 @@ if(NOT SKBUILD AND LABNEURA_BUILD_COMPAT)
     target_include_directories(labneura_tensor_comparison_test PRIVATE
       ${CMAKE_CURRENT_SOURCE_DIR}/tests
     )
-    target_link_libraries(labneura_tensor_comparison_test PRIVATE labneura)
+    target_link_libraries(labneura_tensor_comparison_test PRIVATE labneura_tensor)
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64"
        AND LABNEURA_COMPILER_SUPPORTS_AVX2)
       target_compile_definitions(labneura_tensor_comparison_test
@@ -909,7 +707,7 @@ if(NOT SKBUILD AND LABNEURA_BUILD_COMPAT)
     target_include_directories(labneura_bool_dtype_test PRIVATE
       ${CMAKE_CURRENT_SOURCE_DIR}/tests
     )
-    target_link_libraries(labneura_bool_dtype_test PRIVATE labneura)
+    target_link_libraries(labneura_bool_dtype_test PRIVATE labneura_tensor)
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64"
        AND LABNEURA_COMPILER_SUPPORTS_AVX2)
       target_compile_definitions(labneura_bool_dtype_test
@@ -940,7 +738,7 @@ if(NOT SKBUILD AND LABNEURA_BUILD_COMPAT)
       tests/aligned_allocation_safety_test.cpp
     )
     target_link_libraries(labneura_aligned_allocation_safety_test
-      PRIVATE labneura
+      PRIVATE labneura_tensor
     )
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64"
        AND LABNEURA_COMPILER_SUPPORTS_AVX2)
@@ -974,7 +772,6 @@ if(NOT SKBUILD AND LABNEURA_BUILD_COMPAT)
       neon_fp16_arithmetic
       PROPERTIES SKIP_RETURN_CODE 77
     )
-  endif()
 endif()
 
 if(LABNEURA_BUILD_EDA AND NOT SKBUILD)
@@ -1535,11 +1332,8 @@ if(SKBUILD)
     )
     target_link_libraries(labneura_python PRIVATE pybind11::module labneura)
     if(LABNEURA_ENABLE_COVERAGE OR "$ENV{LABNEURA_COVERAGE}" STREQUAL "1")
-      target_compile_options(labneura_python PRIVATE
-        -fprofile-instr-generate
-        -fcoverage-mapping
-      )
-      target_link_options(labneura_python PRIVATE -fprofile-instr-generate)
+      target_compile_options(labneura_python PRIVATE ${LABNEURA_COVERAGE_COMPILE_OPTIONS})
+      target_link_options(labneura_python PRIVATE ${LABNEURA_COVERAGE_LINK_OPTIONS})
     endif()
     if(APPLE)
       target_link_options(labneura_python PRIVATE
@@ -1565,11 +1359,8 @@ if(SKBUILD)
     )
     target_link_libraries(_tensor PRIVATE pybind11::module labneura_tensor)
     if(LABNEURA_ENABLE_COVERAGE OR "$ENV{LABNEURA_COVERAGE}" STREQUAL "1")
-      target_compile_options(_tensor PRIVATE
-        -fprofile-instr-generate
-        -fcoverage-mapping
-      )
-      target_link_options(_tensor PRIVATE -fprofile-instr-generate)
+      target_compile_options(_tensor PRIVATE ${LABNEURA_COVERAGE_COMPILE_OPTIONS})
+      target_link_options(_tensor PRIVATE ${LABNEURA_COVERAGE_LINK_OPTIONS})
     endif()
     if(APPLE)
       target_link_options(_tensor PRIVATE
@@ -1595,11 +1386,8 @@ if(SKBUILD)
     )
     target_link_libraries(_eda PRIVATE pybind11::module labneura_eda)
     if(LABNEURA_ENABLE_COVERAGE OR "$ENV{LABNEURA_COVERAGE}" STREQUAL "1")
-      target_compile_options(_eda PRIVATE
-        -fprofile-instr-generate
-        -fcoverage-mapping
-      )
-      target_link_options(_eda PRIVATE -fprofile-instr-generate)
+      target_compile_options(_eda PRIVATE ${LABNEURA_COVERAGE_COMPILE_OPTIONS})
+      target_link_options(_eda PRIVATE ${LABNEURA_COVERAGE_LINK_OPTIONS})
     endif()
     if(APPLE)
       target_link_options(_eda PRIVATE
@@ -1624,8 +1412,8 @@ endif()
 # Install rules
 # ======================================
 set(LABNEURA_INSTALL_TARGETS "")
-if(TARGET labneura_accel_core)
-  list(APPEND LABNEURA_INSTALL_TARGETS labneura_accel_core)
+if(TARGET labneura_core)
+  list(APPEND LABNEURA_INSTALL_TARGETS labneura_core)
 endif()
 if(TARGET labneura_tensor)
   list(APPEND LABNEURA_INSTALL_TARGETS labneura_tensor)
@@ -1647,7 +1435,9 @@ if(LABNEURA_INSTALL_TARGETS AND NOT SKBUILD AND NOT LABNEURA_SPLIT_PYTHON_DISTRI
   if(TARGET labneura)
     install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
   else()
-    if(TARGET labneura_accel_core)
+    if(TARGET labneura_core)
+      install(DIRECTORY include/labneura/core/
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/labneura/core)
       install(FILES include/labneura/backends/common/cpu_features.h
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/labneura/backends/common)
     endif()
