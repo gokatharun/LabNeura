@@ -43,3 +43,28 @@ def test_per_source_avx2_property_is_allowed(tmp_path):
         "PROPERTIES COMPILE_OPTIONS -mavx2)\n",
     )
     assert check_isa_isolation(tmp_path) == []
+
+
+def test_f16c_kernel_uses_the_cmake_feature_contract():
+    component = (ROOT / "cmake/components/tensor/CMakeLists.txt").read_text(
+        encoding="utf-8"
+    )
+    implementation = (
+        ROOT
+        / "src/labneura/tensor/core/kernels/cpu/avx2/avx2_ops_fp16_f16c.cpp"
+    ).read_text(encoding="utf-8")
+    caller = (
+        ROOT / "src/labneura/tensor/core/kernels/cpu/avx2/avx2_ops_fp16.cpp"
+    ).read_text(encoding="utf-8")
+    declaration = (
+        ROOT / "src/labneura/tensor/core/kernels/cpu/avx2/avx2_fp16_f16c.h"
+    ).read_text(encoding="utf-8")
+
+    assert (
+        "target_sources(labneura_tensor_objects PRIVATE "
+        "${LABNEURA_TENSOR_F16C_SOURCE})" in component
+    )
+    assert "PRIVATE LABNEURA_ENABLE_AVX2_F16C=1" in component
+    assert implementation.startswith("#if defined(LABNEURA_ENABLE_AVX2_F16C)")
+    assert "#if defined(LABNEURA_ENABLE_AVX2_F16C)" in caller
+    assert "#if defined(LABNEURA_ENABLE_AVX2_F16C)" in declaration

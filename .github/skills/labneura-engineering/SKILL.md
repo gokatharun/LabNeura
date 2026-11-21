@@ -176,6 +176,11 @@ For performance changes:
 - Probe ISA support using compiler-specific flags: `/arch:AVX2` and an
   intrinsic compile probe for MSVC, versus `-mavx2`/`-mf16c` for GCC/Clang.
   Apply those flags only to the dedicated ISA translation units.
+- Do not use compiler predefined feature macros to decide whether a
+  CMake-selected optional ISA translation unit emits its definitions. MSVC's
+  macro set can differ from GCC/Clang; use the shared CMake compile definition
+  (for example `LABNEURA_ENABLE_AVX2_F16C`) in the declaration, caller, and
+  implementation contract so selected kernels link on every compiler.
 - Windows wheel jobs must initialize the MSVC developer environment and verify
   `dumpbin` before mandatory PE dependency inspection. CMake configure/build
   steps in PowerShell must check `$LASTEXITCODE` before invoking CTest.
